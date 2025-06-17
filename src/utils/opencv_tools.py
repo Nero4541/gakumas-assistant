@@ -5,13 +5,16 @@ import cv2
 import numpy as np
 
 from src.utils.logger import logger
-from sklearn.metrics.pairwise import cosine_similarity
 
+
+def gen_color_mask(img, lower_color, upper_color):
+    hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv_img, lower_color, upper_color)
+    return mask
 
 def get_mask_contours(img, lower_color, upper_color):
     """从图像中提取指定颜色范围的轮廓"""
-    hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv_img, lower_color, upper_color)
+    mask = gen_color_mask(img, lower_color, upper_color)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
 

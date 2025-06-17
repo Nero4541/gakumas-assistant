@@ -32,12 +32,12 @@ class ContestItem(Yolo_Box):
 
         # 2. pt：最靠右上角的一个（y 最小，其次 x 最大）
         pt_result = min(ocr_results, key=lambda r: (r.y, -r.x))
-        digits = re.findall(r'\d+', pt_result.text)
+        digits = re.findall(r'\d+', pt_result.text.replace("O", "0"))
         pt = int(digits[0]) if digits else 0
 
         lower_results = [r for r in ocr_results if r.y > power_anchor.y]
         combat_power_result = min(lower_results, key=lambda r: r.y, default=None)
-        digits = re.findall(r'\d+', combat_power_result.text) if combat_power_result else []
+        digits = re.findall(r'\d+', combat_power_result.text.replace("O", "0")) if combat_power_result else []
         combat_power = int(digits[0]) if digits else None
 
         # 4. username：最靠左下角（y 最大，其次 x 最小）
@@ -88,7 +88,7 @@ class ContestList:
             x, y, w, h = cv2.boundingRect(cnt)
 
             # 筛选条件 宽度必须大于帧宽度的一半
-            if w > self._width//2 and h > 10:
+            if w > self._width//2 and h > 30:
                 roi = self.contest_area[y:y+h, x:x+w]
                 self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
 

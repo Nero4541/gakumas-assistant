@@ -10,8 +10,8 @@ from src.utils.yolo_tools import get_modal
 
 def action__click_start_game(app: "app.AppProcessor", timeout=30):
     """动作：点击启动游戏"""
-    if app.wait_for_label(labels.start_menu_click_continue_flag, timeout):
-        if not app.click_on_label(labels.start_menu_click_continue_flag, timeout):
+    if app.game_utils.wait_for_label(labels.start_menu_click_continue_flag, timeout):
+        if not app.game_utils.click_on_label(labels.start_menu_click_continue_flag, timeout):
             raise TimeoutError("Failed to click on the continue flag within the timeout.")
     else:
         raise TimeoutError("Timeout waiting for continue flag in the start menu.")
@@ -25,11 +25,11 @@ def handle__network_error_modal_boxes(app: "app.AppProcessor"):
                 app.app.click_element(modal.cancel_button)
                 action__click_start_game(app)
                 sleep(2)
-                app.wait__loading()
+                app.game_utils.wait_loading()
                 handle__network_error_modal_boxes(app)
             if modal_text.ConnectionError_Body.Timeout in modal.modal_body:
                 app.app.click_element(modal.confirm_button)
-                app.wait__loading()
+                app.game_utils.wait_loading()
                 handle__network_error_modal_boxes(app)
 
 def action__check_home_tab_exist(app: "app.AppProcessor", timeout=30):

@@ -8,6 +8,7 @@ from time import time
 
 from src.utils.logger import logger
 
+
 class TaskStatus:
     PENDING = "PENDING"
     RUNNING = "RUNNING"
@@ -15,6 +16,7 @@ class TaskStatus:
     RETRY = "RETRY"
     FAILED = "FAILED"
     CANCELED = "CANCELED"
+
 
 @dataclass
 class Task:
@@ -55,17 +57,18 @@ class Task:
     def get_start_time(self):
         return self._start_time
 
+
 class TaskQueue:
     _app = None
     _task_queue = Queue()
     _task_list = []
     _run_lock: bool = False
-    _worker_thread: Thread
+    _worker_thread: Thread = None
 
     def __init__(self, app):
         self._app = app
-        self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
-        self._worker_thread.start()
+        # self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
+        # self._worker_thread.start()
 
     def reg_task(self, task_name: str, task_description: str, task_func: Callable, timeout: int | None = None):
         """
@@ -85,7 +88,7 @@ class TaskQueue:
             self._task_queue.queue.clear()
         for task in self._get_enable_tasks():
             self._task_queue.put(task)
-        if not self._worker_thread.is_alive():
+        if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
             self._worker_thread.start()
         return True
@@ -149,18 +152,16 @@ class TaskQueue:
 
     def get_task_list(self):
         """获取所有任务列表"""
-        return [
-            {
-                task.name: {
+        return {
+            task.name: {
                 "description": task.description,
                 "enable": task.enable,
                 "last_run_time": task.last_run_time,
                 "start_time": task.get_start_time(),
                 "status": task.status,
-                }
             }
             for task in self._task_list
-        ]
+        }
 
     def disable_task(self, task_name: str):
         """禁用任务"""
@@ -176,9 +177,14 @@ class TaskQueue:
             return True
         return False
 
+    def queue_status(self):
+        if self._run_lock is False or self._task_queue.empty():
+            return False
+        return True
+
     def stop(self):
         """停止任务队列"""
-        if self._run_lock is False or self._task_queue.empty():
+        if not self.queue_status():
             return False
         # 清空任务队列
         self._task_queue.queue.clear()

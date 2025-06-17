@@ -16,21 +16,14 @@ from src.core.CLIP_services.services import CLIPServiceManager
 from src.core.Web.routers import register_routes
 from src.core.Web.websocket import WebSocketManager
 from src.core.Windows.app import Windows_App
+from src.core.game_utils import GameUtils
 from src.core.middlewares.middleware_register import register_middlewares
-from src.core.tasks.base_ui.start_game import action__click_start_game, handle__network_error_modal_boxes, \
-    action__check_home_tab_exist
 from src.core.tasks.task_register import register_tasks
-from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Game_Info import GameStatusManager
-from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.WebSocket_Data import WebSocket_Data
 from src.core.task import TaskQueue
 from src.entity.Yolo import YoloModelType, Yolo_Results
-from src.utils.game_tools import get_current_location
 from src.utils.logger import logger
-
-from src.constants import *
-from src.utils.yolo_tools import get_modal
 
 
 class AppProcessor:
@@ -56,6 +49,8 @@ class AppProcessor:
     _pause_capture_frame: bool = False
     # 中间件注册列表
     _middleware_registry: List[Callable]
+    # 游戏实用工具
+    game_utils: GameUtils
     # 游戏状态管理器
     game_status_manager: GameStatusManager
     # 图像记忆管理器
@@ -68,6 +63,7 @@ class AppProcessor:
         self._middleware_registry = []
         self.task_queue = TaskQueue(self)
         self.game_status_manager = GameStatusManager()
+        self.game_utils = GameUtils(self)
         self.clip_manager = CLIPServiceManager()
         register_tasks(self)
         register_middlewares(self)
@@ -112,10 +108,6 @@ class AppProcessor:
             self._middleware_registry.append(func)
         return decorator
 
-    def initialized(self):
-        """生命周期方法：脚本初始化完毕"""
-        self.update_current_location()
-
     def pause_capture_frame(self):
         if self.running and not self._pause_capture_frame:
             logger.debug("Pause capture frame......")
@@ -153,7 +145,7 @@ class AppProcessor:
         while self.running and not self._pause_capture_frame:
             frame = self.app.capture()
             if frame is None or frame.size <= 0:
-                sleep(0.5)
+                sleep(0.3)
                 continue
             self.latest_frame = frame
             results = self.model(frame, imgsz=self.model.args['imgsz'] if hasattr(self.model, 'args') else 640, verbose=False, stream=True)
@@ -187,141 +179,6 @@ class AppProcessor:
         """注册处理中间件"""
         for func in self._middleware_registry:
             func(self)
-
-    def wait_for_label(self, label, timeout=30, interval=1, continuous=1):
-        """等待指定标签的框出现"""
-        wait_time = 0
-        count = 0
-        logger.debug(f"waiting label: {label}")
-        while wait_time <= timeout:
-            if count > continuous:
-                return True
-            if self.latest_results.filter_by_label(label):
-                count += 1
-                sleep(0.3)
-                continue
-            else:
-                count = 0
-            sleep(interval)
-            wait_time += interval
-        return False
-
-    def wait_for_modal(self, modal_title, timeout=30, interval=1, no_body: bool = False):
-        """等待指定标题的模态框出现"""
-        logger.debug(f"Waiting for modal with title: {modal_title}")
-        wait_time = 0
-
-        while wait_time < timeout:
-            headers = self.latest_results.filter_by_label(base_labels.modal_header)
-            buttons = self.latest_results.filter_by_label(base_labels.button)
-
-            if not (headers and buttons):
-                logger.debug(f"No modal header or button found, waiting... ({wait_time}/{timeout})")
-            else:
-                modal = get_modal(self.latest_results, self.latest_frame, no_body)
-                if modal:
-                    if modal_title is None or modal_title in modal.modal_title:
-                        logger.debug(f"Modal found: {modal.modal_title}")
-                        return modal
-                    else:
-                        logger.debug(f"Modal title '{modal.modal_title}' does not match '{modal_title}'")
-
-            sleep(interval)
-            wait_time += interval
-
-        logger.warning(f"Timeout reached ({timeout}s): modal with title '{modal_title}' not found.")
-        return False
-
-    def click_on_label(self, label, timeout=10, interval=1):
-        """等待指定标签并点击"""
-        wait_time = 0
-        count = 0
-        logger.debug(f"waiting click label: {label}")
-        while wait_time < timeout:
-            boxs = self.latest_results.filter_by_label(label)
-            if boxs:
-                self.app.click_element(boxs.first())
-                return True
-            else:
-                count += 1
-                if count >= 3:
-                    break
-                sleep(interval)
-            wait_time += interval
-        return False
-
-    def wait__loading(self, timeout=60):
-        """等待加载"""
-        COUNT = 0
-        sleep(3)
-        while COUNT < timeout:
-            logger.debug("Waiting for loading")
-            if self.latest_results.filter_by_label(base_labels.general_loading1) or self.latest_results.filter_by_label(
-                    base_labels.general_loading2):
-                sleep(1)
-                COUNT += 1
-            else:
-                logger.debug("Wait for the loading to finish")
-                return True
-        raise TimeoutError("Waiting for a load timeout")
-
-    def click_button(self, text, timeout=10):
-        """点击指定文字按钮"""
-        logger.debug(f"waiting click label: {text}")
-        self.app.click_element(self.wait__button(text,timeout))
-
-    def wait__button(self, text, timeout=10):
-        """等待指定文字按钮"""
-        COUNT = 0
-        while COUNT < timeout:
-            buttons = ButtonList(self.latest_results)
-            print(buttons)
-            if button := buttons.get_button_by_text(text):
-                return button
-            sleep(1)
-            COUNT += 1
-        raise TimeoutError(f"Waiting for {text} button timeout")
-
-    def go_home(self):
-        self.update_current_location()
-        if self.game_status_manager.current_location == GamePageTypes.MAIN_MENU__HOME:
-            return
-        for _ in range(5):
-            logger.debug(f"[{_}]Try going home")
-            main_menu_items = [
-                value for name, value in vars(GamePageTypes).items()
-                if name.startswith("MAIN_MENU__")
-            ]
-            if self.game_status_manager.current_location in main_menu_items:
-                self.app.click_element(self.latest_results.filter_by_label(base_labels.tab_home).first())
-                self.wait__loading()
-                self.update_current_location()
-                return
-            elif go_home_btn := self.latest_results.filter_by_label(base_labels.go_home_btn):
-                self.app.click_element(go_home_btn.first())
-                self.wait__loading()
-                self.update_current_location()
-                return
-            sleep(2)
-        raise RuntimeError("Going home failed")
-
-
-    def back_next_page(self):
-        logger.debug("Going back next page")
-        if self.wait_for_label(base_labels.back_btn, 3):
-            self.app.click_element(self.latest_results.filter_by_label(base_labels.back_btn).first())
-        else:
-            raise TimeoutError("Waiting for a back button timeout")
-
-    def update_current_location(self, location: str = None):
-        logger.debug("Updating current location......")
-        if location:
-            self.game_status_manager.current_location = location
-        else:
-            current_location = get_current_location(self.latest_results)
-            if current_location and current_location != self.game_status_manager.current_location:
-                self.game_status_manager.current_location = current_location
-        logger.debug(f"Current location: {self.game_status_manager.current_location}")
 
     def start(self):
         if not self.running or self._pause_capture_frame:

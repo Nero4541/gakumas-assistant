@@ -17,3 +17,4 @@ paddleocr==2.10.0
 paddlepaddle==3.0.0
 scikit-learn
 matplotlib
+rapidfuzz

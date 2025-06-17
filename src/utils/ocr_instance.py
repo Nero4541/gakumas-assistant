@@ -70,6 +70,9 @@ class OCR_ResultList:
         """"返回X轴最大的（最靠右）"""
         return max(self.results, key=lambda box: box.w)
 
+    def first(self) -> OCR_Result:
+        return self.results[0]
+
     @classmethod
     def _from(cls, results: List[OCR_Result]):
         inst = cls.__new__(cls)

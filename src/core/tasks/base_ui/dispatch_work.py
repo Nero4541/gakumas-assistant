@@ -18,19 +18,18 @@ MAX_WORKS = 2
 
 def action__enter_dispatch_page(app: "AppProcessor"):
     """进入页面并收取历史派遣结果逻辑"""
-    if not app.wait_for_label(base_labels.home_dispatch_work):
+    if not app.game_utils.wait_for_label(base_labels.home_dispatch_work):
         raise TimeoutError("Timeout waiting for [home:dispatch work] to appear.")
     app.app.click_element(app.latest_results.filter_by_label(base_labels.home_dispatch_work).first())
     sleep(1)
-    app.wait__loading()
+    app.game_utils.wait_loading()
 
     count = 0
 
     while count < MAX_WORKS + 2:
-        app.update_current_location()
-        if app.game_status_manager.current_location == GamePageTypes.HOME_TAB.WORK:
+        if app.game_utils.update_current_location() == GamePageTypes.HOME_TAB.WORK:
             return
-        if app.wait_for_label(base_labels.modal_header, 3):
+        if app.game_utils.wait_for_label(base_labels.modal_header, 3):
             modal = get_modal(app.latest_results, app.latest_frame, True)
             app.app.click_element(modal.cancel_button)
             count += 1
@@ -51,7 +50,7 @@ def action__dispatch_all_available_work(app: "AppProcessor"):
             continue
         _dispatch_single_work(app, group)
         sleep(3)
-        app.wait_for_label(base_labels.avatar, 10)
+        app.game_utils.wait_for_label(base_labels.avatar, 10)
 
 def _is_work_already_dispatched(app: "AppProcessor", group, width):
     """判断该任务是否已派遣"""
@@ -82,17 +81,16 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
     if avatar:  # 当有头像元素时
         app.app.click_element(avatar)
         sleep(0.5)
-        app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
-        sleep(1)
-        app.wait_for_label(base_labels.button)
-
+    app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
+    sleep(1)
+    app.game_utils.wait_for_label(base_labels.button)
     duration_box = _select_work_duration(app)
     app.app.click_element(duration_box)
     sleep(1)
     app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
     sleep(1)
 
-    modal = app.wait_for_modal("仕事開始確", 10, no_body=True)
+    modal = app.game_utils.wait_for_modal(modal_text.work_start_confirmation, 10, no_body=True)
     app.app.click_element(modal.confirm_button)
     sleep(1)
 
@@ -119,7 +117,7 @@ def _dispatch_single_work(app: "AppProcessor", group):
     """派遣单个任务"""
     app.app.click_element(group)
     sleep(1)
-    app.wait_for_label(base_labels.avatar)
+    app.game_utils.wait_for_label(base_labels.avatar)
     def _exec():
         avatars = app.latest_results.filter_by_label(base_labels.avatar)
         avatars = Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])

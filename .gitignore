@@ -1,3 +1,6 @@
 /.venv-3.10/
 /.venv/
 /logs/
+*/node_modules/
+*/dist/
+dist/

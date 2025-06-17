@@ -1,12 +1,25 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+import config
 from src.core.Web.websocket import WebSocketManager
 from time import sleep
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from app import AppProcessor
 
-def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
 
+def _api_return(status: bool, message: str = '', data: dict = None):
+    return {
+        'status': status,
+        'message': message,
+        'data': data
+    }
+
+
+def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
@@ -16,34 +29,54 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
 
-    @app.get("/start")
-    def start_inference():
+    @app.get("/api/start")
+    def start_task_queue():
         processor.exec_task()
-        return {"message": "Inference started"}
+        return _api_return(True, "OK")
 
-    @app.get("/stop")
-    def stop_inference():
+    @app.get("/api/stop")
+    def stop_task_queue():
         processor.task_queue.stop()
-        return {"message": "Inference stopped"}
+        return _api_return(True, "OK")
 
-    @app.get("/status")
+    @app.get("/api/status")
     def get_status():
-        return {'status': processor.running}
+        return _api_return(True, 'OK', {
+            'platform': config.mode.lower(),
+            'yolo': processor.running,
+            'task': processor.task_queue.queue_status(),
+            'game': {
+                'current_location': processor.game_status_manager.current_location,
+                'player': {
+                    'level': processor.game_status_manager.player.level,
+                    'gem': processor.game_status_manager.player.gem,
+                    'stamina': processor.game_status_manager.player.stamina,
+                }
+            }
+        })
 
-    @app.get("/get_registered_tasks")
+    @app.get("/api/get_registered_tasks")
     def get_registered_tasks():
-        return processor.task_queue.get_task_list()
+        return _api_return(True, 'OK', processor.task_queue.get_task_list())
 
-    @app.post("/disable_task/{task_name:str}")
+    @app.post("/api/disable_task/{task_name:str}")
     def disable_task(task_name):
-        return processor.task_queue.disable_task(task_name)
+        return _api_return(True, 'OK', processor.task_queue.disable_task(task_name))
 
-    @app.get("/switch_yolo_model/base_ui")
-    def switch_yolo_model__base_ui():
-        processor.load_model("BASE_UI")
-        return {"status": True}
+    @app.post("/api/enable_task/{task_name:str}")
+    def enable_task(task_name):
+        return _api_return(True, 'OK', processor.task_queue.enable_task(task_name))
 
-    @app.get("/switch_yolo_model/producer")
-    def switch_yolo_model__producer():
-        processor.load_model("PRODUCER")
-        return {"status": True}
+    @app.get("/api/switch_yolo_model/{model_name:str}")
+    def switch_yolo_model(model: str):
+        model_list = ["base_ui", "producer"]
+        if model.lower() not in model_list:
+            return _api_return(False, "Invalid model name")
+        processor.load_model(model.upper())
+        return _api_return(True, f"model switched to {model}")
+
+    app.mount("/assets", StaticFiles(directory="dist/assets", html=True), name="static")
+
+    @app.get("/")
+    def read_index():
+        return FileResponse("dist/index.html")

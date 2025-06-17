@@ -4,3 +4,8 @@ class ConnectionError_Body:
     Timeout = "FBR_ERR_TIMEOUT"
 data_update = "データ更新"
 data_download = "データダウンロード"
+receipt_completed = "受取完了"
+rate_reward = "レート報酬"
+exchange_confirmation = "交換確"
+work_start_confirmation = "仕事開始確"
+expenditure = "活動費"

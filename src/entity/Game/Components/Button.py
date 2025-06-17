@@ -7,6 +7,7 @@ import numpy as np
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.constants import *
 from src.utils.ocr_instance import get_ocr
+from src.utils.string_tools import string_match, MatchConfig
 
 
 @dataclass
@@ -84,8 +85,8 @@ class ButtonList:
         inst.buttons = buttons
         return inst
 
-    def get_button_by_text(self, text) -> Button | None:
+    def get_button_by_text(self, text, match_config: MatchConfig = None) -> Button | None:
         for button in self.buttons:
-            if text in button.text:
+            if string_match(button.text, text, match_config):
                 return button
         return None

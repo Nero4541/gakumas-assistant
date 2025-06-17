@@ -7,8 +7,10 @@ from src.constants import *
 from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Yolo import Yolo_Box, Yolo_Results
-from src.utils.ocr_instance import get_ocr
+from src.utils.ocr_instance import OCRService
 from src.utils.logger import logger
+from src.utils.opencv_tools import gen_color_mask
+
 
 @logger.catch
 def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False) -> Modal | None:
@@ -21,15 +23,21 @@ def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False)
     """
     # try:
     # 获取模态框头部
+    if not yolo_result.exists_all_labels([base_labels.modal_header, base_labels.button]):
+        logger.warning("模态框不完整")
+        return None
     modal = yolo_result.filter_by_labels([base_labels.modal_header, base_labels.button])
-    if not modal:
-        raise ValueError("未找到模态框")
     modal_header = modal.filter_by_label(base_labels.modal_header).first()
-    modal_header_text = get_ocr(modal_header.frame)[0].text
+    # modal_header.frame = gen_color_mask(modal_header.frame, (0,0,230), (0,0,255))
+    # _, modal_header.frame = cv2.threshold(modal_header.frame, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    ocr_service = OCRService()
+    modal_header_ocr_result = ocr_service.ocr(modal_header.frame)
+    modal_header_ocr_result.auto_merge_lines()
+    modal_header_text = modal_header_ocr_result.first().text
     # 获取确认和取消按钮
     buttons = modal.filter_by_label(base_labels.button).group_yolo_boxes_by_position(30, None)
     if buttons:
-        buttons = buttons[0]
+        buttons = buttons.pop()
         confirm_button = buttons.get_x_max_element()
         cancel_button = buttons.get_x_min_element()
     else:
@@ -48,5 +56,5 @@ def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False)
     else:
         modal_body_y = confirm_button.y if confirm_button else cancel_button.y
     modal_body_frame = frame[modal_header.h:modal_body_y, modal_header.x:modal_header.w]
-    modal_body_text = "" if no_body else " ".join([item.text for item in get_ocr(modal_body_frame)])
+    modal_body_text = "" if no_body else " ".join([item.text for item in ocr_service.ocr(modal_body_frame)])
     return Modal(modal_header_text, modal_body_frame, modal_body_text, confirm_button, cancel_button)

@@ -17,12 +17,12 @@ def action__enter_contest_page(app: "AppProcessor"):
     进入竞技场页面流程。
     包括点击主界面竞技场 Tab 和内部按钮。
     """
-    app.click_on_label(base_labels.tab_contest)
-    app.update_current_location(GamePageTypes.MAIN_MENU__CONTEST)
+    app.game_utils.click_on_label(base_labels.tab_contest)
+    app.game_utils.update_current_location(GamePageTypes.MAIN_MENU__CONTEST)
     sleep(2)
-    app.click_button("コンテスト")  # 点击进入竞技场功能
+    app.game_utils.click_button("コンテスト")  # 点击进入竞技场功能
     sleep(3)
-    app.update_current_location(GamePageTypes.CONTEST_TAB.ARENA)
+    app.game_utils.update_current_location(GamePageTypes.CONTEST_TAB.ARENA)
 
 def action__check_and_collect_rewards(app: "AppProcessor"):
     """
@@ -46,7 +46,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
     height, width = app.latest_frame.shape[:2]
     while True:
         contest = ContestList(app.latest_results, app.latest_frame)
-        if not contest:
+        if not contest or len(contest) >= 3:
             logger.info("There is no contest.")
             break
         target = contest.get_combat_power_min()
@@ -63,14 +63,14 @@ def _auto_form_team(app: "AppProcessor"):
     如果有空的编队槽位，执行自动编队。
     依次点击：编成 -> おまかせ -> 決定 -> 閉じる。
     """
-    app.click_button("ユニッ卜編成")
+    app.game_utils.click_button("ユニッ卜編成")
     sleep(1)
-    app.click_button("おまかせ")
+    app.game_utils.click_button("おまかせ")
     sleep(1)
-    app.click_button("決定")
+    app.game_utils.click_button("決定")
     sleep(0.5)
-    app.click_button("閉じる")
-    app.back_next_page()
+    app.game_utils.click_button("閉じる")
+    app.game_utils.back_next_page()
 
 def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     """
@@ -78,12 +78,12 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     若勾选框未启用，自动勾选“跳过”。
     重复点击直到跳过按钮消失。
     """
-    app.click_button("挑戦開始")
-    app.wait_for_label(base_labels.checkbox)
+    app.game_utils.click_button("挑戦開始")
+    app.game_utils.wait_for_label(base_labels.checkbox)
     check_box = CheckBox(app.latest_results.filter_by_label(base_labels.checkbox).first())
     if not check_box.checked:
         app.app.click_element(check_box)
-    app.click_on_label(base_labels.skip_button)
+    app.game_utils.click_on_label(base_labels.skip_button)
     sleep(1)
     while app.latest_results.exists_label(base_labels.skip_button):
         app.app.click(width // 2, height // 2)
@@ -104,10 +104,10 @@ def _finish_battle(app: "AppProcessor"):
         COUNT += 1
     if COUNT >= WAIT:
         raise TimeoutError("Waiting for the challenge to end timeout")
-    app.click_button("次へ")
-    app.click_button("終了")
+    app.game_utils.click_button("次へ")
+    app.game_utils.click_button("終了")
     sleep(1)
     if app.latest_results.exists_label(base_labels.modal_header):
-        modal = app.wait_for_modal("レート報酬", no_body=True)
+        modal = app.game_utils.wait_for_modal(modal_text.rate_reward, no_body=True)
         app.app.click_element(modal.cancel_button)
-    app.wait__loading()
+    app.game_utils.wait_loading()

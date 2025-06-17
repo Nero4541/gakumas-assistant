@@ -40,8 +40,10 @@ for cnt in contours:
                 skill_card_info = roi[:, x_skill + w_skill:]
                 skill_card_info = cv2.cvtColor(skill_card_info, cv2.COLOR_BGR2GRAY)
                 _, skill_card_info = cv2.threshold(skill_card_info, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                # skill_card_info = cv2.equalizeHist(skill_card_info)
                 cv2.imshow(f"Extracted Skill Card (x: {x_skill} y: {y_skill})", skill_card)
                 cv2.imshow(f"Skill Info (x: {x} y: {y})", skill_card_info)
+                cv2.imshow(f"Skill Info equalizeHist (x: {x} y: {y})", cv2.equalizeHist(skill_card_info))
                 break
         break  # 只处理第一个符合条件的区域
 

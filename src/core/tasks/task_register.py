@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from src.utils.ocr_instance import get_ocr, OCRService, OCR_ResultList
 from src.utils.opencv_tools import check_color_in_region
+from src.utils.string_tools import string_match, MatchConfig
 from src.utils.yolo_tools import get_modal
 
 if TYPE_CHECKING:
@@ -39,22 +40,21 @@ def register_tasks(processor: "AppProcessor"):
             return
         if action__click_start_game(app, TIMEOUT) is not False:
             sleep(2)
-            app.wait__loading()
+            app.game_utils.wait_loading()
             handle__network_error_modal_boxes(app)
         action__check_home_tab_exist(app)
-        app.update_current_location()
+        app.game_utils.update_current_location()
 
     @processor.register_task("get_expenditure", "获取活动费", 30)
     @logger.catch
     def _task__get_expenditure(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
-        if not app.wait_for_label(base_labels.home_get_expenditure):
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
+        if not app.game_utils.wait_for_label(base_labels.home_get_expenditure):
             raise TimeoutError("Timeout waiting for [home:expenditure] to appear.")
         app.app.click_element(app.latest_results.filter_by_label(base_labels.home_get_expenditure).first())
         sleep(3)
-        if modal := app.wait_for_modal("活動費", no_body=True, timeout=10):
-            print(modal)
+        if modal := app.game_utils.wait_for_modal(modal_text.expenditure, no_body=True, timeout=10):
             app.app.click_element(modal.cancel_button)
             sleep(3)
             return True
@@ -66,16 +66,16 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("dispatch_work", "派遣任务", 30)
     @logger.catch
     def _task__dispatch_work(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
         action__enter_dispatch_page(app)
         action__dispatch_all_available_work(app)
 
     @processor.register_task("get_gift", "获取礼物/邮箱")
     @logger.catch
     def _task__get_gift(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
         action__enter_gift_page(app)
         if action__has_gift_items(app):
             action__collect_all_gifts(app)
@@ -83,14 +83,14 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("automated_purchase", "自动每日交换")
     @logger.catch
     def _task__automated_purchase(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
-        app.click_on_label(base_labels.home_shop_btn)
-        app.wait__loading()
-        app.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
+        app.game_utils.click_on_label(base_labels.home_shop_btn)
+        app.game_utils.wait_loading()
+        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
         # 领取每周礼包
-        app.click_button("パック")
-        app.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
+        app.game_utils.click_button("パック")
+        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
         sleep(3)
         height, width = app.latest_frame.shape[:2]
         for _ in range(3):
@@ -99,34 +99,47 @@ def register_tasks(processor: "AppProcessor"):
                 if "無料" in button.text and button.is_disabled() is False:
                     app.app.click_element(button)
                     sleep(0.5)
-                    app.click_button("決定")
+                    app.game_utils.click_button("決定")
                     sleep(0.5)
-                    app.click_button("閉じる")
+                    app.game_utils.click_button("閉じる")
             app.app.scrollY(width//2, height//2, -20)
-        app.back_next_page()
-        app.wait__loading()
-        app.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+        app.game_utils.back_next_page()
+        app.game_utils.wait_loading()
+        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
         # 每日兑换
-        app.click_button("デイリー交換所")
-        app.wait_for_label(base_labels.card__commodity)
-        app.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
+        app.game_utils.click_button("デイリー交換所")
+        app.game_utils.wait_for_label(base_labels.card__commodity)
+        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
         commodity_target = ["アノマリーノート"]
+        ocr_service = OCRService()
+        # 上一次获取到的列表哈希
+        last_list_hash = None
         while True:
-            full_memory = True
+            # 当前页面物品（名）列表
+            current_list = []
             item_commodity = app.latest_results.filter_by_labels([base_labels.item,base_labels.card__commodity])
             item_commodity_group = item_commodity.find_containing_groups(base_labels.card__commodity, [base_labels.item])
-            # print(item_exchanges)
-            ocr_service = OCRService()
+            scroll_x, scroll_y = item_commodity.get_COL()
+            # 循环每一个物品
             for index, result in enumerate(item_commodity_group):
-                print(index)
                 item = result.filter_by_label(base_labels.item).first()
+                # 跳过无法交换的物品
                 if ocr_service.ocr(item.frame).search("交換済み"):
                     continue
-                if not app.clip_manager.item_clip.retrieve(item.frame, 0.97):
-                    full_memory = False
+                # 如果已经在记忆中
+                if clip_result := app.clip_manager.item_clip.retrieve(item.frame, 0.97):
+                    # 在购买列表中
+                    if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
+                        app.app.click_element(result)
+                        modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
+                        app.app.click_element(modal.confirm_button)
+                    current_list.append(clip_result.name)
+                # 不在记忆中
+                else:
                     app.app.click_element(result)
-                    modal = app.wait_for_modal("交換確認")
+                    modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
                     yolo_result_item = item.frame
+                    # 截取物品和物品信息
                     item, item_info = modal_body_extract_item_info(modal.modal_body)
                     ocr_results = ocr_service.ocr(item_info)
                     ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
@@ -134,17 +147,23 @@ def register_tasks(processor: "AppProcessor"):
                     item_info = ocr_results.exclude([item_name])
                     item_name = item_name.text
                     item_info = ItemInfo(item_name, [_.text for _ in item_info])
+                    # 添加到记忆中
                     app.clip_manager.item_clip.add_to_memory(item, item_info)
                     app.clip_manager.item_clip.add_to_memory(yolo_result_item, item_info)
-                    if item_name in commodity_target:
+                    current_list.append(item_name)
+                    # 在购买列表的情况下购买
+                    if string_match(item_name, commodity_target, MatchConfig(fuzz_threshold=80)):
                         app.app.click_element(modal.confirm_button)
                     else:
                         app.app.click_element(modal.cancel_button)
                     sleep(0.5)
-            if full_memory:
+            # 如果历史哈希不相同，则向下滚动
+            if last_list_hash != hash(frozenset(current_list)):  # 使用哈希值进行比较
+                logger.debug(current_list)
+                last_list_hash = hash(frozenset(current_list))
+                app.app.scrollY(scroll_x,scroll_y,-5)
+            else:
                 break
-            scroll_x, scroll_y = item_commodity.get_COL()
-            app.app.scrollY(scroll_x,scroll_y,-10)
 
             # commodity_box = result.filter_by_label(base_labels.card__commodity).first()
             # cv2.imshow(f"[{index}]item_exchange", item_exchange.filter_by_label(base_labels.card__commodity).first().frame)
@@ -153,8 +172,8 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("automated_contest", "自动每日竞技场")
     @logger.catch
     def _task__automated_contest(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
         action__enter_contest_page(app)
         action__check_and_collect_rewards(app)
         action__loop_challenge_contest(app)
@@ -162,10 +181,10 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("claim_task_rewards", "领取任务奖励")
     @logger.catch
     def _task__claim_task_rewards(app: "AppProcessor"):
-        app.go_home()
-        app.wait__loading()
-        app.click_on_label(base_labels.home_daily_task)
-        app.wait_for_label(base_labels.tab_bar)
+        app.game_utils.go_home()
+        app.game_utils.wait_loading()
+        app.game_utils.click_on_label(base_labels.home_daily_task)
+        app.game_utils.wait_for_label(base_labels.tab_bar)
         tab_bar = TabBar(app.latest_results.filter_by_label(base_labels.tab_bar).first())
         logger.debug(tab_bar)
         height, width = app.latest_frame.shape[:2]
@@ -181,9 +200,9 @@ def register_tasks(processor: "AppProcessor"):
                     flag = True
                     break
             if flag:
-                modal = app.wait_for_modal("受取完了", no_body=True, timeout=10)
+                modal = app.game_utils.wait_for_modal(modal_text.receipt_completed, no_body=True, timeout=10)
                 app.app.click_element(modal.cancel_button)
-                app.click_on_label(base_labels.close_button)
+                app.game_utils.click_on_label(base_labels.close_button)
                 logger.info(f"The task reward of {tab.text} has been claimed")
             else:
                 logger.info(f"{tab.text} has no task rewards to be claimed")

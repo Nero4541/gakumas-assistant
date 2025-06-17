@@ -14,10 +14,10 @@ def action__enter_gift_page(app: "AppProcessor"):
     """
     进入首页的礼物界面，若按钮不存在则抛出超时异常。
     """
-    if not app.wait_for_label(base_labels.home_gift_btn):
+    if not app.game_utils.wait_for_label(base_labels.home_gift_btn):
         raise TimeoutError("Timeout waiting for [home:gift] to appear.")
     app.app.click_element(app.latest_results.filter_by_label(base_labels.home_gift_btn).first())
-    app.update_current_location(GamePageTypes.HOME_TAB.GIFT)
+    app.game_utils.update_current_location(GamePageTypes.HOME_TAB.GIFT)
     sleep(3)
 
 def action__has_gift_items(app: "AppProcessor") -> bool:
@@ -35,9 +35,9 @@ def action__collect_all_gifts(app: "AppProcessor"):
     ButtonList(app.latest_results).get_button_by_text("一括受取")
     app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
     sleep(1)
-    if app.wait_for_label(base_labels.modal_header, 10):
-        modal = get_modal(app.latest_results)
-        app.app.click_element(modal.cancel_button)
-        sleep(1)
-    else:
-        raise TimeoutError("Timeout waiting for [modal:header] to appear.")
+    modal = app.game_utils.wait_for_modal(modal_text.receipt_completed, 15,True)
+    if not modal:
+        logger.warning("Gift collection failed")
+        return False
+    app.app.click_element(modal.cancel_button)
+    return True

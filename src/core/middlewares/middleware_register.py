@@ -21,9 +21,9 @@ def register_middlewares(processor: "AppProcessor"):
     @processor.register_middleware()
     @logger.catch
     def _init_location(app: "AppProcessor"):
-        if app.game_status_manager.current_location is None:
-            app.update_current_location()
-            app.exec_task()
+        if app.game_status_manager.current_location is None and app.latest_results:
+            app.game_utils.update_current_location()
+            # app.exec_task()
         return True
 
 
@@ -40,9 +40,7 @@ def register_middlewares(processor: "AppProcessor"):
     def _add_skill(app: "AppProcessor"):
         global last_card_name
         if app.game_status_manager.current_location == GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
-            current_location = get_current_location(app.latest_results)
-            if current_location != GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
-                app.game_status_manager.current_location = current_location
+            if app.game_utils.update_current_location() != GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
                 return
             roi , skill_card, card_info = extract_skill_card_and_info(app.latest_frame)
             if skill_card is None or card_info is None:
