@@ -33,12 +33,10 @@ if TYPE_CHECKING:
 
 def register_tasks(processor: "AppProcessor"):
     @processor.register_task("start_game", "启动游戏", 60)
-    @logger.catch
     def _task__start_game(app: "AppProcessor"):
-        TIMEOUT = 30
-        if not (app.game_status_manager.current_location == GamePageTypes.START_GAME or app.latest_results.exists_label(base_labels.start_menu_logo)):
+        if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
             return
-        if action__click_start_game(app, TIMEOUT) is not False:
+        if action__click_start_game(app) is not False:
             sleep(2)
             app.game_utils.wait_loading()
             handle__network_error_modal_boxes(app)
@@ -46,7 +44,6 @@ def register_tasks(processor: "AppProcessor"):
         app.game_utils.update_current_location()
 
     @processor.register_task("get_expenditure", "获取活动费", 30)
-    @logger.catch
     def _task__get_expenditure(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()
@@ -63,8 +60,7 @@ def register_tasks(processor: "AppProcessor"):
             return True
         raise TimeoutError("Timeout waiting for modal to appear.")
 
-    @processor.register_task("dispatch_work", "派遣任务", 30)
-    @logger.catch
+    @processor.register_task("dispatch_work", "派遣任务", 60)
     def _task__dispatch_work(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()
@@ -72,7 +68,6 @@ def register_tasks(processor: "AppProcessor"):
         action__dispatch_all_available_work(app)
 
     @processor.register_task("get_gift", "获取礼物/邮箱")
-    @logger.catch
     def _task__get_gift(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()
@@ -81,7 +76,6 @@ def register_tasks(processor: "AppProcessor"):
             action__collect_all_gifts(app)
 
     @processor.register_task("automated_purchase", "自动每日交换")
-    @logger.catch
     def _task__automated_purchase(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()
@@ -170,7 +164,6 @@ def register_tasks(processor: "AppProcessor"):
         # cv2.waitKey(0)
 
     @processor.register_task("automated_contest", "自动每日竞技场")
-    @logger.catch
     def _task__automated_contest(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()
@@ -179,7 +172,6 @@ def register_tasks(processor: "AppProcessor"):
         action__loop_challenge_contest(app)
 
     @processor.register_task("claim_task_rewards", "领取任务奖励")
-    @logger.catch
     def _task__claim_task_rewards(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()

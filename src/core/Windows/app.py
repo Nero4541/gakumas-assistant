@@ -6,24 +6,20 @@ from typing import Tuple
 import cv2
 import numpy as np
 import pyautogui
+import pythoncom
 import win32api
+import win32com.client
 import win32con
 import win32gui
-
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 
 class Windows_App:
     __window_name: str
     def __init__(self, window_name):
-        # if not self.is_admin():
-        #     # 不是管理员，重新以管理员身份启动
-        #     logger.warning("当前不是管理员权限，正在尝试以管理员身份重新启动...")
-        #     ctypes.windll.shell32.ShellExecuteW(
-        #         None, "runas", sys.executable, " ".join(sys.argv), None, 1
-        #     )
-        #     print(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
-        #     sys.exit()
+        if not self.is_admin():
+            logger.warning("当前不是管理员权限，请使用管理员权限启动...")
+            sys.exit()
         self.__window_name = window_name
 
     @staticmethod
@@ -54,6 +50,24 @@ class Windows_App:
         client_width = client_rect[2]  # 客户区宽度
         client_height = client_rect[3]  # 客户区高度
         return client_left, client_top, client_width, client_height
+
+    @logger.catch
+    def bring_to_front(self):
+        """
+        将窗口切换到前台
+        """
+        pythoncom.CoInitialize()  # 初始化COM
+        try:
+            hwnd = self.__find_window()
+            win32gui.BringWindowToTop(hwnd)
+
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shell.SendKeys('%')
+
+            win32gui.SetForegroundWindow(hwnd)
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        finally:
+            pythoncom.CoUninitialize()  # 用完后释放
 
     @logger.catch
     def capture(self):

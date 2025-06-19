@@ -51,7 +51,7 @@ def get_hsv_value(event, x, y, flags, param):
         cv2.setTrackbarPos('Upper V', 'Trackbars', min(v + 50, 255))
 
 # 读取图像
-img = cv2.imread(r"E:\Projects\gkmas-auto\tests\Trade Confirm.png")
+img = cv2.imread(r"E:\Projects\gkmas-auto\tests\main_memu__tabbar2.png")
 
 # 创建窗口
 cv2.namedWindow('Trackbars')

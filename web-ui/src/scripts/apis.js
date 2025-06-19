@@ -17,6 +17,15 @@ function stop_task_queue() {
 }
 
 /**
+ * 执行指定任务
+ * @param task_name
+ * @return {Promise<axios.AxiosResponse<any>>}
+ */
+function run_task(task_name) {
+  return axiosplus.get(`/api/run_task/${task_name}`);
+}
+
+/**
  * 获取后端状态
  * @return {Promise<AxiosResponse<any, any>>}
  */
@@ -52,6 +61,7 @@ function switch_yolo_model(model_name) {
 export default {
   start_task_queue,
   stop_task_queue,
+  run_task,
   get_status,
   get_registered_tasks,
   disable_task,

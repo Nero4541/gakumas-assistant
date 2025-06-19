@@ -173,12 +173,14 @@ class AppProcessor:
             _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
             frame_bytes = encoded_frame.tobytes()
             ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
-            self._exec_middleware()
 
-    def _exec_middleware(self):
+    def exec_middleware(self):
         """注册处理中间件"""
+        flag: bool = True
         for func in self._middleware_registry:
-            func(self)
+            if func(self) is False:
+                flag = False
+        return flag
 
     def start(self):
         if not self.running or self._pause_capture_frame:
@@ -193,8 +195,11 @@ class AppProcessor:
             self.capture_thread.join(timeout=3)
             logger.success("Stopped inference thread.")
 
-    def exec_task(self):
-        self.task_queue.exec_task()
+    def exec_task(self, task_name: str = None):
+        if isinstance(self.app, Windows_App):
+            self.app.bring_to_front()
+            sleep(0.5)
+        return self.task_queue.exec_task(task_name)
 
 
 app = FastAPI()

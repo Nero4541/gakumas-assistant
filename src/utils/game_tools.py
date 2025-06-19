@@ -13,7 +13,8 @@ from src.utils.opencv_tools import check_status_detection, get_mask_contours, ex
 
 @logger.catch
 def get_current_location(boxes: Yolo_Results) -> str | None:
-    if boxes.exists_label(base_labels.start_menu_logo): return GamePageTypes.START_GAME
+    if boxes.exists_label(base_labels.start_menu_logo):
+        return GamePageTypes.START_GAME
     if boxes.exists_label(base_labels.general_loading1) or boxes.exists_label(
         base_labels.general_loading2): return GamePageTypes.LOADING
     # 映射标签 → 页面类型
@@ -52,7 +53,13 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
     if boxes.exists_all_labels(MAIN_UI_TABS):
         home_tab_bar = boxes.filter_by_labels(MAIN_UI_TABS)
         for item in home_tab_bar:
-            if check_status_detection(item.frame, upper_color=(13,255,255), lower_color=(2,209,255)):
+            if check_status_detection(
+                item.frame,
+                upper_color=(13,215,255),
+                lower_color=(5,149,205),
+                background_upper_color=(30,115,255),
+                background_lower_color=(0,35,225)
+            ):
                 return TAB_LABEL_TO_PAGE.get(item.label)
     elif boxes.exists_label(base_labels.current_location):
         current_location = boxes.filter_by_label(base_labels.current_location).first()

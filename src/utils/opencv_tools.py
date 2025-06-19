@@ -1,5 +1,5 @@
 import colorsys
-from typing import Tuple
+from typing import Tuple, Optional
 
 import cv2
 import numpy as np
@@ -97,10 +97,21 @@ def check_status_detection(
         threshold=0.15,
         upper_color: Tuple[int, int, int] = (22, 255, 255),
         lower_color: Tuple[int, int, int] = (8, 100, 100),
+        background_upper_color: Optional[Tuple[int, int, int]] = None,
+        background_lower_color: Optional[Tuple[int, int, int]] = None,
         black_background_threshold=0.3  # 黑色背景占比阈值
-):
+) -> bool:
     """
-    选中状态检测：默认屏蔽白色背景，黑色背景占比大时屏蔽黑色背景
+    选中状态检测：默认屏蔽白色背景，黑色背景占比大时屏蔽黑色背景，
+    可选屏蔽指定背景颜色（HSV范围）。
+    :param frame: 帧
+    :param threshold: 阈值
+    :param upper_color: HSV颜色上阈值
+    :param lower_color: HSV颜色下阈值
+    :param background_upper_color: HSV背景颜色上阈值
+    :param background_lower_color: HSV背景颜色下阈值
+    :param black_background_threshold: 大于阈值，将背景识别为黑色处理
+    :return:
     """
     if frame.size == 0:
         return False
@@ -119,30 +130,44 @@ def check_status_detection(
     # 黑色背景掩码
     black_mask = cv2.inRange(gray, 0, 30)
 
+    # 自定义背景掩码（若提供）
+    custom_bg_mask = None
+    if background_lower_color and background_upper_color:
+        background_lower_color = np.array(background_lower_color)
+        background_upper_color = np.array(background_upper_color)
+        custom_bg_mask = cv2.inRange(hsv, background_lower_color, background_upper_color)
+
     black_ratio = cv2.countNonZero(black_mask) / total_area
 
     if black_ratio > black_background_threshold:
-        # 屏蔽黑色背景，检测非黑色区域橙色
-        combined_mask = cv2.bitwise_and(
-            cv2.inRange(hsv, lower_color, upper_color),
-            cv2.bitwise_not(black_mask)
-        )
-        non_black_area = cv2.countNonZero(cv2.bitwise_not(black_mask))
+        mask = cv2.inRange(hsv, lower_color, upper_color)
+        non_black_mask = cv2.bitwise_not(black_mask)
+
+        # 若有自定义背景屏蔽色，也排除
+        if custom_bg_mask is not None:
+            non_black_mask = cv2.bitwise_and(non_black_mask, cv2.bitwise_not(custom_bg_mask))
+
+        combined_mask = cv2.bitwise_and(mask, non_black_mask)
+        non_black_area = cv2.countNonZero(non_black_mask)
         if non_black_area == 0:
             return False
         orange_ratio = cv2.countNonZero(combined_mask) / non_black_area
         return orange_ratio > threshold
     else:
-        # 默认屏蔽白色背景，检测非白色区域橙色
-        combined_mask = cv2.bitwise_and(
-            cv2.inRange(hsv, lower_color, upper_color),
-            cv2.bitwise_not(white_mask)
-        )
-        non_white_area = cv2.countNonZero(cv2.bitwise_not(white_mask))
+        mask = cv2.inRange(hsv, lower_color, upper_color)
+        non_white_mask = cv2.bitwise_not(white_mask)
+
+        # 若有自定义背景屏蔽色，也排除
+        if custom_bg_mask is not None:
+            non_white_mask = cv2.bitwise_and(non_white_mask, cv2.bitwise_not(custom_bg_mask))
+
+        combined_mask = cv2.bitwise_and(mask, non_white_mask)
+        non_white_area = cv2.countNonZero(non_white_mask)
         if non_white_area == 0:
             return False
         orange_ratio = cv2.countNonZero(combined_mask) / non_white_area
         return orange_ratio > threshold
+
 
 def extract_feature(image: np.ndarray) -> np.ndarray:
     # 简单处理方式：resize + flatten 成向量

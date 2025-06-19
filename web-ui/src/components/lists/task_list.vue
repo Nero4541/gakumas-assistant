@@ -1,4 +1,6 @@
 <script setup>
+import apis from "@/scripts/apis.js";
+
 const props = defineProps({
   data: Object
 })
@@ -31,9 +33,9 @@ const props = defineProps({
             <p>启用：{{ data.enable }}</p>
             <p>上次运行时间：{{ data.last_run_time > 0 ? data.last_run_time : "未运行" }}</p>
             <div class="task_tools_bar">
-              <v-btn>执行</v-btn>
-              <v-btn v-if="data.status" color="red">禁用</v-btn>
-              <v-btn v-else color="green">启用</v-btn>
+              <v-btn :disabled="data.status === 'RUNNING'" @click="apis.run_task(task_name)">执行</v-btn>
+              <v-btn v-if="data.status" color="red" @click="apis.disable_task(task_name)">禁用</v-btn>
+              <v-btn v-else color="green" @click="apis.enable_task(task_name)">启用</v-btn>
             </div>
           </v-expansion-panel-text>
         </v-expansion-panel>

@@ -31,6 +31,8 @@ def action__check_and_collect_rewards(app: "AppProcessor"):
     """
     height, width = app.latest_frame.shape[:2]
     items = app.latest_results.filter_by_label(base_labels.item)
+    if not items:
+        return
     items_cx, items_cy = items.get_COL()
     if items and (height // 2) < items_cy:
         app.app.click(items_cx, items_cy)

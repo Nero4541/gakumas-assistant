@@ -34,6 +34,11 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         processor.exec_task()
         return _api_return(True, "OK")
 
+    @app.get("/api/run_task/{task_name:str}")
+    def run_task(task_name: str):
+        processor.exec_task(task_name)
+        return _api_return(True, "OK")
+
     @app.get("/api/stop")
     def stop_task_queue():
         processor.task_queue.stop()

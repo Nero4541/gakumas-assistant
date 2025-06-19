@@ -8,10 +8,10 @@ from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.yolo_tools import get_modal
 
 
-def action__click_start_game(app: "app.AppProcessor", timeout=30):
+def action__click_start_game(app: "app.AppProcessor"):
     """动作：点击启动游戏"""
-    if app.game_utils.wait_for_label(labels.start_menu_click_continue_flag, timeout):
-        if not app.game_utils.click_on_label(labels.start_menu_click_continue_flag, timeout):
+    if app.game_utils.wait_for_label(labels.start_menu_click_continue_flag):
+        if not app.game_utils.click_on_label(labels.start_menu_click_continue_flag):
             raise TimeoutError("Failed to click on the continue flag within the timeout.")
     else:
         raise TimeoutError("Timeout waiting for continue flag in the start menu.")
