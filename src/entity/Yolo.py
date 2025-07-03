@@ -4,16 +4,12 @@ from typing import List, Tuple, Union, Optional, Dict
 import numpy as np
 from ultralytics import YOLO
 
+from src.core.ONNX import ONNXYoloResult
 from src.utils.number import median
 
 class YoloModelType:
     BASE_UI: str = 'BASE_UI'
     PRODUCER: str = 'PRODUCER'
-
-@dataclass
-class YoloModelMeta:
-    imgsz: Tuple[int, int]
-    names: Dict[int, str]
 
 @dataclass
 class Yolo_Box:
@@ -75,17 +71,25 @@ class Yolo_Results:
     """
     results: any
     boxes: list[Yolo_Box]
-    def __init__(self, yolo_results, model: YOLO, frame: np.array):
-        self.results = list(yolo_results)
+    def __init__(self, yolo_results, frame: np.array, model: YOLO = None):
         self.boxes = []
-        for result in self.results:
-            if not hasattr(result, 'boxes'):
-                continue
-            for box in result.boxes:
-                class_id = int(box.cls)
-                class_name = model.names[class_id]
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                self.boxes.append(Yolo_Box(x1, y1, x2, y2, class_name, frame[y1:y2, x1:x2]))
+        if isinstance(yolo_results, ONNXYoloResult):
+            self.results = yolo_results
+            for index, box in enumerate(yolo_results):
+                x, y, w, h = map(int, box)
+                label_id = int(yolo_results.class_ids[index])
+                label = yolo_results.class_name_mapping[label_id]
+                self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
+        else:
+            self.results = list(yolo_results)
+            for result in self.results:
+                if not hasattr(result, 'boxes'):
+                    continue
+                for box in result.boxes:
+                    class_id = int(box.cls)
+                    class_name = model.names[class_id]
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    self.boxes.append(Yolo_Box(x1, y1, x2, y2, class_name, frame[y1:y2, x1:x2]))
         self.boxes.sort(key=lambda box: (box.label, box.x, box.y))
 
     def __bool__(self):

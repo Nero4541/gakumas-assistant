@@ -7,7 +7,7 @@ from src.entity.Yolo import Yolo_Results, Yolo_Box
 from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
-from src.utils.ocr_instance import get_ocr
+from src.utils.ocr_instance import get_ocr, OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
 
 
@@ -16,7 +16,8 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
     if boxes.exists_label(base_labels.start_menu_logo):
         return GamePageTypes.START_GAME
     if boxes.exists_label(base_labels.general_loading1) or boxes.exists_label(
-        base_labels.general_loading2): return GamePageTypes.LOADING
+        base_labels.general_loading2):
+        return GamePageTypes.LOADING
     # 映射标签 → 页面类型
     TAB_LABEL_TO_PAGE = {
         base_labels.tab_communicate: GamePageTypes.MAIN_MENU__COMMUNICATE,
@@ -51,6 +52,7 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
     }
     MAIN_UI_TABS = list(TAB_LABEL_TO_PAGE.keys())[:5]
     if boxes.exists_all_labels(MAIN_UI_TABS):
+        logger.debug("Main UI mode")
         home_tab_bar = boxes.filter_by_labels(MAIN_UI_TABS)
         for item in home_tab_bar:
             if check_status_detection(
@@ -62,13 +64,17 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
             ):
                 return TAB_LABEL_TO_PAGE.get(item.label)
     elif boxes.exists_label(base_labels.current_location):
+        logger.debug("Current location mode")
         current_location = boxes.filter_by_label(base_labels.current_location).first()
         if current_location.frame is None or current_location.frame.size == 0:
+            logger.debug("Not current location frame")
             return GamePageTypes.UNKNOWN
-        location_text = get_ocr(current_location.frame)
-        if location_text is None:
+        ocr_service = OCRService()
+        ocr_result = ocr_service.ocr(current_location.frame)
+        if ocr_result is None:
+            logger.debug("Current location not text")
             return GamePageTypes.UNKNOWN
-        location_text = " ".join([ocr_item.text for ocr_item in location_text])
+        location_text = " ".join([ocr_item.text for ocr_item in ocr_result])
         for label in TAB_LABEL_TO_PAGE.keys():
             if label in location_text:
                 return TAB_LABEL_TO_PAGE.get(label)

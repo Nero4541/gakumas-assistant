@@ -155,7 +155,8 @@ class GameUtils:
         COUNT = 0
         while COUNT < timeout:
             buttons = ButtonList(self._app_processor.latest_results)
-            if button := buttons.get_button_by_text(text):
+            logger.debug(buttons)
+            if button := buttons.get_button_by_text(text, MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
                 return button
             sleep(1)
             COUNT += 1
@@ -175,7 +176,8 @@ class GameUtils:
                 value for name, value in vars(GamePageTypes).items()
                 if name.startswith("MAIN_MENU__")
             ]
-            if self._app_processor.game_status_manager.current_location in main_menu_items:
+            print(self.update_current_location())
+            if self.update_current_location() in main_menu_items:
                 self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(base_labels.tab_home).first())
                 self.wait_loading()
                 self.update_current_location()

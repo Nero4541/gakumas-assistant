@@ -19,6 +19,13 @@
    - 自动购买(未实现可配置购买内容)
  - 自动P卡
 
+## Develop
+### 安装环境
+```bash
+python3 -m pip install -r requirements.dev.txt
+```
+
+
 ## License
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.
 

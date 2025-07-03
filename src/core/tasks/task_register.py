@@ -12,21 +12,16 @@ from src.core.tasks.base_ui.start_game import (
     action__check_home_tab_exist
 )
 from src.entity.Game.Components.Button import Button, ButtonList
-from src.entity.Game.Components.CheckBox import CheckBox
-from src.entity.Game.Components.Contest import ContestList
 from src.entity.Game.Components.TabBar import TabBar
-from src.entity.Yolo import Yolo_Box
-from src.utils.game_tools import get_current_location, modal_body_extract_item_info
+from src.utils.game_tools import modal_body_extract_item_info
 from time import sleep
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
-from src.utils.ocr_instance import get_ocr, OCRService, OCR_ResultList
-from src.utils.opencv_tools import check_color_in_region
+from src.utils.ocr_instance import OCRService, OCR_ResultList
 from src.utils.string_tools import string_match, MatchConfig
-from src.utils.yolo_tools import get_modal
 
 if TYPE_CHECKING:
     from app import AppProcessor
@@ -60,7 +55,7 @@ def register_tasks(processor: "AppProcessor"):
             return True
         raise TimeoutError("Timeout waiting for modal to appear.")
 
-    @processor.register_task("dispatch_work", "派遣任务", 60)
+    @processor.register_task("dispatch_work", "派遣任务", 120)
     def _task__dispatch_work(app: "AppProcessor"):
         app.game_utils.go_home()
         app.game_utils.wait_loading()

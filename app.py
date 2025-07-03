@@ -11,6 +11,7 @@ from ultralytics import YOLO
 from fastapi import FastAPI
 from time import sleep
 
+from src.core.ONNX import YoloModelFromONNX
 from src.core.Android.app import Android_App
 from src.core.CLIP_services.services import CLIPServiceManager
 from src.core.Web.routers import register_routes
@@ -30,7 +31,7 @@ class AppProcessor:
     # 推理设备
     device: str
     # Yolo模型
-    model: YOLO
+    model: YoloModelFromONNX
     # 操作设备
     app: Android_App | Windows_App
     # 当前Yolo模型
@@ -79,11 +80,12 @@ class AppProcessor:
         def _init(model_type: str):
             logger.debug(f"Loading YOLO model {model_type}...")
             model_config = config.model_config.get(model_type)
-            model = YOLO(model_config.get("model_path")).to(self.device).eval()
-            model.conf = model_config.get("conf_threshold")
-            model.iou = model_config.get("iou_threshold")
-            model.half = torch.cuda.is_available()
-            logger.info(f"Model size: {model.overrides.get('imgsz', 640)}")
+            model = YoloModelFromONNX(model_config.get("model_path"))
+            # model = YOLO().to(self.device).eval()
+            # model.conf = model_config.get("conf_threshold")
+            # model.iou = model_config.get("iou_threshold")
+            # model.half = torch.cuda.is_available()
+            # logger.info(f"Model size: {model.overrides.get('imgsz', 640)}")
             return model
 
         if model_type in [YoloModelType.BASE_UI, YoloModelType.PRODUCER]:
@@ -154,8 +156,8 @@ class AppProcessor:
                 sleep(0.3)
                 continue
             self.latest_frame = frame
-            results = self.model(frame, imgsz=self.model.args['imgsz'] if hasattr(self.model, 'args') else 640, verbose=False, stream=True)
-            self.latest_results = Yolo_Results(results, self.model, self.latest_frame)
+            results = self.model(frame)
+            self.latest_results = Yolo_Results(results, frame)
             self._send_frame_to_clients()
 
     @logger.catch
@@ -169,16 +171,13 @@ class AppProcessor:
             _, encoded_frame = cv2.imencode('.jpg', self.latest_frame)
             frame_bytes = encoded_frame.tobytes()
             ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
-        for result in self.latest_results.results:
-            annotated_frame = result.plot(
-                conf=False,
-                line_width=max(1, int(height / 600)),
-                font_size=max(0.5, height / 1200),
-                pil=False
-            )
-            _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
-            frame_bytes = encoded_frame.tobytes()
-            ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
+        annotated_frame = self.latest_results.results.plot(
+            # line_width=max(1, int(height / 600)),
+            # font_size=max(0.5, height / 1200),
+        )
+        _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
+        frame_bytes = encoded_frame.tobytes()
+        ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 
     def exec_middleware(self):
         """注册处理中间件"""

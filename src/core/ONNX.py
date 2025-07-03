@@ -2,20 +2,23 @@ import ast
 import os
 import json
 from dataclasses import dataclass
-from typing import List, Tuple, Generator, Optional, Union
+from typing import List, Tuple, Generator, Optional, Union, Dict
 
 import numpy as np
 import cv2
 import onnxruntime as ort
 
-from entity.Yolo import YoloModelMeta
-
+@dataclass
+class ONNXYoloModelMeta:
+    imgsz: Tuple[int, int]
+    names: Dict[int, str]
 
 @dataclass
 class ONNXYoloResult:
     boxes: np.ndarray
     scores: np.ndarray
-    class_names: np.ndarray
+    class_ids: np.ndarray
+    class_name_mapping: Dict[int, str]
     image: np.ndarray
 
     def __init__(
@@ -23,25 +26,35 @@ class ONNXYoloResult:
             boxes: np.ndarray,
             scores: np.ndarray,
             class_ids: np.ndarray,
+            class_name_mapping: Dict[int, str],
             image: np.ndarray
     ) -> None:
         self.boxes: np.ndarray = boxes
         self.scores: np.ndarray = scores
-        self.class_names: np.ndarray = class_ids
+        self.class_ids: np.ndarray = class_ids
+        self.class_name_mapping = class_name_mapping
         self.image: np.ndarray = image
+
+    def __bool__(self):
+        return bool(self.boxes.size > 0)
+
+    def __len__(self):
+        return len(self.boxes)
+
+    def __iter__(self):
+        return iter(self.boxes)
 
     def plot(
             self,
             line_width: int = 2,
             font_size: float = 0.5,
-            conf: bool = True,
     ) -> np.ndarray:
         img = self.image.copy()
-        for box, score, cls in zip(self.boxes, self.scores, self.class_names):
+        for box, score, cls in zip(self.boxes, self.scores, self.class_ids):
             x, y, w, h = box.astype(int)
             color = (0, 255, 0)
             cv2.rectangle(img, (x, y), (x + w, y + h), color, line_width)
-            label = f"{cls}: {score:.2f}"
+            label = f"{self.class_name_mapping.get(cls, cls)}: {score:.2f}"
             # 计算标签文本的尺寸
             (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_size, 1)
             label_x = x
@@ -67,7 +80,7 @@ def _letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
 
 
 class YoloModelFromONNX:
-    _model_meta: YoloModelMeta
+    _model_meta: ONNXYoloModelMeta
     _engine: ort.InferenceSession
     _model_dir: str
     _model_file: str
@@ -91,7 +104,7 @@ class YoloModelFromONNX:
             meta = json.load(f)
         imgsz = json.loads(meta["imgsz"])
         names_mapping = ast.literal_eval(meta["names"])
-        self._model_meta = YoloModelMeta(imgsz, names_mapping)
+        self._model_meta = ONNXYoloModelMeta(imgsz, names_mapping)
 
     def _preprocess(self, img: np.ndarray) -> Tuple[np.ndarray, float, float, float]:
         """
@@ -132,9 +145,6 @@ class YoloModelFromONNX:
         class_ids = []
         # 计算边界框坐标的比例因子
         h, w, _ = input_image.shape
-        x_factor = w / self._model_meta.imgsz[0]
-        y_factor = h / self._model_meta.imgsz[1]
-        print(x_factor, y_factor)
         for i in range(rows):
             # 从当前行提取类别的得分
             classes_scores = outputs[i][4:]
@@ -166,14 +176,14 @@ class YoloModelFromONNX:
         nms_scores = np.array([scores[i] for i in indices])
         nms_class_ids = np.array([class_ids[i] for i in indices])
         class_names = np.array([self._model_meta.names.get(cls, cls) for cls in nms_class_ids])
-        print({
-            "nms_boxes": nms_boxes,
-            "nms_scores": nms_scores,
-            "nms_class_ids": nms_class_ids,
-            "class_names": class_names,
-        })
+        # print({
+        #     "nms_boxes": nms_boxes,
+        #     "nms_scores": nms_scores,
+        #     "nms_class_ids": nms_class_ids,
+        #     "class_names": class_names,
+        # })
 
-        return ONNXYoloResult(nms_boxes, nms_scores, nms_class_ids, input_image)
+        return ONNXYoloResult(nms_boxes, nms_scores, nms_class_ids, self._model_meta.names, input_image)
 
     def __call__(self, img: np.ndarray, conf_threshold: float = 0.7, iou_threshold: float = 0.5) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)

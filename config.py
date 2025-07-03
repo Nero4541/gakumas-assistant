@@ -13,12 +13,12 @@ debug_window_name = f"{window_name} yolo debug"
 
 model_config = {
     YoloModelType.BASE_UI: {
-        "model_path": "model/base_ui.pt",
+        "model_path": "model/base_ui.onnx",
         "conf_threshold": 0.5,
         "iou_threshold": 0.5
     },
     YoloModelType.PRODUCER: {
-        "model_path": "model/producer.pt",
+        "model_path": "model/producer.onnx",
         "conf_threshold": 0.5,
         "iou_threshold": 0.5
     },

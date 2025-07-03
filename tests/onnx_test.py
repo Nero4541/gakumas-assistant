@@ -142,10 +142,13 @@ img = cv2.imread("main_memu__tabbar2.png")
 # print(predictions)
 
 from src.core.ONNX import YoloModelFromONNX
+from src.entity.Yolo import Yolo_Results
 
 YoloModel = YoloModelFromONNX(model_path)
 res = YoloModel(img)
 print(res)
 cv2.imshow('image', img)
 cv2.imshow('plot', res.plot())
+print(Yolo_Results(res))
+
 cv2.waitKey(0)
