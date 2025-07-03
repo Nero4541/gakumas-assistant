@@ -15,7 +15,7 @@
         rel="noopener noreferrer"
         target="_blank"
       >
-        MIT License
+        GPLv3 License
       </a>
     </div>
   </v-footer>
