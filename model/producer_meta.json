@@ -1,0 +1,15 @@
+{
+    "description": "Ultralytics YOLO11n model trained on data.yaml",
+    "author": "Ultralytics",
+    "date": "2025-07-02T20:24:36.797612",
+    "version": "8.3.152",
+    "license": "AGPL-3.0 License (https://ultralytics.com/license)",
+    "docs": "https://docs.ultralytics.com",
+    "stride": "32",
+    "task": "detect",
+    "batch": "1",
+    "imgsz": "[640, 640]",
+    "names": "{0: 'Universal Options', 1: 'Dance', 2: 'Producer Challenge: Card Group', 3: 'Producer Challenge: P Manual', 4: 'Close Button', 5: 'Producer Challenge: Bonus Indicator', 6: 'Universal button', 7: 'Producer Challenge: Action Info', 8: 'Producer Challenge: Skip', 9: 'Universal Switch', 10: 'Skill Card: Trap', 11: 'Skill Card: Info', 12: 'Producer Challenge: Training: Score', 13: 'Special Item', 14: 'Producer Challenge: Vacation', 15: 'Back Button', 16: 'Visual', 17: 'Blank Slot', 18: 'Producer Challenge: Skill Card Enhancement', 19: 'Universal Tab Bar', 20: 'Current Location', 21: 'Universal Checkbox', 22: 'Fast Forward Button', 23: 'Universal Modal Header', 24: 'Universal Confirm button', 25: 'Producer Challenge: Target', 26: 'Producer Challenge: Stamina', 27: 'Universal Cancel button', 28: 'Producer Challenge: P Point', 29: 'P Drink', 30: 'Skip Button', 31: 'Producer Challenge: Recommend Action', 32: 'Vocal', 33: 'Universal Disable Button', 34: 'Producer Challenge: Progress', 35: 'General Item', 36: 'Producer Challenge: Skill Card Remove', 37: 'Card: Item Exchange', 38: 'Skill Card: Active', 39: 'Skill Card: Mental', 40: 'Producer Challenge: Action', 41: 'Producer Challenge: Training: Remaining Rounds'}",
+    "args": "{'batch': 1, 'half': False, 'dynamic': True, 'simplify': True, 'opset': None, 'nms': False}",
+    "channels": "3"
+}

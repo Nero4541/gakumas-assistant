@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Dict
 
 import numpy as np
 from ultralytics import YOLO
@@ -9,6 +9,11 @@ from src.utils.number import median
 class YoloModelType:
     BASE_UI: str = 'BASE_UI'
     PRODUCER: str = 'PRODUCER'
+
+@dataclass
+class YoloModelMeta:
+    imgsz: Tuple[int, int]
+    names: Dict[int, str]
 
 @dataclass
 class Yolo_Box:

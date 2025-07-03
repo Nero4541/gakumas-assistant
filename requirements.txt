@@ -3,6 +3,7 @@ torch
 torchvision
 torchaudio
 ultralytics
+onnxruntime-directml
 pyautogui
 loguru
 numpy

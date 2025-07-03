@@ -130,6 +130,9 @@ class AppProcessor:
 
     @staticmethod
     def _create_app_instance() -> Union[Android_App, Windows_App]:
+        """
+        创建App操作实例
+        """
         mode = config.mode.lower()
         if mode == 'phone':
             logger.debug("Initializing Android mode")
@@ -142,6 +145,9 @@ class AppProcessor:
         raise ValueError(f"Invalid mode: {config.mode}")
 
     def _capture_and_infer(self):
+        """
+        截图并推理
+        """
         while self.running and not self._pause_capture_frame:
             frame = self.app.capture()
             if frame is None or frame.size <= 0:
