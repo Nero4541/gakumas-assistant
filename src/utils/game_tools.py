@@ -7,7 +7,7 @@ from src.entity.Yolo import Yolo_Results, Yolo_Box
 from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
-from src.utils.ocr_instance import get_ocr, OCRService
+from src.utils.ocr_instance import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
 
 
@@ -74,7 +74,8 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
         if ocr_result is None:
             logger.debug("Current location not text")
             return GamePageTypes.UNKNOWN
-        location_text = " ".join([ocr_item.text for ocr_item in ocr_result])
+        location_text = "".join([ocr_item.text for ocr_item in ocr_result])
+        logger.debug(location_text)
         for label in TAB_LABEL_TO_PAGE.keys():
             if label in location_text:
                 return TAB_LABEL_TO_PAGE.get(label)

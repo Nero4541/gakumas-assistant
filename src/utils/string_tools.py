@@ -3,6 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+import unicodedata
 from rapidfuzz import fuzz
 
 
@@ -75,3 +76,10 @@ def string_match(source: List[str] | str, match: List[str] | str, config: MatchC
                 if match in text:
                     return MatchResult(status=True, result=match, threshold=100, config=config)
     return MatchResult(status=False, result=None, threshold=0, config=config)
+
+def fullwidth_to_halfwidth(text):
+    """从全角字符转换到到半角字符"""
+    halfwidth_text = ''.join(
+        [unicodedata.normalize('NFKC', char) for char in text]
+    )
+    return halfwidth_text

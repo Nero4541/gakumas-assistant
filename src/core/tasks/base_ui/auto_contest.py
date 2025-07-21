@@ -10,7 +10,7 @@ from src.utils.yolo_tools import get_modal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 def action__enter_contest_page(app: "AppProcessor"):
     """
@@ -21,8 +21,7 @@ def action__enter_contest_page(app: "AppProcessor"):
     app.game_utils.update_current_location(GamePageTypes.MAIN_MENU__CONTEST)
     sleep(2)
     app.game_utils.click_button("コンテスト")  # 点击进入竞技场功能
-    sleep(3)
-    app.game_utils.update_current_location(GamePageTypes.CONTEST_TAB.ARENA)
+    app.game_utils.wait_location_update(GamePageTypes.CONTEST_TAB.ARENA)
 
 def action__check_and_collect_rewards(app: "AppProcessor"):
     """
@@ -48,7 +47,8 @@ def action__loop_challenge_contest(app: "AppProcessor"):
     height, width = app.latest_frame.shape[:2]
     while True:
         contest = ContestList(app.latest_results, app.latest_frame)
-        if not contest or len(contest) >= 3:
+        logger.debug(contest)
+        if not contest or len(contest) != 3:
             logger.info("There is no contest.")
             break
         target = contest.get_combat_power_min()
@@ -99,17 +99,19 @@ def _finish_battle(app: "AppProcessor"):
     """
     COUNT, WAIT = 0, 15
     while COUNT < WAIT:
-        if app.latest_results.exists_label(base_labels.button):
+        buttons = ButtonList(app.latest_results)
+        if button := buttons.get_button_by_text("次へ"):
+            app.app.click_element(button)
             break
         app.app.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
         sleep(1)
         COUNT += 1
     if COUNT >= WAIT:
         raise TimeoutError("Waiting for the challenge to end timeout")
-    app.game_utils.click_button("次へ")
     app.game_utils.click_button("終了")
-    sleep(1)
-    if app.latest_results.exists_label(base_labels.modal_header):
-        modal = app.game_utils.wait_for_modal(modal_text.rate_reward, no_body=True)
-        app.app.click_element(modal.cancel_button)
-    app.game_utils.wait_loading()
+    while True:
+        if app.latest_results.exists_label(base_labels.back_btn):
+            return
+        if app.latest_results.exists_label(base_labels.modal_header):
+            modal = app.game_utils.wait_for_modal(modal_text.rate_reward, no_body=True)
+            app.app.click_element(modal.cancel_button)

@@ -135,19 +135,21 @@ class GameUtils:
                     sleep(0.3)
         raise TimeoutError("Waiting for a load timeout")
 
-    def click_button(self, text, timeout=10):
+    def click_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
         """
         点击指定文本按钮
+        :param match_config:
         :param text: 按钮文本
         :param timeout: 超时时间
         :return:
         """
         logger.debug(f"waiting click label: {text}")
-        self._app_processor.app.click_element(self.wait_button(text,timeout))
+        self._app_processor.app.click_element(self.wait_button(text,timeout, match_config))
 
-    def wait_button(self, text, timeout=10):
+    def wait_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
         """
         等待指定文本按钮
+        :param match_config:
         :param text: 按钮文本
         :param timeout: 超时时间
         :return:
@@ -156,7 +158,7 @@ class GameUtils:
         while COUNT < timeout:
             buttons = ButtonList(self._app_processor.latest_results)
             logger.debug(buttons)
-            if button := buttons.get_button_by_text(text, MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
+            if button := buttons.get_button_by_text(text, match_config):
                 return button
             sleep(1)
             COUNT += 1
@@ -176,7 +178,6 @@ class GameUtils:
                 value for name, value in vars(GamePageTypes).items()
                 if name.startswith("MAIN_MENU__")
             ]
-            print(self.update_current_location())
             if self.update_current_location() in main_menu_items:
                 self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(base_labels.tab_home).first())
                 self.wait_loading()
@@ -220,3 +221,21 @@ class GameUtils:
                 self._app_processor.game_status_manager.current_location = current_location
         if update: logger.debug(f"Current location: {self._app_processor.game_status_manager.current_location}")
         return self._app_processor.game_status_manager.current_location
+
+    def wait_location_update(self, target_location: str, timeout=10):
+        """
+        等待当前位置刷新
+        :param target_location: 目标位置
+        :param timeout: 超时时间
+        :return:
+        """
+        logger.debug(f"Wait for the location to be updated to {target_location}......")
+        COUNT = 0
+        while True:
+            if COUNT > timeout:
+                raise TimeoutError("Timeout for waiting for location update")
+            if self.update_current_location() == target_location:
+                return True
+            else:
+                COUNT += 1
+                sleep(1)

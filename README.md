@@ -25,7 +25,6 @@
 python3 -m pip install -r requirements.dev.txt
 ```
 
-
 ## License
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.
 

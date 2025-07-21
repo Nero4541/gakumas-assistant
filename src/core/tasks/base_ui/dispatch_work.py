@@ -7,7 +7,7 @@ from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
-from src.utils.ocr_instance import get_ocr
+from src.utils.ocr_instance import OCRService
 from src.utils.opencv_tools import check_color_in_region
 from src.utils.yolo_tools import get_modal
 
@@ -15,13 +15,13 @@ if TYPE_CHECKING:
     from app import AppProcessor
 
 MAX_WORKS = 2
+ocr_service = OCRService()
 
 def action__enter_dispatch_page(app: "AppProcessor"):
     """进入页面并收取历史派遣结果逻辑"""
     if not app.game_utils.wait_for_label(base_labels.home_dispatch_work):
         raise TimeoutError("Timeout waiting for [home:dispatch work] to appear.")
     app.app.click_element(app.latest_results.filter_by_label(base_labels.home_dispatch_work).first())
-    sleep(1)
     app.game_utils.wait_loading()
 
     count = 0
@@ -67,8 +67,8 @@ def _is_avatar_busy(avatar, full_frame):
 
     target_frame = full_frame[y1:y2, x1:x2]
 
-    ocr_result = get_ocr(target_frame)
-    return "お仕事中" in [ocr_obj.text for ocr_obj in ocr_result]
+    ocr_result = ocr_service.ocr(target_frame)
+    return "お仕事中" in "".join([ocr_obj.text for ocr_obj in ocr_result])
 
 def _is_avatar_guaranteed_success(avatar):
     """判断角色是否带有标志“好調：大成功確定”"""
@@ -102,7 +102,7 @@ def _select_work_duration(app: "AppProcessor"):
     y_end = min(frame_h, max(y_start + 1, y_end))
     frame = app.latest_frame[y_start:y_end, 0:frame_w]
 
-    ocr_results = get_ocr(frame)
+    ocr_results = ocr_service.ocr(frame)
     selects = ["4時間", "8時間", "12時間"]
     candidates = [
         Yolo_Box(

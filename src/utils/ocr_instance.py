@@ -1,31 +1,58 @@
 import re
+import threading
 from dataclasses import dataclass
 from typing import List
 
+import cv2
 import numpy as np
-import threading
-from paddleocr import PaddleOCR
+
+from src.entity.Yolo import Yolo_Box
 from src.utils.logger import logger
-from src.utils.number import median
+
+from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
+
+from src.utils.opencv_tools import letterbox
+from src.utils.string_tools import fullwidth_to_halfwidth
+
+
+class OCRLoader:
+    _instance = None
+    _lock = threading.Lock()      # 单例锁
+    _infer_lock = threading.Lock()  # 推理锁
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance.ocr = RapidOCR(
+                    params={
+                        # "EngineConfig.onnxruntime.use_dml": True,
+                        "Global.use_cls": False,
+
+                        "Det.engine_type": EngineType.ONNXRUNTIME,
+                        "Det.lang_type": LangDet.CH,
+                        "Det.model_type": ModelType.MOBILE,
+                        "Det.ocr_version": OCRVersion.PPOCRV5,
+
+                        "Rec.engine_type": EngineType.ONNXRUNTIME,
+                        "Rec.lang_type": LangRec.JAPAN,
+                        "Rec.model_type": ModelType.MOBILE,
+                    },
+                )
+        return cls._instance
+
+    def __call__(self, *args, **kwargs):
+        with self._infer_lock:
+            return self.ocr(*args, **kwargs)
 
 @dataclass
-class OCR_Result:
-    x: float
-    y: float
-    w: float
-    h: float
-    cx: float
-    cy: float
+class OCR_Result(Yolo_Box):
+
     text: str
     confidence: float
 
     def __init__(self, x, y, w, h, text, confidence):
-        self.x = x
-        self.y = y
-        self.w = w
-        self.h = h
-        self.cx = x + w / 2
-        self.cy = y + h / 2
+        super().__init__(x, y, w, h, None, None)
         self.text = text
         self.confidence = confidence
 
@@ -135,11 +162,10 @@ class OCR_ResultList:
 
     def calculate_confidence(self, current_line: List[OCR_Result]) -> float:
         """
-        计算合并行的信心值，可以根据需求修改
+        计算平均信心值
         :param current_line: 当前行的OCR结果列表
-        :return: 合并行的信心值
+        :return: 平均信心值
         """
-        # 计算信心值：这里可以选择平均值或最大值，或其它
         return sum(r.confidence for r in current_line) / len(current_line)  # 取平均信心值
 
     def exclude(self, exclude_list: List[OCR_Result]) -> 'OCR_ResultList':
@@ -171,40 +197,29 @@ class OCR_ResultList:
 
 
 class OCRService:
-    ocr_engine: PaddleOCR
+    ocr_engine: RapidOCR
     def __init__(self):
-        self.ocr_engine = PaddleOCR(
-            lang='japan',
-            # use_angle_cls=False,
-            show_log=False
-        )
+        self.ocr_engine = OCRLoader()
 
     @classmethod
-    def _quad_to_rect(cls, box):
-        """将四边形坐标转换为矩形框(x,y,width,height)"""
-        # 提取所有x和y坐标
-        xs = [p[0] for p in box]
-        ys = [p[1] for p in box]
-
-        # 计算最小外接矩形
-        x = min(xs)
-        y = min(ys)
-        w = max(xs) - x
-        h = max(ys) - y
-
-        return [round(x), round(y), round(w), round(h)]
-
-    @classmethod
-    def _map_result_to_ocr_result(cls, result):
-        if not result or not result[0]:
+    def _map_result_to_ocr_result(cls, result, ratio: float, dw: float, dh:float) -> List[OCR_Result]:
+        if result is None or result.boxes is None:
             return []
 
         temp = []
-        for res in result[0]:
+        for box, text, score in zip(result.boxes, result.txts, result.scores):
+            x, y, w, h = cv2.boundingRect(box.astype(np.int32))
+            x = (x - dw) / ratio
+            y = (y - dh) / ratio
+            w = w / ratio
+            h = h / ratio
             temp.append(OCR_Result(
-                *cls._quad_to_rect(res[0]),
-                text=res[1][0],
-                confidence=res[1][1]
+                x=int(x),
+                y=int(y),
+                w=int(w),
+                h=int(h),
+                text=fullwidth_to_halfwidth(text),
+                confidence=score
             ))
         return temp
 
@@ -212,50 +227,7 @@ class OCRService:
         if img.size == 0:
             logger.warning(f"Empty images or dimensions are illegal: {img.shape if img is not None else 'None'}")
             return []
-        result = self.ocr_engine.ocr(img, cls=False)
-        result = self._map_result_to_ocr_result(result)
+        img_letterbox, ratio, (dw, dh) = letterbox(img)
+        result = self.ocr_engine(img_letterbox, use_cls=False)
+        result = self._map_result_to_ocr_result(result, ratio, dw, dh)
         return OCR_ResultList(result)
-
-
-
-def get_ocr(img: np.array):
-    """
-        获取OCR接口实例
-    """
-
-    if img is None or img.shape[0] == 0 or img.shape[1] == 0:
-        logger.warning(f"Empty images or dimensions are illegal: {img.shape if img is not None else 'None'}")
-        return []
-
-    def _quad_to_rect(box):
-        """将四边形坐标转换为矩形框(x,y,width,height)"""
-        # 提取所有x和y坐标
-        xs = [p[0] for p in box]
-        ys = [p[1] for p in box]
-
-        # 计算最小外接矩形
-        x = min(xs)
-        y = min(ys)
-        w = max(xs) - x
-        h = max(ys) - y
-
-        return [round(x), round(y), round(w), round(h)]
-
-    loader = PaddleOCR(
-        lang='japan',
-        # use_angle_cls=False,
-        show_log=False
-    )
-    result = loader.ocr(img, cls=False)
-
-    if not result or not result[0]:
-        return []
-
-    temp = []
-    for res in result[0]:
-        temp.append(OCR_Result(
-            *_quad_to_rect(res[0]),
-            text=res[1][0],
-            confidence=res[1][1]
-        ))
-    return temp

@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import List, Tuple, Union, Optional, Dict
 
 import numpy as np
-from ultralytics import YOLO
-
 from src.core.ONNX import ONNXYoloResult
 from src.utils.number import median
 
@@ -27,16 +25,16 @@ class Yolo_Box:
     w: float
     h: float
     label: str
-    frame: np.ndarray
+    frame: np.ndarray | None
     cx: int
     cy: int
 
-    def __init__(self, x: float, y: float, w: float, h: float, label: str, frame: np.ndarray):
+    def __init__(self, x: float, y: float, w: float, h: float, label: str | None, frame: np.ndarray | None):
         self.x = x
         self.y = y
         self.w = w
         self.h = h
-        self.label = label
+        self.label = label if label else self.__class__.__name__
         self.frame = frame
         self.cx = int(median(self.x, self.w))
         self.cy = int(median(self.y, self.h))
@@ -71,7 +69,7 @@ class Yolo_Results:
     """
     results: any
     boxes: list[Yolo_Box]
-    def __init__(self, yolo_results, frame: np.array, model: YOLO = None):
+    def __init__(self, yolo_results, frame: np.array, model: 'YOLO' = None):
         self.boxes = []
         if isinstance(yolo_results, ONNXYoloResult):
             self.results = yolo_results

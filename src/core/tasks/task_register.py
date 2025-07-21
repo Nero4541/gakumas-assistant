@@ -9,7 +9,7 @@ from src.core.tasks.base_ui.get_gift import action__enter_gift_page, action__has
 from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
     handle__network_error_modal_boxes,
-    action__check_home_tab_exist
+    action__wait_enter_home
 )
 from src.entity.Game.Components.Button import Button, ButtonList
 from src.entity.Game.Components.TabBar import TabBar
@@ -24,18 +24,16 @@ from src.utils.ocr_instance import OCRService, OCR_ResultList
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 def register_tasks(processor: "AppProcessor"):
-    @processor.register_task("start_game", "启动游戏", 60)
+    @processor.register_task("start_game", "启动游戏", 120)
     def _task__start_game(app: "AppProcessor"):
         if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
             return
-        if action__click_start_game(app) is not False:
-            sleep(2)
-            app.game_utils.wait_loading()
-            handle__network_error_modal_boxes(app)
-        action__check_home_tab_exist(app)
+        action__click_start_game(app)
+        app.game_utils.wait_loading()
+        action__wait_enter_home(app)
         app.game_utils.update_current_location()
 
     @processor.register_task("get_expenditure", "获取活动费", 30)
@@ -78,7 +76,7 @@ def register_tasks(processor: "AppProcessor"):
         app.game_utils.wait_loading()
         app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
         # 领取每周礼包
-        app.game_utils.click_button("パック")
+        app.game_utils.click_button("パック", match_config=MatchConfig(use_fuzz=False))
         app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
         sleep(3)
         height, width = app.latest_frame.shape[:2]

@@ -1,12 +1,17 @@
 import ast
 import os
 import json
+import threading
 from dataclasses import dataclass
 from typing import List, Tuple, Generator, Optional, Union, Dict
 
 import numpy as np
 import cv2
 import onnxruntime as ort
+
+from src.utils.logger import logger
+from src.utils.opencv_tools import letterbox
+
 
 @dataclass
 class ONNXYoloModelMeta:
@@ -63,28 +68,13 @@ class ONNXYoloResult:
             cv2.putText(img, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, font_size, (0, 0, 0), 1, cv2.LINE_AA)
         return img
 
-
-def _letterbox(img, new_shape=(640, 640), color=(114, 114, 114)):
-    shape = img.shape[:2]  # current shape [height, width]
-    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
-    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # padding
-    dw /= 2  # divide padding into 2 sides
-    dh /= 2
-
-    img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-    return img, r, (dw, dh)
-
-
 class YoloModelFromONNX:
     _model_meta: ONNXYoloModelMeta
     _engine: ort.InferenceSession
     _model_dir: str
     _model_file: str
     _model_name: str
+    _model_input_name: str
     def __init__(self, model_path: str) -> None:
         """
         初始化ONNX模型
@@ -95,8 +85,9 @@ class YoloModelFromONNX:
         self._load_model_meta()
         self._engine = ort.InferenceSession(
             model_path,
-            providers=['CUDAExecutionProvider', 'DmlExecutionProvider', 'CPUExecutionProvider']
+            providers=['DmlExecutionProvider', 'CPUExecutionProvider']
         )
+        self._model_input_name = self._engine.get_inputs()[0].name
 
     def _load_model_meta(self):
         meta_path = os.path.join(self._model_dir, f"{self._model_name}_meta.json")
@@ -112,7 +103,7 @@ class YoloModelFromONNX:
         :param img: 图像
         :return:
         """
-        img_letterbox, ratio, (dw, dh) = _letterbox(img, self._model_meta.imgsz)
+        img_letterbox, ratio, (dw, dh) = letterbox(img, self._model_meta.imgsz)
         img_rgb = cv2.cvtColor(img_letterbox, cv2.COLOR_BGR2RGB)
         img_rgb = img_rgb.astype(np.float32) / 255.0
         img_rgb = img_rgb.transpose(2, 0, 1)
@@ -187,5 +178,40 @@ class YoloModelFromONNX:
 
     def __call__(self, img: np.ndarray, conf_threshold: float = 0.7, iou_threshold: float = 0.5) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)
-        outputs = self._engine.run(None, {"images": input_tensor})
+        outputs = self._engine.run(None, {self._model_input_name: input_tensor})
         return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh)
+
+class CLIPModelFromONNX:
+    session: ort.InferenceSession
+    _input_name: str
+    _lock: threading.Lock
+
+    def __init__(self, model_path: str=None):
+        if not model_path or not os.path.exists(model_path):
+            model_path = os.path.join(os.getcwd(), "model", "clip_visual.onnx")
+        self.session = ort.InferenceSession(model_path, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        self._input_name = self.session.get_inputs()[0].name
+        self._lock = threading.Lock()
+
+    def preprocess(self, image: np.ndarray) -> np.ndarray:
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_CUBIC)
+        # 标准化 (mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
+        mean = np.array([0.48145466, 0.4578275, 0.40821073]).reshape(1, 1, 3)
+        std = np.array([0.26862954, 0.26130258, 0.27577711]).reshape(1, 1, 3)
+        image = (image - mean) / std
+        image = np.transpose(image, (2, 0, 1))  # [HWC] -> [CHW]
+        return image[np.newaxis, :]
+
+    def forward(self, image: np.ndarray) -> np.ndarray:
+        input_tensor = self.preprocess(image)
+        self._lock.acquire()
+        try:
+            output = self.session.run(None, {self._input_name: input_tensor})
+        except Exception as e:
+            logger.error(e)
+        finally:
+            self._lock.release()
+        if output is None:
+            return None
+        return output[0]  # shape: [1, 512]

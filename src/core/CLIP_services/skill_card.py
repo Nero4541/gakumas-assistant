@@ -14,16 +14,16 @@ class SkillCardInfo:
     info: List[str]
 
 class SkillCardCLIP(CLIPTools):
-    def __init__(self):
+    def __init__(self, session):
         logger.info("Loading Skill Card CLIP Data......")
-        super().__init__("skill_card")
+        super().__init__(session, "skill_card")
 
 
-    def add_to_memory(self, image_frame: np.array, payload: SkillCardInfo, similarity_threshold = 0.97):
-        return super().add_to_memory(image_frame, payload, similarity_threshold)
+    def add_to_memory(self, image: np.array, payload: SkillCardInfo, similarity_threshold=0.9):
+        return super().add_to_memory(image, payload, similarity_threshold)
 
-    def retrieve(self, image_frame: np.array, similarity_threshold: float = 0.9) -> Optional[SkillCardInfo]:
-        result = super().retrieve(image_frame, similarity_threshold)
+    def retrieve(self, image: np.array, similarity_threshold: float = 0.9) -> Optional[SkillCardInfo]:
+        result = super().retrieve(image, similarity_threshold)
         if result is None:
             return None
         return result.payload

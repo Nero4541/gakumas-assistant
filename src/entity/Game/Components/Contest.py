@@ -7,9 +7,10 @@ import numpy as np
 
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
-from src.utils.ocr_instance import get_ocr, OCR_Result
+from src.utils.ocr_instance import OCRService, OCR_Result
 from src.constants import *
 
+ocr_service = OCRService()
 
 @dataclass
 class ContestItem(Yolo_Box):
@@ -19,7 +20,7 @@ class ContestItem(Yolo_Box):
 
     def __init__(self, x: float, y: float, w: float, h: float, label: str, frame: np.ndarray):
         super().__init__(x, y, w, h, label, frame)
-        ocr_result = get_ocr(frame)
+        ocr_result = ocr_service.ocr(frame)
         # logger.debug(f"ocr_result: {ocr_result}")
         # [OCR_Result(x=514, y=0, w=89, h=24, text='+139p+', confidence=0.8393095135688782), OCR_Result(x=30, y=32, w=104, h=23, text='総合力合計', confidence=0.999838650226593), OCR_Result(x=26, y=71, w=165, h=32, text='106980', confidence=0.9857919216156006), OCR_Result(x=20, y=128, w=80, h=22, text='ふ一ちや', confidence=0.8578659892082214)]
         self._parse_ocr_results(ocr_result)
@@ -60,7 +61,7 @@ class ContestList:
         self._start_y = results.filter_by_label(base_labels.button).get_y_max_element().first().h
         self._end_y = results.filter_by_label(base_labels.back_btn).first().y
         self.contest_area = frame[self._start_y:self._end_y, 0:self._width]
-        if not [res for res in get_ocr(self.contest_area) if "消費しました" in res.text]:
+        if not [res for res in ocr_service.ocr(self.contest_area) if "消費しました" in res.text]:
             self._get_contest_items()
 
     def __str__(self):
@@ -79,10 +80,17 @@ class ContestList:
         self.contests.append(ContestItem(x, y, w, h, f"contest_{len(self.contests) + 1}",frame))
 
     def _get_contest_items(self):
-        target_color = np.array([123,130,131])
-        mask = cv2.inRange(self.contest_area, target_color-20, target_color+20)
+        self.contests = []
+        hsv = cv2.cvtColor(self.contest_area, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, (90,10,120), (104,64,142))
+        # 闭运算连接碎块
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        # 膨胀扩大连通区域
+        mask = cv2.dilate(mask, kernel, iterations=1)
         # 查找轮廓
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        # result = self.contest_area.copy()
         # 依次提取每个区域
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
@@ -91,6 +99,9 @@ class ContestList:
             if w > self._width//2 and h > 30:
                 roi = self.contest_area[y:y+h, x:x+w]
                 self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
+                # cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
+        # cv2.imshow("Contours - Filtered", result)
+        # cv2.waitKey(0)
 
     def _get_valid_contests(self) -> List[ContestItem]:
         return [r for r in self.contests if r.combat_power is not None]

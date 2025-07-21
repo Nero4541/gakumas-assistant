@@ -6,16 +6,17 @@ import numpy as np
 
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.constants import *
-from src.utils.ocr_instance import get_ocr
+from src.utils.ocr_instance import OCRService
 from src.utils.string_tools import string_match, MatchConfig
 
+ocr_service = OCRService()
 
 @dataclass
 class Button(Yolo_Box):
     text: str | None
     def __init__(self, element: Yolo_Box, no_text = False):
         super().__init__(element.x, element.y, element.w, element.h, element.label, element.frame)
-        self.text = None if no_text else "".join([item.text for item in get_ocr(element.frame)])
+        self.text = None if no_text else "".join([item.text for item in ocr_service.ocr(element.frame)])
 
     def is_disabled(self):
         h, w = self.frame.shape[:2]

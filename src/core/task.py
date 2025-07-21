@@ -1,5 +1,5 @@
-import app
 import sys
+import traceback
 from dataclasses import dataclass
 from functools import partial
 from queue import Queue
@@ -65,7 +65,7 @@ class Task:
 
 
 class TaskQueue:
-    _app: "app.AppProcessor" = None
+    _app: "AppProcessor" = None
     _task_queue = Queue()
     _task_list = []
     _run_lock: Lock
@@ -162,7 +162,8 @@ class TaskQueue:
                 task.status = TaskStatus.SUCCESS
         except Exception as e:
             task.status = TaskStatus.FAILED
-            logger.error(f"Task '{task.name}' failed: {e}")
+            tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
+            logger.error(f"Task '{task.name}' failed:\n{tb_str}")
         finally:
             task.update_end_time()
             sys.settrace(None)

@@ -8,12 +8,11 @@ from src.utils.logger import logger
 from src.constants import *
 from typing import TYPE_CHECKING
 
-from src.utils.ocr_instance import get_ocr, OCRService, OCR_ResultList
+from src.utils.ocr_instance import OCRService, OCR_ResultList
 from src.utils.yolo_tools import get_modal
-from tests.ORB_test import handle_new_image
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 last_card_name = ""
 
@@ -27,13 +26,16 @@ def register_middlewares(processor: "AppProcessor"):
         return True
 
 
-    # @processor.register_middleware()
-    # @logger.catch
-    # def _handle_unexpected_modal(app: "AppProcessor"):
-    #     if app.latest_results.exists_label(base_labels.modal_header):
-    #         modal_header = get_modal(app.latest_results, app.latest_frame, True)
-    #         pass
-    #     return True
+    @processor.register_middleware()
+    @logger.catch
+    def _handle_unexpected_modal(app: "AppProcessor"):
+        if app.latest_results.exists_label(base_labels.modal_header):
+            modal_header = get_modal(app.latest_results, app.latest_frame, True)
+            if modal_text.data_update in modal_header.modal_title:
+                app.app.click_element(modal_header.cancel_button)
+                app.game_utils.wait_loading()
+                app.exec_task("start_game")
+        return True
 
     @processor.register_middleware()
     @logger.catch
@@ -58,5 +60,10 @@ def register_middlewares(processor: "AppProcessor"):
             card_info = OCR_ResultList([item for item in card_info if len(item.text) > 2])
             skill_card_types = [base_labels.skill_card, base_labels.skill_card__mental, base_labels.skill_card__active, base_labels.skill_card__trap]
 
-            if not app.clip_manager.skill_card_clip.add_to_memory(skill_card, SkillCardInfo(card_title, app.latest_results.filter_by_labels(skill_card_types).get_y_min_element().first().label.replace("Skill Card: ", ""), [item.text for item in card_info]), 0.97):
+            if not app.clip_manager.skill_card_clip.add_to_memory(skill_card, SkillCardInfo(card_title,
+                                                                                            app.latest_results.filter_by_labels(
+                                                                                                    skill_card_types).get_y_min_element().first().label.replace(
+                                                                                                    "Skill Card: ", ""),
+                                                                                            [item.text for item in
+                                                                                             card_info]), 0.97):
                 logger.debug(app.clip_manager.skill_card_clip.retrieve(skill_card))

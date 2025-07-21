@@ -1,19 +1,12 @@
-from dataclasses import dataclass
-from typing import Optional, List
-
-import clip
-import torch
 import os
 import pickle
 import numpy as np
-from PIL import Image
-import cv2
 
+from dataclasses import dataclass
+from typing import Optional, List
+
+from src.core.ONNX import CLIPModelFromONNX
 from src.utils.logger import logger
-
-# 载入 CLIP 模型和预处理器
-device = "cuda" if torch.cuda.is_available() else "cpu"
-model, preprocess = clip.load("ViT-B/32", device)
 
 @dataclass
 class CLIPMemoryItem:
@@ -28,6 +21,7 @@ class CLIPRetrieveData:
 class CLIPTools:
     _memory_file_path: str
     _memory: List[CLIPMemoryItem]
+    _engine: CLIPModelFromONNX
 
     def _load(self):
         """加载记忆"""
@@ -42,33 +36,33 @@ class CLIPTools:
         with open(self._memory_file_path, 'wb') as f:
             pickle.dump(self._memory, f)
 
-    @classmethod
-    def _cosine_similarity(cls, a, b):
+    @staticmethod
+    def _cosine_similarity(a: np.ndarray, b: np.ndarray):
         """计算余弦相似度"""
-        return (a @ b.T).squeeze(0) / (a.norm() * b.norm())
+        a = a.flatten()
+        b = b.flatten()
+        return (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))).item()
 
-    def __init__(self, save_file_name: str):
+    def __init__(self, model_session: CLIPModelFromONNX, save_file_name: str):
+        self._engine = model_session
         self._memory_file_path = os.path.join(os.getcwd(), "model/CLIP", save_file_name+".pkl")
         os.makedirs(os.path.dirname(self._memory_file_path), exist_ok=True)
         logger.info(f"Loading CLIP model from {self._memory_file_path}")
         self._load()
 
-    def add_to_memory(self, image_frame: np.array, payload, similarity_threshold: float = 0.9) -> bool:
+    def add_to_memory(self, image: np.array, payload, similarity_threshold: float = 0.9) -> bool:
         """
         添加图像到记忆中
-        :param image_frame: 图像
+        :param image: 图像
         :param payload: 载荷
         :param similarity_threshold:
         :return:
         """
-        pil_image = Image.fromarray(cv2.cvtColor(image_frame, cv2.COLOR_BGR2RGB))
 
-        # 预处理图像并获取图像特征向量
-        image_input = preprocess(pil_image).unsqueeze(0).to(device)
+        image_features = self._engine.forward(image)
 
-        # 获取图像特征向量
-        with torch.no_grad():
-            image_features = model.encode_image(image_input)
+        if image_features is None:
+            raise RuntimeError("Image features is None")
 
         # 检查图像是否已经在记忆库中
         for data in self._memory:
@@ -87,25 +81,24 @@ class CLIPTools:
         self._save()
         return True
 
-    def retrieve(self, image_frame: np.array, similarity_threshold: float = 0.9) -> Optional[CLIPRetrieveData]:
+    def retrieve(self, image: np.array, similarity_threshold: float = 0.9) -> Optional[CLIPRetrieveData]:
         """
         使用图像检索记忆
-        :param image_frame: 图像
+        :param image: 图像
         :param similarity_threshold: 阈值
         :return: CLIPRetrieveData | None
         """
-        # 获取图像特征向量
-        pil_image = Image.fromarray(cv2.cvtColor(image_frame, cv2.COLOR_BGR2RGB))
-        image_input = preprocess(pil_image).unsqueeze(0).to(device)
 
-        with torch.no_grad():
-            image_features = model.encode_image(image_input)
+        image_features = self._engine.forward(image)
+
+        if image_features is None:
+            raise RuntimeError("Image features is None")
 
         # 计算图像与记忆库中所有图像特征的相似度
         similarities = []
         for data in self._memory:
             similarity = self._cosine_similarity(image_features, data.features)
-            similarities.append(similarity.item())
+            similarities.append(float(similarity))
 
         # 按相似度排序并返回最匹配的载荷
         if similarities:

@@ -1,5 +1,5 @@
 import json
-import os.path
+import os
 
 import clip
 import onnx
@@ -24,15 +24,7 @@ for filename in os.listdir(BASE_PATH):
         # 写入元信息到 JSON 文件
         model = onnx.load(os.path.join(BASE_PATH, f"{model_name}.onnx"))
         meta = {p.key: p.value for p in model.metadata_props}
-        # meta_info = {
-        #     "model_name": model_name,
-        #     "imgsz": imgsz,
-        #     "conf_threshold": conf,
-        #     "iou_threshold": iou,
-        #     "export_format": "onnx"
-        # }
         print(meta)
-        print(model.graph.output)
         meta_path = os.path.join(BASE_PATH, f"{model_name}_meta.json")
         with open(meta_path, "w") as f:
             json.dump(meta, f, indent=4)
@@ -52,7 +44,7 @@ dummy_input = torch.randn(1, 3, 224, 224).to(device)  # CLIP 的标准输入尺�
 
 # 导出路径
 os.makedirs("onnx_models", exist_ok=True)
-output_path = "models/clip_visual.onnx"
+output_path = "../model/clip_visual.onnx"
 
 # 导出 ONNX 模型
 torch.onnx.export(
@@ -62,6 +54,6 @@ torch.onnx.export(
     input_names=["input"],           # ONNX 输入名
     output_names=["image_features"], # ONNX 输出名
     dynamic_axes={"input": {0: "batch_size"}, "image_features": {0: "batch_size"}},
-    opset_version=11,
+    # opset_version=11,
     do_constant_folding=True
 )

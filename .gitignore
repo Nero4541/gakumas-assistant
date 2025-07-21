@@ -1,6 +1,9 @@
 /.venv-3.10/
+/.venv-build/
 /.venv/
-/logs/
+*/logs/
+logs/
+/bulid/
 */node_modules/
 */dist/
 dist/

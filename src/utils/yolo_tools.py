@@ -6,10 +6,9 @@ import numpy as np
 from src.constants import *
 from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
-from src.entity.Yolo import Yolo_Box, Yolo_Results
+from src.entity.Yolo import Yolo_Results
 from src.utils.ocr_instance import OCRService
 from src.utils.logger import logger
-from src.utils.opencv_tools import gen_color_mask
 
 
 @logger.catch

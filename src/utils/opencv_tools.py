@@ -173,3 +173,17 @@ def extract_feature(image: np.ndarray) -> np.ndarray:
     # 简单处理方式：resize + flatten 成向量
     resized = cv2.resize(image, (64, 64))
     return resized.flatten().astype(np.float32).reshape(1, -1)
+
+def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,int]=(114, 114, 114)):
+    x, y = img.shape[:2]  # current shape [height, width]
+    r = min(new_shape[0] / x, new_shape[1] / y)
+    new_unpad = (int(round(y * r)), int(round(x * r)))
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # padding
+    dw /= 2  # divide padding into 2 sides
+    dh /= 2
+
+    img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+    top, bottom = int(round(dh)), int(round(dh))
+    left, right = int(round(dw)), int(round(dw))
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    return img, r, (dw, dh)
