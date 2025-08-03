@@ -71,7 +71,7 @@ class CLIPTools:
 
             # 如果相似度超过阈值，认为是重复图像
             if similarity > similarity_threshold:
-                logger.debug(f"Image already exists with similarity: {similarity.item():.4f}")
+                logger.debug(f"Image already exists with similarity: {similarity:.4f}")
                 return False
 
         # 如果图像未找到重复，添加到记忆库

@@ -1,11 +1,15 @@
+from copy import copy
+
 import cv2
 import numpy as np
 
 from src.core.CLIP_services.item import ItemInfo
-from src.core.tasks.base_ui.auto_contest import action__enter_contest_page, action__check_and_collect_rewards, \
+from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
-from src.core.tasks.base_ui.dispatch_work import action__enter_dispatch_page, action__dispatch_all_available_work
-from src.core.tasks.base_ui.get_gift import action__enter_gift_page, action__has_gift_items, action__collect_all_gifts
+from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
+from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
+from src.core.tasks.base_ui.goto_pages import goto__get_expenditure, goto__work_dispatch_page, goto__gift_page, \
+    goto__shop_page, goto__contest_page, goto__claim_task_rewards_page
 from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
     handle__network_error_modal_boxes,
@@ -38,11 +42,7 @@ def register_tasks(processor: "AppProcessor"):
 
     @processor.register_task("get_expenditure", "获取活动费", 30)
     def _task__get_expenditure(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        if not app.game_utils.wait_for_label(base_labels.home_get_expenditure):
-            raise TimeoutError("Timeout waiting for [home:expenditure] to appear.")
-        app.app.click_element(app.latest_results.filter_by_label(base_labels.home_get_expenditure).first())
+        goto__get_expenditure(app)
         sleep(3)
         if modal := app.game_utils.wait_for_modal(modal_text.expenditure, no_body=True, timeout=10):
             app.app.click_element(modal.cancel_button)
@@ -54,27 +54,20 @@ def register_tasks(processor: "AppProcessor"):
         raise TimeoutError("Timeout waiting for modal to appear.")
 
     @processor.register_task("dispatch_work", "派遣任务", 120)
-    def _task__dispatch_work(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        action__enter_dispatch_page(app)
+    def _task__work_dispatch(app: "AppProcessor"):
+        goto__work_dispatch_page(app)
+        handle__work_dispatch_results(app)
         action__dispatch_all_available_work(app)
 
     @processor.register_task("get_gift", "获取礼物/邮箱")
     def _task__get_gift(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        action__enter_gift_page(app)
+        goto__gift_page(app)
         if action__has_gift_items(app):
             action__collect_all_gifts(app)
 
     @processor.register_task("automated_purchase", "自动每日交换")
     def _task__automated_purchase(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        app.game_utils.click_on_label(base_labels.home_shop_btn)
-        app.game_utils.wait_loading()
-        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+        goto__shop_page(app)
         # 领取每周礼包
         app.game_utils.click_button("パック", match_config=MatchConfig(use_fuzz=False))
         app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
@@ -107,9 +100,11 @@ def register_tasks(processor: "AppProcessor"):
             item_commodity = app.latest_results.filter_by_labels([base_labels.item,base_labels.card__commodity])
             item_commodity_group = item_commodity.find_containing_groups(base_labels.card__commodity, [base_labels.item])
             scroll_x, scroll_y = item_commodity.get_COL()
+            logger.debug(f"item numbers: {len(item_commodity_group)}")
             # 循环每一个物品
-            for index, result in enumerate(item_commodity_group):
-                item = result.filter_by_label(base_labels.item).first()
+            for index, item_boxe in enumerate(item_commodity_group):
+                logger.debug(f"index: {index}")
+                item = item_boxe.filter_by_label(base_labels.item).first()
                 # 跳过无法交换的物品
                 if ocr_service.ocr(item.frame).search("交換済み"):
                     continue
@@ -117,18 +112,20 @@ def register_tasks(processor: "AppProcessor"):
                 if clip_result := app.clip_manager.item_clip.retrieve(item.frame, 0.97):
                     # 在购买列表中
                     if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
-                        app.app.click_element(result)
+                        app.app.click_element(item_boxe)
                         modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
                         app.app.click_element(modal.confirm_button)
                     current_list.append(clip_result.name)
                 # 不在记忆中
                 else:
-                    app.app.click_element(result)
+                    # 点击物品
+                    app.app.click_element(item_boxe)
                     modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
-                    yolo_result_item = item.frame
+                    yolo_result_item = copy(item.frame)
                     # 截取物品和物品信息
                     item, item_info = modal_body_extract_item_info(modal.modal_body)
                     ocr_results = ocr_service.ocr(item_info)
+                    logger.debug(ocr_results)
                     ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
                     item_name = ocr_results.get_y_min()
                     item_info = ocr_results.exclude([item_name])
@@ -158,17 +155,13 @@ def register_tasks(processor: "AppProcessor"):
 
     @processor.register_task("automated_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        action__enter_contest_page(app)
+        goto__contest_page(app)
         action__check_and_collect_rewards(app)
         action__loop_challenge_contest(app)
 
     @processor.register_task("claim_task_rewards", "领取任务奖励")
     def _task__claim_task_rewards(app: "AppProcessor"):
-        app.game_utils.go_home()
-        app.game_utils.wait_loading()
-        app.game_utils.click_on_label(base_labels.home_daily_task)
+        goto__claim_task_rewards_page(app)
         app.game_utils.wait_for_label(base_labels.tab_bar)
         tab_bar = TabBar(app.latest_results.filter_by_label(base_labels.tab_bar).first())
         logger.debug(tab_bar)

@@ -46,6 +46,13 @@ dummy_input = torch.randn(1, 3, 224, 224).to(device)  # CLIP 的标准输入尺�
 os.makedirs("onnx_models", exist_ok=True)
 output_path = "../model/clip_visual.onnx"
 
+# 获取模型参数
+model_params = {}
+for name, param in visual_model.named_parameters():
+    model_params[name] = param.shape
+
+print(model_params)
+
 # 导出 ONNX 模型
 torch.onnx.export(
     visual_model,                    # CLIP 的视觉子模块

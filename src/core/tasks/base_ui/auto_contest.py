@@ -6,22 +6,11 @@ from src.entity.Game.Components.Contest import ContestList
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
-from src.utils.yolo_tools import get_modal
+from src.utils.game_tools import get_modal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
-
-def action__enter_contest_page(app: "AppProcessor"):
-    """
-    进入竞技场页面流程。
-    包括点击主界面竞技场 Tab 和内部按钮。
-    """
-    app.game_utils.click_on_label(base_labels.tab_contest)
-    app.game_utils.update_current_location(GamePageTypes.MAIN_MENU__CONTEST)
-    sleep(2)
-    app.game_utils.click_button("コンテスト")  # 点击进入竞技场功能
-    app.game_utils.wait_location_update(GamePageTypes.CONTEST_TAB.ARENA)
 
 def action__check_and_collect_rewards(app: "AppProcessor"):
     """
@@ -46,8 +35,13 @@ def action__loop_challenge_contest(app: "AppProcessor"):
     """
     height, width = app.latest_frame.shape[:2]
     while True:
-        contest = ContestList(app.latest_results, app.latest_frame)
-        logger.debug(contest)
+        contest: ContestList | None = None
+        for i in range(3):
+            contest = ContestList(app.latest_results, app.latest_frame)
+            logger.debug(contest)
+            if contest and len(contest) == 3:
+                break
+            sleep(1)
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")
             break

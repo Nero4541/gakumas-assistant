@@ -12,9 +12,12 @@ def gen_color_mask(img, lower_color, upper_color):
     mask = cv2.inRange(hsv_img, lower_color, upper_color)
     return mask
 
-def get_mask_contours(img, lower_color, upper_color):
+def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3,3), iterations=1):
     """从图像中提取指定颜色范围的轮廓"""
     mask = gen_color_mask(img, lower_color, upper_color)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    mask = cv2.dilate(mask, kernel, iterations=iterations)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
 
@@ -79,7 +82,7 @@ def check_color_in_region(
         threshold=1
 ):
     """
-    检查图像某区域是否存在指定 RGB 范围的颜色
+    检查图像某区域是否存在指定范围的颜色
     """
     if frame.size == 0:
         return False
@@ -167,12 +170,6 @@ def check_status_detection(
             return False
         orange_ratio = cv2.countNonZero(combined_mask) / non_white_area
         return orange_ratio > threshold
-
-
-def extract_feature(image: np.ndarray) -> np.ndarray:
-    # 简单处理方式：resize + flatten 成向量
-    resized = cv2.resize(image, (64, 64))
-    return resized.flatten().astype(np.float32).reshape(1, -1)
 
 def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,int]=(114, 114, 114)):
     x, y = img.shape[:2]  # current shape [height, width]

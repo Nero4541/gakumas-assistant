@@ -5,8 +5,6 @@ import numpy as np
 from ultralytics import YOLO
 from ctypes import windll
 import win32gui
-# from paddleocr import PaddleOCR
-from src.entity.Yolo import Yolo_Box
 
 # 目标窗口名
 window_name = "gakumas"
@@ -38,12 +36,10 @@ def capture_window(window_name):
 
 # 初始化模型
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-# device = "cpu"
 print("device:", device)
-model = YOLO('../model/producer.pt').to(device).eval()
+model = YOLO('../model/base_ui.pt').to(device).eval()
 model_imgsz = model.args['imgsz'] if hasattr(model, 'args') else 640
 print(f"模型输入尺寸: {model_imgsz}")
-# ocr = PaddleOCR(lang='japan', debug=False, show_log=False, use_angle_cls=True)
 
 # 设置模型参数，提高推理精度和速度
 model.conf = 0.5  # 置信度阈值
@@ -70,18 +66,6 @@ try:
             if len(result.boxes) == 0:
                 cv2.imshow(debug_window_name, frame)
                 continue
-
-            boxs = []
-            for box in result.boxes:
-                class_id = int(box.cls)
-                class_name = model.names[class_id]
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                boxs.append(Yolo_Box(x1, y1, x2, y2, class_name, frame[y1:y2, x1:x2]))
-            # print(boxs)
-                # if class_name in ["Universal Confirm button", "Universal Cancel button", "Universal button", "Universal disable button", "Current location"]:
-                #     ocr_result = ocr.ocr(frame_box, cls=True)
-                #     print(ocr_result)
-
             # 绘制结果
             annotated_frame = result.plot(
                 conf=False,

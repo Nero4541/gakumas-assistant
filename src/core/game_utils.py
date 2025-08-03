@@ -4,11 +4,10 @@ from typing import TYPE_CHECKING, Optional
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.utils.game_tools import get_current_location
+from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
 from src.constants import *
 from src.utils.string_tools import string_match, MatchConfig
-from src.utils.yolo_tools import get_modal
 
 if TYPE_CHECKING:
     from app import AppProcessor

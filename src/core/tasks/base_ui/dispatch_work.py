@@ -9,7 +9,7 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 from src.utils.ocr_instance import OCRService
 from src.utils.opencv_tools import check_color_in_region
-from src.utils.yolo_tools import get_modal
+from src.utils.game_tools import get_modal
 
 if TYPE_CHECKING:
     from app import AppProcessor
@@ -17,13 +17,8 @@ if TYPE_CHECKING:
 MAX_WORKS = 2
 ocr_service = OCRService()
 
-def action__enter_dispatch_page(app: "AppProcessor"):
-    """进入页面并收取历史派遣结果逻辑"""
-    if not app.game_utils.wait_for_label(base_labels.home_dispatch_work):
-        raise TimeoutError("Timeout waiting for [home:dispatch work] to appear.")
-    app.app.click_element(app.latest_results.filter_by_label(base_labels.home_dispatch_work).first())
-    app.game_utils.wait_loading()
-
+def handle__work_dispatch_results(app: "AppProcessor"):
+    """处理任务派遣结果"""
     count = 0
 
     while count < MAX_WORKS + 2:

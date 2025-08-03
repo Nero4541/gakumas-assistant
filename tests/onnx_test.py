@@ -1,14 +1,17 @@
-import ast
+# import ast
+# import os
+# import json
+# from dataclasses import dataclass
+# from typing import List, Tuple, Generator, Optional, Union
+#
+# import numpy as np
+# import cv2
+# import onnxruntime as ort
 import os
-import json
-from dataclasses import dataclass
-from typing import List, Tuple, Generator, Optional, Union
 
-import numpy as np
 import cv2
-import onnxruntime as ort
 
-model_path = "../model/base_ui.onnx"
+# model_path = "../model/base_ui.onnx"
 
 # engine: ort.InferenceSession = ort.InferenceSession(
 #     model_path,
@@ -29,7 +32,7 @@ model_path = "../model/base_ui.onnx"
 # print(meta)
 # names_mapping = ast.literal_eval(meta["names"])
 # img_input_size = 640
-img = cv2.imread("main_memu__tabbar2.png")
+# img = cv2.imread("main_memu__tabbar2.png")
 
 # def preprocess(img: np.ndarray):
 #     """
@@ -141,14 +144,23 @@ img = cv2.imread("main_memu__tabbar2.png")
 # predictions = postprocess(img, outputs, 0.7)
 # print(predictions)
 
-from src.core.ONNX import YoloModelFromONNX
-from src.entity.Yolo import Yolo_Results
+# from src.core.ONNX import YoloModelFromONNX
+# from src.entity.Yolo import Yolo_Results
+#
+# YoloModel = YoloModelFromONNX(model_path)
+# res = YoloModel(img)
+# print(res)
+# cv2.imshow('image', img)
+# cv2.imshow('plot', res.plot())
+# print(Yolo_Results(res))
+#
+# cv2.waitKey(0)
 
-YoloModel = YoloModelFromONNX(model_path)
-res = YoloModel(img)
-print(res)
-cv2.imshow('image', img)
-cv2.imshow('plot', res.plot())
-print(Yolo_Results(res))
-
-cv2.waitKey(0)
+from src.core.ONNX import CLIPModelFromONNX
+clip = CLIPModelFromONNX("../model/clip_visual.onnx")
+base_path = os.path.join(os.getcwd(), "button_disabled_test")
+for filename in os.listdir(base_path):
+    if filename.endswith(".png"):
+        img = cv2.imread(os.path.join(base_path, filename))
+        result = clip.forward(img)
+        print(result)

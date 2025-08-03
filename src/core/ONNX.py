@@ -160,21 +160,34 @@ class YoloModelFromONNX:
                 scores.append(max_score)
                 boxes.append([left, top, width, height])
 
-        # 应用NMS
-        indices = cv2.dnn.NMSBoxes(boxes, scores, conf_threshold, iou_threshold)
+        nms_boxes = []
+        nms_scores = []
+        nms_class_ids = []
 
-        nms_boxes = np.array([boxes[i] for i in indices])
-        nms_scores = np.array([scores[i] for i in indices])
-        nms_class_ids = np.array([class_ids[i] for i in indices])
-        class_names = np.array([self._model_meta.names.get(cls, cls) for cls in nms_class_ids])
-        # print({
-        #     "nms_boxes": nms_boxes,
-        #     "nms_scores": nms_scores,
-        #     "nms_class_ids": nms_class_ids,
-        #     "class_names": class_names,
-        # })
+        # 获取所有类别的唯一类别 ID
+        unique_class_ids = np.unique(class_ids)
 
-        return ONNXYoloResult(nms_boxes, nms_scores, nms_class_ids, self._model_meta.names, input_image)
+        for class_id in unique_class_ids:
+            # 获取当前类别的所有框、分数和类别ID
+            class_boxes = [boxes[i] for i in range(len(boxes)) if class_ids[i] == class_id]
+            class_scores = [scores[i] for i in range(len(scores)) if class_ids[i] == class_id]
+            class_class_ids = [class_ids[i] for i in range(len(class_ids)) if class_ids[i] == class_id]
+
+            # 应用 NMS
+            indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, conf_threshold, iou_threshold)
+
+            # 保存当前类别的 NMS 结果
+            nms_boxes.extend([class_boxes[i] for i in indices])
+            nms_scores.extend([class_scores[i] for i in indices])
+            nms_class_ids.extend([class_class_ids[i] for i in indices])
+
+        return ONNXYoloResult(
+            np.array(nms_boxes),
+            np.array(nms_scores),
+            np.array(nms_class_ids),
+            self._model_meta.names,
+            input_image
+        )
 
     def __call__(self, img: np.ndarray, conf_threshold: float = 0.7, iou_threshold: float = 0.5) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)
@@ -189,29 +202,29 @@ class CLIPModelFromONNX:
     def __init__(self, model_path: str=None):
         if not model_path or not os.path.exists(model_path):
             model_path = os.path.join(os.getcwd(), "model", "clip_visual.onnx")
-        self.session = ort.InferenceSession(model_path, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_CUBIC)
+        image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_LINEAR)
         # 标准化 (mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
         mean = np.array([0.48145466, 0.4578275, 0.40821073]).reshape(1, 1, 3)
         std = np.array([0.26862954, 0.26130258, 0.27577711]).reshape(1, 1, 3)
         image = (image - mean) / std
         image = np.transpose(image, (2, 0, 1))  # [HWC] -> [CHW]
+        image = image.astype(np.float32)  # 转换为 float32 类型
         return image[np.newaxis, :]
 
-    def forward(self, image: np.ndarray) -> np.ndarray:
+    def forward(self, image: np.ndarray) -> np.ndarray | None:
         input_tensor = self.preprocess(image)
-        self._lock.acquire()
-        try:
-            output = self.session.run(None, {self._input_name: input_tensor})
-        except Exception as e:
-            logger.error(e)
-        finally:
-            self._lock.release()
-        if output is None:
-            return None
-        return output[0]  # shape: [1, 512]
+        with self._lock:
+            output = None
+            try:
+                output = self.session.run(None, {self._input_name: input_tensor})
+            except Exception as e:
+                logger.error(e)
+            if output:
+                return output[0]
+        return None

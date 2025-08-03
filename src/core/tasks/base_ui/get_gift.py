@@ -4,21 +4,11 @@ from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
-from src.utils.yolo_tools import get_modal
+from src.utils.game_tools import get_modal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app import AppProcessor
-
-def action__enter_gift_page(app: "AppProcessor"):
-    """
-    进入首页的礼物界面，若按钮不存在则抛出超时异常。
-    """
-    if not app.game_utils.wait_for_label(base_labels.home_gift_btn):
-        raise TimeoutError("Timeout waiting for [home:gift] to appear.")
-    app.app.click_element(app.latest_results.filter_by_label(base_labels.home_gift_btn).first())
-    app.game_utils.update_current_location(GamePageTypes.HOME_TAB.GIFT)
-    sleep(3)
 
 def action__has_gift_items(app: "AppProcessor") -> bool:
     """

@@ -5,7 +5,7 @@ from time import sleep
 from src.constants import *
 from src.constants.base_ui import labels
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.utils.yolo_tools import get_modal
+from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -26,11 +26,11 @@ def handle__network_error_modal_boxes(app: "AppProcessor"):
         modal = get_modal(app.latest_results, app.latest_frame)
         if modal_text.connection_error in modal.modal_title:
             # Token失效
-            if modal_text.ConnectionError_Body.Token_Fail in modal.modal_body:
+            if str(modal_text.ConnectionError_Body.Token_Fail) in modal.modal_body:
                 app.app.click_element(modal.cancel_button)
                 action__click_start_game(app)
             # 连接超时
-            elif modal_text.ConnectionError_Body.Timeout in modal.modal_body:
+            elif str(modal_text.ConnectionError_Body.Timeout) in modal.modal_body:
                 app.app.click_element(modal.confirm_button)
         # 下载新数据
         elif modal_text.data_download in modal.modal_title:

@@ -3,13 +3,12 @@ import numpy as np
 
 from src.core.CLIP_services.skill_card import SkillCardInfo
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.utils.game_tools import extract_skill_card_and_info, get_current_location
+from src.utils.game_tools import extract_skill_card_and_info, get_current_location, get_modal
 from src.utils.logger import logger
 from src.constants import *
 from typing import TYPE_CHECKING
 
 from src.utils.ocr_instance import OCRService, OCR_ResultList
-from src.utils.yolo_tools import get_modal
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
