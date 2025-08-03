@@ -207,15 +207,25 @@ class CLIPModelFromONNX:
         self._lock = threading.Lock()
 
     def preprocess(self, image: np.ndarray) -> np.ndarray:
+
+        def _resize(image: np.ndarray, size: int = 224) -> np.ndarray:
+            h, w = image.shape[:2]
+            scale = size / min(h, w)
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+            # 中心裁剪
+            top = (new_h - size) // 2
+            left = (new_w - size) // 2
+            return image[top:top+size, left:left+size]
+
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, (224, 224), interpolation=cv2.INTER_LINEAR)
-        # 标准化 (mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
+        image = _resize(image, 224)
+        image = image.astype(np.float32) / 255.0
         mean = np.array([0.48145466, 0.4578275, 0.40821073]).reshape(1, 1, 3)
         std = np.array([0.26862954, 0.26130258, 0.27577711]).reshape(1, 1, 3)
         image = (image - mean) / std
         image = np.transpose(image, (2, 0, 1))  # [HWC] -> [CHW]
-        image = image.astype(np.float32)  # 转换为 float32 类型
-        return image[np.newaxis, :]
+        return image[np.newaxis, :].astype(np.float32)
 
     def forward(self, image: np.ndarray) -> np.ndarray | None:
         input_tensor = self.preprocess(image)
