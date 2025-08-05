@@ -69,14 +69,14 @@ class Yolo_Results:
     """
     results: any
     boxes: list[Yolo_Box]
-    def __init__(self, yolo_results, frame: np.array, model: 'YOLO' = None):
+    def __init__(self, yolo_results, frame: np.array, model = None):
         self.boxes = []
         if isinstance(yolo_results, ONNXYoloResult):
             self.results = yolo_results
             for index, box in enumerate(yolo_results):
                 x, y, w, h = map(int, box)
                 label_id = int(yolo_results.class_ids[index])
-                label = yolo_results.class_name_mapping[label_id]
+                label = yolo_results.model_mata.names[label_id]
                 self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
         else:
             self.results = list(yolo_results)
@@ -88,7 +88,7 @@ class Yolo_Results:
                     class_name = model.names[class_id]
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     self.boxes.append(Yolo_Box(x1, y1, x2, y2, class_name, frame[y1:y2, x1:x2]))
-        self.boxes.sort(key=lambda box: (box.label, box.x, box.y))
+        self.sort_boxes()
 
     def __bool__(self):
         return bool(self.boxes)
@@ -101,6 +101,29 @@ class Yolo_Results:
 
     def __getitem__(self, index):
         return self.from_boxes(self.boxes[index])
+
+    def sort_boxes(self, vertical_thresh: int = 20):
+        """
+        从左上到右下对 boxes 排序。
+        vertical_thresh: 两个框的中心点 y 坐标差异小于该值，则认为在同一行。
+        """
+        # 先按 y 升序粗排（先上后下）
+        sorted_boxes = sorted(self.boxes, key=lambda b: b.cy)
+        # 分行：把 boxes 分为多行，每行内再按 x 排序
+        lines = []
+        current_line = []
+        last_cy = None
+        for box in sorted_boxes:
+            if last_cy is None or abs(box.cy - last_cy) <= vertical_thresh:
+                current_line.append(box)
+            else:
+                lines.append(sorted(current_line, key=lambda b: b.cx))
+                current_line = [box]
+            last_cy = box.cy
+        if current_line:
+            lines.append(sorted(current_line, key=lambda b: b.cx))
+        # 扁平化行列表
+        self.boxes = [box for line in lines for box in line]
 
     @classmethod
     def from_boxes(cls, boxes: List[Yolo_Box]) -> "Yolo_Results":
@@ -342,13 +365,12 @@ class Yolo_Results:
 
         return grouped
 
-
-
     def find_containing_groups(
             self,
             container_label: str,
             include_labels: Union[str, List[str]],
-            relation: str = "all"
+            relation: str = "all",
+            contain_threshold: float = 0.9
     ) -> List["Yolo_Results"]:
         """
         查找包含其他框的主框组合（如容器+子组件）。
@@ -357,12 +379,30 @@ class Yolo_Results:
             container_label: 容器框的标签名（如 "panel", "card"）
             include_labels: 被包含框的标签名（可为单个或多个）
             relation: 匹配关系，"all" 表示必须全部包含，"or" 表示包含任一即可
+            contain_threshold: 被包含阈值（被包含框有多少比例在容器内，默认0.9）
 
         Returns:
             所有满足条件的 Yolo_Results 列表，每组包含一个容器框和若干个子框
         """
         if isinstance(include_labels, str):
             include_labels = [include_labels]
+
+        def intersection_area(a: Yolo_Box, b: Yolo_Box) -> float:
+            x1 = max(a.x, b.x)
+            y1 = max(a.y, b.y)
+            x2 = min(a.x + a.w, b.x + b.w)
+            y2 = min(a.y + a.h, b.y + b.h)
+            iw = max(0.0, x2 - x1)
+            ih = max(0.0, y2 - y1)
+            return iw * ih
+
+        def area(b: Yolo_Box) -> float:
+            return max(0.0, b.w * b.h)
+
+        def contain_ratio(container: Yolo_Box, child: Yolo_Box) -> float:
+            inter = intersection_area(container, child)
+            child_area = area(child)
+            return inter / child_area if child_area > 0 else 0.0
 
         result_groups = []
 
@@ -374,18 +414,12 @@ class Yolo_Results:
             for other in self.boxes:
                 if other == container or other.label not in include_labels:
                     continue
-
-                # 判断是否被包含（边界在容器内部）
-                if (container.x <= other.x and
-                        container.y <= other.y and
-                        container.x + container.w >= other.x + other.w and
-                        container.y + container.h >= other.y + other.h):
+                if contain_ratio(container, other) >= contain_threshold:
                     included.append(other)
 
             if relation == "all":
-                include_label_set = set(include_labels)
                 matched_labels = {box.label for box in included}
-                if include_label_set.issubset(matched_labels):
+                if set(include_labels).issubset(matched_labels):
                     result_groups.append(self.from_boxes([container] + included))
             elif relation == "or":
                 if included:
@@ -394,7 +428,6 @@ class Yolo_Results:
                 raise ValueError(f"不支持的 relation 类型: {relation}（应为 'all' 或 'or'）")
 
         return result_groups
-
 
     def get_COL(self) -> Tuple[float, float]:
         """获取集合的中心点"""

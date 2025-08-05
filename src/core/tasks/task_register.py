@@ -1,31 +1,22 @@
-from copy import copy
 
-import cv2
-import numpy as np
-
-from src.core.CLIP_services.item import ItemInfo
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
+from src.core.tasks.base_ui.automated_purchase import action__receive_weekly_gift, action__daily_exchange
+from src.core.tasks.base_ui.claim_task_rewards import claim_task_rewards
 from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
 from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
 from src.core.tasks.base_ui.goto_pages import goto__get_expenditure, goto__work_dispatch_page, goto__gift_page, \
     goto__shop_page, goto__contest_page, goto__claim_task_rewards_page
 from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
-    handle__network_error_modal_boxes,
     action__wait_enter_home
 )
-from src.entity.Game.Components.Button import Button, ButtonList
 from src.entity.Game.Components.TabBar import TabBar
-from src.utils.game_tools import modal_body_extract_item_info
 from time import sleep
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
-
-from src.utils.ocr_instance import OCRService, OCR_ResultList
-from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -68,90 +59,9 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("automated_purchase", "自动每日交换")
     def _task__automated_purchase(app: "AppProcessor"):
         goto__shop_page(app)
-        # 领取每周礼包
-        app.game_utils.click_button("パック", match_config=MatchConfig(use_fuzz=False))
-        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
-        sleep(3)
-        height, width = app.latest_frame.shape[:2]
-        for _ in range(3):
-            buttons = ButtonList(app.latest_results)
-            for button in buttons:
-                if "無料" in button.text and button.is_disabled() is False:
-                    app.app.click_element(button)
-                    sleep(0.5)
-                    app.game_utils.click_button("決定")
-                    sleep(0.5)
-                    app.game_utils.click_button("閉じる")
-            app.app.scrollY(width//2, height//2, -20)
-        app.game_utils.back_next_page()
-        app.game_utils.wait_loading()
-        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
-        # 每日兑换
-        app.game_utils.click_button("デイリー交換所")
-        app.game_utils.wait_for_label(base_labels.card__commodity)
-        app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
+        # action__receive_weekly_gift(app)
         commodity_target = ["アノマリーノート"]
-        ocr_service = OCRService()
-        # 上一次获取到的列表哈希
-        last_list_hash = None
-        while True:
-            # 当前页面物品（名）列表
-            current_list = []
-            item_commodity = app.latest_results.filter_by_labels([base_labels.item,base_labels.card__commodity])
-            item_commodity_group = item_commodity.find_containing_groups(base_labels.card__commodity, [base_labels.item])
-            scroll_x, scroll_y = item_commodity.get_COL()
-            logger.debug(f"item numbers: {len(item_commodity_group)}")
-            # 循环每一个物品
-            for index, item_boxe in enumerate(item_commodity_group):
-                logger.debug(f"index: {index}")
-                item = item_boxe.filter_by_label(base_labels.item).first()
-                # 跳过无法交换的物品
-                if ocr_service.ocr(item.frame).search("交換済み"):
-                    continue
-                # 如果已经在记忆中
-                if clip_result := app.clip_manager.item_clip.retrieve(item.frame, 0.97):
-                    # 在购买列表中
-                    if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
-                        app.app.click_element(item_boxe)
-                        modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
-                        app.app.click_element(modal.confirm_button)
-                    current_list.append(clip_result.name)
-                # 不在记忆中
-                else:
-                    # 点击物品
-                    app.app.click_element(item_boxe)
-                    modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
-                    yolo_result_item = copy(item.frame)
-                    # 截取物品和物品信息
-                    item, item_info = modal_body_extract_item_info(modal.modal_body)
-                    ocr_results = ocr_service.ocr(item_info)
-                    logger.debug(ocr_results)
-                    ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
-                    item_name = ocr_results.get_y_min()
-                    item_info = ocr_results.exclude([item_name])
-                    item_name = item_name.text
-                    item_info = ItemInfo(item_name, [_.text for _ in item_info])
-                    # 添加到记忆中
-                    app.clip_manager.item_clip.add_to_memory(item, item_info)
-                    app.clip_manager.item_clip.add_to_memory(yolo_result_item, item_info)
-                    current_list.append(item_name)
-                    # 在购买列表的情况下购买
-                    if string_match(item_name, commodity_target, MatchConfig(fuzz_threshold=80)):
-                        app.app.click_element(modal.confirm_button)
-                    else:
-                        app.app.click_element(modal.cancel_button)
-                    sleep(0.5)
-            # 如果历史哈希不相同，则向下滚动
-            if last_list_hash != hash(frozenset(current_list)):  # 使用哈希值进行比较
-                logger.debug(current_list)
-                last_list_hash = hash(frozenset(current_list))
-                app.app.scrollY(scroll_x,scroll_y,-5)
-            else:
-                break
-
-            # commodity_box = result.filter_by_label(base_labels.card__commodity).first()
-            # cv2.imshow(f"[{index}]item_exchange", item_exchange.filter_by_label(base_labels.card__commodity).first().frame)
-        # cv2.waitKey(0)
+        action__daily_exchange(app, commodity_target)
 
     @processor.register_task("automated_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):
@@ -162,27 +72,5 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("claim_task_rewards", "领取任务奖励")
     def _task__claim_task_rewards(app: "AppProcessor"):
         goto__claim_task_rewards_page(app)
-        app.game_utils.wait_for_label(base_labels.tab_bar)
-        tab_bar = TabBar(app.latest_results.filter_by_label(base_labels.tab_bar).first())
-        logger.debug(tab_bar)
-        height, width = app.latest_frame.shape[:2]
-        frame_cx = width // 2
-        for tab in tab_bar:
-            app.app.click_element(tab)
-            sleep(3)
-            buttons = app.latest_results.filter_by_label(base_labels.button)
-            flag = False
-            for button in buttons:
-                if frame_cx - 10 < button.cx < frame_cx + 10 and not Button(button).is_disabled():
-                    app.app.click_element(button)
-                    flag = True
-                    break
-            if flag:
-                modal = app.game_utils.wait_for_modal(modal_text.receipt_completed, no_body=True, timeout=10)
-                app.app.click_element(modal.cancel_button)
-                app.game_utils.click_on_label(base_labels.close_button)
-                logger.info(f"The task reward of {tab.text} has been claimed")
-            else:
-                logger.info(f"{tab.text} has no task rewards to be claimed")
-            sleep(1)
+        claim_task_rewards(app)
 

@@ -1,7 +1,7 @@
 import time
-
 from loguru import logger
 
+logger.remove()
 logger.add(
     f"logs/{time.strftime('%Y-%m-%d', time.localtime())}.log",
     rotation="00:00",  # 每天午夜轮换日志文件

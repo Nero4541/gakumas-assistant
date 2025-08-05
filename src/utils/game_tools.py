@@ -57,7 +57,7 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
     }
     MAIN_UI_TABS = list(TAB_LABEL_TO_PAGE.keys())[:5]
     if boxes.exists_all_labels(MAIN_UI_TABS):
-        logger.debug("Main UI mode")
+        # logger.debug("Main UI mode")
         home_tab_bar = boxes.filter_by_labels(MAIN_UI_TABS)
         for item in home_tab_bar:
             if check_status_detection(
@@ -69,7 +69,7 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
             ):
                 return TAB_LABEL_TO_PAGE.get(item.label)
     elif boxes.exists_label(base_labels.current_location):
-        logger.debug("Current location mode")
+        # logger.debug("Current location mode")
         current_location = boxes.filter_by_label(base_labels.current_location).first()
         if current_location.frame is None or current_location.frame.size == 0:
             logger.debug("Not current location frame")

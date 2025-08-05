@@ -33,11 +33,13 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
             item = item_boxe.filter_by_label(base_labels.item).first()
             # 跳过无法交换的物品
             if ocr_service.ocr(item.frame).search("交換済み"):
+                app.debug_tools.add_box(item.x, item.y, item.w, item.h, label="pass: replaced")
                 logger.debug(f"Skip item {index}(x={item.x},y={item.y}) Reason: 交換済み")
                 continue
             # 如果已经在记忆中
-            if clip_result := app.clip_manager.item_clip.retrieve(item.frame, 0.99):
+            if clip_result := app.clip_manager.item_clip.retrieve(item.frame, 0.98):
                 logger.debug(f"Item {index}(x={item.x}, y={item.y}) is already in memory, skipping save")
+                app.debug_tools.add_box(item.x, item.y, item.w, item.h, label="in memory")
                 # 在购买列表中
                 if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
                     logger.info(f"purchase {clip_result.name}(index={index}, x={item.x}, y={item.y}) items......")
@@ -50,6 +52,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
             # 不在记忆中
             else:
                 logger.debug(f"Item {index} (x={item.x}, y={item.y}) not found in memory, adding to memory.")
+                app.debug_tools.add_box(item.x, item.y, item.w, item.h, label="not in memory", color=(255,0,0))
                 # 点击物品
                 app.app.click_element(item_boxe)
                 modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
@@ -64,7 +67,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 item_name = item_name.text
                 item_info = ItemInfo(item_name, [_.text for _ in item_info])
                 # 添加到记忆中
-                app.clip_manager.item_clip.add_to_memory(modal_item_image, item_info, 0.99)
+                app.clip_manager.item_clip.add_to_memory(modal_item_image, item_info, 0.99, True)
                 app.clip_manager.item_clip.add_to_memory(yolo_result_item, item_info, 0.99)
                 current_list.append(item_name)
                 # 在购买列表的情况下购买
@@ -75,9 +78,10 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                     logger.debug(f"{item_name} is not on the shopping list, so skip the purchase.")
                     app.app.click_element(modal.cancel_button)
                 sleep(0.5)
+        sleep(5)
         # 如果历史哈希不相同，则向下滚动
-        if last_list_hash != hash(frozenset(current_list)):  # 使用哈希值进行比较
-            logger.debug(current_list)
+        app.debug_tools.clear_all_boxes()
+        if last_list_hash != hash(frozenset(current_list)):
             last_list_hash = hash(frozenset(current_list))
             app.app.scrollY(scroll_x,scroll_y,-5)
         else:

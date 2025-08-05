@@ -1,4 +1,7 @@
+import os
+import sys
 import threading
+import webbrowser
 
 import cv2
 import numpy as np
@@ -21,16 +24,20 @@ from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocket_Data import WebSocket_Data
 from src.core.task import TaskQueue
 from src.entity.Yolo import YoloModelType, Yolo_Results
+from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 
 
 class AppProcessor:
+    data_path: str
     # Yolo模型
     model: YoloModelFromONNX
     # 操作设备
     app: Android_App | Windows_App
     # 当前Yolo模型
     current_model_type: str
+    # 画面Debug工具
+    debug_tools: DebugTools
     # 最新帧
     latest_frame: np.array = None
     # 最新推理结果
@@ -53,6 +60,8 @@ class AppProcessor:
     clip_manager: CLIPServiceManager
 
     def __init__(self):
+        self._init_environment()
+        self._init_database()
         self.app = self._create_app_instance()
         self.load_model()
         self._middleware_registry = []
@@ -60,10 +69,27 @@ class AppProcessor:
         self.game_status_manager = GameStatusManager()
         self.game_utils = GameUtils(self)
         self.clip_manager = CLIPServiceManager()
+        self.debug_tools = DebugTools()
         register_tasks(self)
         register_middlewares(self)
         self.start()
         logger.success("Application Initialized")
+
+    def _init_environment(self):
+        logger.add(sys.stdout, level="DEBUG" if config.debug else "INFO")
+        self.data_path = os.path.join(os.getcwd(), "data")
+        os.makedirs(self.data_path, exist_ok=True)
+        os.makedirs(os.path.join(self.data_path, "CLIP/data"), exist_ok=True)
+        os.makedirs(os.path.join(self.data_path, "CLIP/images"), exist_ok=True)
+
+    @staticmethod
+    def _init_database():
+        from src.models.base import db
+        from src.models import all_models
+        db.connect()
+        db.create_tables(all_models)
+        db.close()
+        logger.success("Database Initialized")
 
     def load_model(self, model_type: str = YoloModelType.BASE_UI):
         """
@@ -154,10 +180,8 @@ class AppProcessor:
             _, encoded_frame = cv2.imencode('.jpg', self.latest_frame)
             frame_bytes = encoded_frame.tobytes()
             ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
-        annotated_frame = self.latest_results.results.plot(
-            # line_width=max(1, int(height / 600)),
-            # font_size=max(0.5, height / 1200),
-        )
+        annotated_frame = self.latest_results.results.plot()
+        annotated_frame = self.debug_tools.draw_boxes(annotated_frame)
         _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
         frame_bytes = encoded_frame.tobytes()
         ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
@@ -202,5 +226,6 @@ def shutdown_event():
 
 @app.on_event("startup")
 def start_event():
-    sleep(5)
     processor.start()
+    if config.auto_open_web_browser:
+        webbrowser.open(f"http://{config.web_server_host}:{config.web_server_port}")

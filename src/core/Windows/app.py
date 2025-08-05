@@ -18,7 +18,8 @@ class Windows_App:
     __window_name: str
     def __init__(self, window_name):
         if not self.is_admin():
-            logger.warning("当前不是管理员权限，请使用管理员权限启动...")
+            logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit()
         self.__window_name = window_name
 

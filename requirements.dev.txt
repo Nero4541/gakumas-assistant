@@ -19,3 +19,4 @@ matplotlib
 rapidfuzz
 rapidocr
 nuitka
+peewee

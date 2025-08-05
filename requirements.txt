@@ -11,3 +11,4 @@ pywin32
 scikit-learn
 rapidfuzz
 rapidocr
+peewee

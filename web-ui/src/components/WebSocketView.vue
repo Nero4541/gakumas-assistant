@@ -74,7 +74,7 @@
   }
 
   function connectWebSocket () {
-    const socket = new WebSocket('ws://127.0.0.1:8000/ws')
+    let socket = new WebSocket(`ws://${location.host}/ws`)
     socket.binaryType = 'arraybuffer'
 
     socket.onmessage = event => {
@@ -83,9 +83,10 @@
       }
     }
 
-    socket.addEventListener('close', () => {
-      setTimeout(connectWebSocket, 1000) // 自动重连
-    })
+    socket.onerror = () => {
+      setTimeout(connectWebSocket, 1000)
+      socket.close();
+    }
   }
 
   onMounted(() => {

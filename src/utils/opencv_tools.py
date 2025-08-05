@@ -1,4 +1,5 @@
 import colorsys
+import math
 from typing import Tuple, Optional
 
 import cv2
@@ -180,7 +181,18 @@ def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,i
     dh /= 2
 
     img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-    top, bottom = int(round(dh)), int(round(dh))
-    left, right = int(round(dw)), int(round(dw))
+    left = int(math.floor(dw))
+    right = int(math.ceil(dw))
+    top = int(math.floor(dh))
+    bottom = int(math.ceil(dh))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
     return img, r, (dw, dh)
+
+def center_crop(image: np.ndarray, size: int = 224) -> np.ndarray:
+    """中心裁切"""
+    h, w = image.shape[:2]
+    start_y = (h - size) // 2
+    start_x = (w - size) // 2
+    cropped = image[start_y:start_y + size, start_x:start_x + size]
+    assert cropped.shape[0] == size and cropped.shape[1] == size, f"Cropped shape error: {cropped.shape}"
+    return cropped

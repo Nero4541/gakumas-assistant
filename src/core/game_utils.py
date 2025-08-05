@@ -208,7 +208,6 @@ class GameUtils:
         :param new_location: 可选，直接按输入的位置
         :return:
         """
-        logger.debug("Updating current location......")
         update = False
         if new_location and new_location != self._app_processor.game_status_manager.current_location:
             update = True

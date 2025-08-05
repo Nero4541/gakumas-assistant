@@ -16,9 +16,9 @@ class ItemCLIP(CLIPTools):
     def __init__(self,session):
         super().__init__(session, "items")
 
-    def add_to_memory(self, image: np.array, payload: ItemInfo, similarity_threshold=0.98):
+    def add_to_memory(self, image: np.array, payload: ItemInfo, similarity_threshold=0.98, save_image=False):
         logger.debug(f"[ItemCLIP]Add Item: {payload}")
-        return super().add_to_memory(image, payload, similarity_threshold)
+        return super().add_to_memory(image, payload, similarity_threshold, save_image)
 
     def retrieve(self, image: np.array, similarity_threshold: float = 0.98) -> Optional[ItemInfo]:
         result = super().retrieve(image, similarity_threshold)

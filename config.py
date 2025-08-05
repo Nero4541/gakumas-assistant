@@ -1,15 +1,19 @@
-# 运行模式（Phone | PC）
 from src.entity.Yolo import YoloModelType
 
-mode = "PC"
+# 运行模式（Phone | PC）
+mode: str = "PC"
 # 游戏窗口名称（仅PC）
-window_name = "gakumas"
-# 强制使用CPU推理
-use_cpu = False
+window_name: str = "gakumas"
+# Web服务器监听地址
+web_server_host: str = "127.0.0.1"
+# Web服务器监听端口
+web_server_port: int = 8080
+# 是否自动打开浏览器
+auto_open_web_browser: bool = True
+# 是否自动重载服务器
+auto_reload_server: bool = False
 # 是否启用Debug模式
-debug = True
-# Debug模式预览窗口名
-debug_window_name = f"{window_name} yolo debug"
+debug: bool = True
 
 model_config = {
     YoloModelType.BASE_UI: {

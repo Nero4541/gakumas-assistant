@@ -8,22 +8,24 @@ from typing import List, Tuple, Generator, Optional, Union, Dict
 import numpy as np
 import cv2
 import onnxruntime as ort
+import seaborn as sns
 
 from src.utils.logger import logger
-from src.utils.opencv_tools import letterbox
+from src.utils.opencv_tools import letterbox, center_crop
 
 
 @dataclass
 class ONNXYoloModelMeta:
     imgsz: Tuple[int, int]
     names: Dict[int, str]
+    colors: Dict[int, Tuple[int, int, int]]
 
 @dataclass
 class ONNXYoloResult:
     boxes: np.ndarray
     scores: np.ndarray
     class_ids: np.ndarray
-    class_name_mapping: Dict[int, str]
+    model_mata: ONNXYoloModelMeta
     image: np.ndarray
 
     def __init__(
@@ -31,13 +33,13 @@ class ONNXYoloResult:
             boxes: np.ndarray,
             scores: np.ndarray,
             class_ids: np.ndarray,
-            class_name_mapping: Dict[int, str],
+            model_mata: ONNXYoloModelMeta,
             image: np.ndarray
     ) -> None:
         self.boxes: np.ndarray = boxes
         self.scores: np.ndarray = scores
         self.class_ids: np.ndarray = class_ids
-        self.class_name_mapping = class_name_mapping
+        self.model_mata = model_mata
         self.image: np.ndarray = image
 
     def __bool__(self):
@@ -57,9 +59,9 @@ class ONNXYoloResult:
         img = self.image.copy()
         for box, score, cls in zip(self.boxes, self.scores, self.class_ids):
             x, y, w, h = box.astype(int)
-            color = (0, 255, 0)
+            color = self.model_mata.colors.get(cls, (0, 255, 0))
             cv2.rectangle(img, (x, y), (x + w, y + h), color, line_width)
-            label = f"{self.class_name_mapping.get(cls, cls)}: {score:.2f}"
+            label = f"{self.model_mata.names.get(cls, cls)}: {score:.2f}"
             # 计算标签文本的尺寸
             (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_size, 1)
             label_x = x
@@ -95,7 +97,10 @@ class YoloModelFromONNX:
             meta = json.load(f)
         imgsz = json.loads(meta["imgsz"])
         names_mapping = ast.literal_eval(meta["names"])
-        self._model_meta = ONNXYoloModelMeta(imgsz, names_mapping)
+        palette = sns.color_palette("Set2", len(names_mapping))
+        palette_255 = [(int(r*255), int(g*255), int(b*255)) for r, g, b in palette]
+        color_mapping = {name_id:color for name_id, color in zip(names_mapping.keys(), palette_255)}
+        self._model_meta = ONNXYoloModelMeta(imgsz, names_mapping, color_mapping)
 
     def _preprocess(self, img: np.ndarray) -> Tuple[np.ndarray, float, float, float]:
         """
@@ -185,7 +190,7 @@ class YoloModelFromONNX:
             np.array(nms_boxes),
             np.array(nms_scores),
             np.array(nms_class_ids),
-            self._model_meta.names,
+            self._model_meta,
             input_image
         )
 
@@ -206,20 +211,10 @@ class CLIPModelFromONNX:
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 
-    def preprocess(self, image: np.ndarray) -> np.ndarray:
-
-        def _resize(image: np.ndarray, size: int = 224) -> np.ndarray:
-            h, w = image.shape[:2]
-            scale = size / min(h, w)
-            new_h, new_w = int(h * scale), int(w * scale)
-            image = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
-            # 中心裁剪
-            top = (new_h - size) // 2
-            left = (new_w - size) // 2
-            return image[top:top+size, left:left+size]
-
+    def _preprocess(self, image: np.ndarray) -> np.ndarray:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = _resize(image, 224)
+        image, _, (_, _) = letterbox(image, (224, 224))
+        image = center_crop(image)
         image = image.astype(np.float32) / 255.0
         mean = np.array([0.48145466, 0.4578275, 0.40821073]).reshape(1, 1, 3)
         std = np.array([0.26862954, 0.26130258, 0.27577711]).reshape(1, 1, 3)
@@ -228,7 +223,7 @@ class CLIPModelFromONNX:
         return image[np.newaxis, :].astype(np.float32)
 
     def forward(self, image: np.ndarray) -> np.ndarray | None:
-        input_tensor = self.preprocess(image)
+        input_tensor = self._preprocess(image)
         with self._lock:
             output = None
             try:
