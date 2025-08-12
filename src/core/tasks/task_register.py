@@ -61,7 +61,7 @@ def register_tasks(processor: "AppProcessor"):
         goto__shop_page(app)
         if app.config_service().task__auto_purchase.weekly_gift.value:
             action__receive_weekly_gift(app)
-        commodity_target = app.config_service().task__auto_purchase.daily_buy_list
+        commodity_target = app.config_service().task__auto_purchase.daily_buy_list.value
         action__daily_exchange(app, commodity_target)
 
     @processor.register_task("automated_contest", "自动每日竞技场")

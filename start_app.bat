@@ -48,6 +48,8 @@ if defined _OLD_CODEPAGE (
 git checkout master
 git reset --hard
 git pull origin master
+git submodule init
+git submodule update
 
 pip install -r requirements.txt
 

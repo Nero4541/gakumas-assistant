@@ -53,6 +53,11 @@
 ```bash
 python3 -m pip install -r requirements.dev.txt
 ```
+### 拉取子模块
+```bash
+git submodule init
+git submodule update
+```
 ### YOLO训练数据
 待开放，如有需要请联系**skyfsj@qq.com**
 
