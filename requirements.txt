@@ -12,3 +12,5 @@ scikit-learn
 rapidfuzz
 rapidocr
 peewee
+openai
+pyyaml

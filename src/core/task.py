@@ -1,14 +1,21 @@
+import os
 import sys
 import traceback
 from dataclasses import dataclass
 from functools import partial
 from queue import Queue
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 from threading import Thread, Lock
 from time import time, sleep
 
+from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
+from src.core.services.config_service import ConfigService
 from src.utils.logger import logger
 
+if TYPE_CHECKING:
+    from src.main import AppProcessor
+
+config_service = ConfigService()
 
 class TaskStatus:
     PENDING = "PENDING"
@@ -21,29 +28,28 @@ class TaskStatus:
 
 @dataclass
 class Task:
+    # 任务名
     name: str
+    # 任务简介
     description: str
+    # 启用任务
     enable: bool
+    # 禁用中间件
+    disabled_middleware: bool
+    # 仅手动触发
+    manual_only: bool
+    # 任务方法
     function: Callable
+    # 超时时间
     timeout: int
+    # 任务状态
     status: str = TaskStatus.PENDING
+    # 开始时间
     _start_time: Optional[int] = -1
+    # 结束时间
     _end_time: Optional[int] = -1
+    # 上次运行时间
     last_run_time: float = 0
-
-    def __init__(self, name: str, description: str, enable: bool, function: Callable, timeout: int = 30):
-        """
-        :param name: 任务名
-        :param description: 任务介绍
-        :param enable: 是否启用
-        :param function: 方法
-        :param timeout: 任务超时事件
-        """
-        self.name = name
-        self.description = description
-        self.enable = enable
-        self.function = function
-        self.timeout = timeout
 
     def update_start_time(self):
         self._start_time = int(time())
@@ -70,27 +76,47 @@ class TaskQueue:
     _task_list = []
     _run_lock: Lock
     _worker_thread: Thread = None
+    _stop_event: bool
 
     def __init__(self, app):
         self._app = app
         self._run_lock = Lock()
+        self._stop_event = False
 
-    def reg_task(self, task_name: str, task_description: str, task_func: Callable, timeout: int | None = None):
+    def reg_task(
+            self,
+            task_name: str,
+            task_description: str,
+            task_func: Callable,
+            disabled_middleware: bool = False,
+            manual_only: bool = False,
+            timeout: int | None = None
+    ):
         """
         注册任务
         """
         if self._find_task(task_name):
             raise RuntimeError(f"Duplicate task name: '{task_name}'")
-        self._task_list.append(Task(task_name, task_description, True, task_func, timeout))
+        enable = True
+        if task_name in config_service().base.disabled_tasks.value:
+            enable = False
+        self._task_list.append(Task(
+            name=task_name,
+            description=task_description,
+            enable=enable,
+            disabled_middleware=disabled_middleware,
+            manual_only=manual_only,
+            function=task_func,
+            timeout=timeout
+        ))
 
     def exec_task(self, task_name: str = None):
         """执行任务"""
         if self._run_lock.locked():
             return False  # 已在运行中
 
-        # 在锁内封装整个启动流程
         self._run_lock.acquire()
-
+        self._stop_event = False
         logger.debug("start exec task queue")
         if self._task_queue.not_empty:
             with self._task_queue.mutex:
@@ -102,6 +128,8 @@ class TaskQueue:
             self._task_queue.put(self._find_task(task_name))
         else:
             for task in self._get_enable_tasks():
+                if task.manual_only:
+                    continue
                 self._task_queue.put(task)
         if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
@@ -138,14 +166,45 @@ class TaskQueue:
             if self._run_lock.locked():
                 self._run_lock.release()
 
+    @staticmethod
+    def _get_call_stack(frame):
+        stack = []
+        while frame:
+            code = frame.f_code
+            stack.append(f"{code.co_name} ({os.path.basename(code.co_filename)}:{code.co_firstlineno})")
+            frame = frame.f_back
+        return " -> ".join(stack)
+
+    @staticmethod
+    def is_called_by(frame, target_code):
+        """检查当前frame是否由target_code对应的函数直接或间接调用"""
+        f = frame
+        while f is not None:
+            if f.f_code is target_code:
+                return True
+            f = f.f_back
+        return False
+
     def _trace_calls(self, frame, event, arg, task: Task):
-        if frame.f_code.co_name != task.function.__name__:
+        if not self.is_called_by(frame, task.function.__code__):
             return partial(self._trace_calls, task=task)
+        # 任务停止
+        if self._stop_event:
+            raise UserCancelTask(task)
+        # 拦截由库文件触发的
+        if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
+            return partial(self._trace_calls, task=task)
+        # 超时抛出
         if task.timeout and task.timeout != -1 and (int(time()) - task.get_start_time()) > task.timeout:
             task.status = TaskStatus.FAILED
-            raise TimeoutError(f"Task '{task.name}' execution timed out.")
+            raise TaskTimeout(task)
+        if not task.disabled_middleware:
+            return partial(self._trace_calls, task=task)
         while not self._app.exec_middleware():
+            logger.debug("wait middleware...")
             sleep(0.1)
+        # if "src" in frame.f_code.co_filename:
+        # print(f"执行文件: {frame.f_code.co_filename}, 当前行: {frame.f_lineno}")
         return partial(self._trace_calls, task=task)
 
     def _task_thread(self, task: Task):
@@ -160,10 +219,13 @@ class TaskQueue:
                 task.status = TaskStatus.CANCELED
             else:
                 task.status = TaskStatus.SUCCESS
+        except UserCancelTask:
+            task.status = TaskStatus.CANCELED
+            logger.warning(f"Task '{task.description}({task.name})' cancelled")
         except Exception as e:
             task.status = TaskStatus.FAILED
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
-            logger.error(f"Task '{task.name}' failed:\n{tb_str}")
+            logger.error(f"Task '{task.description}({task.name})' failed:\n{tb_str}")
         finally:
             task.update_end_time()
             sys.settrace(None)
@@ -205,13 +267,16 @@ class TaskQueue:
         return False
 
     def queue_status(self):
-        return self._run_lock.locked() and not self._task_queue.empty()
+        return self._run_lock.locked() or not self._task_queue.empty()
 
     def stop(self):
         """停止任务队列"""
         if not self.queue_status():
             return False
+        self._stop_event = True
         with self._task_queue.mutex:
+            for task in [t for t in self._task_list if t.status == TaskStatus.PENDING]:
+                task.status = TaskStatus.CANCELED
             self._task_queue.queue.clear()
         if self._run_lock.locked():
             self._run_lock.release()

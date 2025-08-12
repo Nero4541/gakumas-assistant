@@ -12,11 +12,6 @@ from src.core.ONNX import CLIPModelFromONNX
 from src.models.clip import CLIPMemory, CLIPPayload
 from src.utils.logger import logger
 
-# @dataclass
-# class CLIPMemoryItem:
-#     payload: any
-#     features: any
-
 @dataclass
 class CLIPRetrieveData:
     payload: any
@@ -30,7 +25,7 @@ class CLIPTools:
     def __init__(self, model_session: CLIPModelFromONNX, save_file_name: str):
         self._engine = model_session
         self._type = save_file_name
-        self._image_file_path = os.path.join(os.getcwd(), "data/CLIP/images", save_file_name)
+        self._image_file_path = os.path.join(os.getcwd(), "data/CLIP", save_file_name)
         os.makedirs(self._image_file_path, exist_ok=True)
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray):
@@ -62,8 +57,8 @@ class CLIPTools:
             features=pickle.dumps(image_features)
         )
 
-        if save_image:
-            cv2.imwrite(os.path.join(self._image_file_path, f"{payload_hash}.png"), image)
+        if save_image and not os.path.exists(save_name := f"{payload_hash}.png"):
+            cv2.imwrite(os.path.join(self._image_file_path, save_name), image)
 
         logger.debug(f"[{payload_hash}] Added image to memory")
         return True

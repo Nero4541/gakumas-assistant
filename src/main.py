@@ -7,29 +7,32 @@ import cv2
 import numpy as np
 
 import config
-from typing import Union, Callable, List
+from typing import Union, Callable, List, TYPE_CHECKING
 from fastapi import FastAPI
 from time import sleep
 
 from src.core.ONNX import YoloModelFromONNX
 from src.core.Android.app import Android_App
-from src.core.CLIP_services.services import CLIPServiceManager
+from src.core.services.clip_services import CLIPServiceManager
 from src.core.Web.routers import register_routes
 from src.core.Web.websocket import WebSocketManager
 from src.core.Windows.app import Windows_App
 from src.core.game_utils import GameUtils
 from src.core.middlewares.middleware_register import register_middlewares
+from src.core.services.config_service import ConfigService
 from src.core.tasks.task_register import register_tasks
 from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocket_Data import WebSocket_Data
-from src.core.task import TaskQueue
 from src.entity.Yolo import YoloModelType, Yolo_Results
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 
+if TYPE_CHECKING:
+    from src.core.task import TaskQueue
 
 class AppProcessor:
     data_path: str
+    config_service: ConfigService
     # Yolo模型
     model: YoloModelFromONNX
     # 操作设备
@@ -43,7 +46,7 @@ class AppProcessor:
     # 最新推理结果
     latest_results: Yolo_Results | None = None
     # 任务队列
-    task_queue: TaskQueue
+    task_queue: "TaskQueue"
     # 捕获帧状态
     running: bool = False
     # 捕获帧线程
@@ -62,6 +65,9 @@ class AppProcessor:
     def __init__(self):
         self._init_environment()
         self._init_database()
+        self.config_service = ConfigService()
+        print(self.config_service())
+        from src.core.task import TaskQueue
         self.app = self._create_app_instance()
         self.load_model()
         self._middleware_registry = []
@@ -76,17 +82,15 @@ class AppProcessor:
         logger.success("Application Initialized")
 
     def _init_environment(self):
-        logger.add(sys.stdout, level="DEBUG" if config.debug else "INFO")
         self.data_path = os.path.join(os.getcwd(), "data")
         os.makedirs(self.data_path, exist_ok=True)
-        os.makedirs(os.path.join(self.data_path, "CLIP/data"), exist_ok=True)
-        os.makedirs(os.path.join(self.data_path, "CLIP/images"), exist_ok=True)
 
     @staticmethod
     def _init_database():
         from src.models.base import db
         from src.models import all_models
-        db.connect()
+        if db.is_closed():
+            db.connect()
         db.create_tables(all_models)
         db.close()
         logger.success("Database Initialized")
@@ -103,7 +107,7 @@ class AppProcessor:
             model = YoloModelFromONNX(model_config.get("model_path"))
             return model
 
-        if model_type in [YoloModelType.BASE_UI, YoloModelType.PRODUCER]:
+        if model_type in YoloModelType.__dict__.keys():
             self.pause_capture_frame()
             self.model = _init(model_type)
             self.current_model_type = model_type
@@ -111,11 +115,18 @@ class AppProcessor:
         else:
             raise ValueError(f'Unknown model type: {model_type}')
 
-    def register_task(self, task_name: str, description: str, timeout: int | None = None):
+    def register_task(
+            self,
+            task_name: str,
+            description: str,
+            timeout: int | None = None,
+            disabled_middleware: bool = False,
+            manual_only: bool = False
+    ):
         """实例方法：注册任务"""
         logger.debug(f"register task: {task_name}")
         def decorator(func: Callable):
-            self.task_queue.reg_task(task_name, description, func, timeout)
+            self.task_queue.reg_task(task_name, description, func, disabled_middleware, manual_only, timeout)
         return decorator
 
     def register_middleware(self):
@@ -139,21 +150,26 @@ class AppProcessor:
             self.capture_thread.start()
             logger.debug("Resumed capture frame")
 
-    @staticmethod
-    def _create_app_instance() -> Union[Android_App, Windows_App]:
+    def _create_app_instance(self) -> Union[Android_App, Windows_App]:
         """
         创建App操作实例
         """
-        mode = config.mode.lower()
+        mode = self.config_service().base.run_mode.value.lower()
         if mode == 'phone':
             logger.debug("Initializing Android mode")
-            return Android_App()
+            return Android_App(
+                self.config_service().base.adb_host.value,
+                self.config_service().base.adb_port.value,
+                self.config_service().base.game_app_name.value
+            )
         if mode == 'pc':
             logger.debug("Initializing Windows mode")
             import ctypes
             ctypes.windll.user32.SetProcessDPIAware()
-            return Windows_App(config.window_name)
-        raise ValueError(f"Invalid mode: {config.mode}")
+            return Windows_App(
+                self.config_service().base.game_window_name.value
+            )
+        raise ValueError(f"Invalid mode: {mode}")
 
     def _capture_and_infer(self):
         """
@@ -191,6 +207,7 @@ class AppProcessor:
         flag: bool = True
         for func in self._middleware_registry:
             if func(self) is False:
+                logger.debug(f"{func.__name__} return false")
                 flag = False
         return flag
 
@@ -229,3 +246,4 @@ def start_event():
     processor.start()
     if config.auto_open_web_browser:
         webbrowser.open(f"http://{config.web_server_host}:{config.web_server_port}")
+    logger.success(f"Server started at http://{config.web_server_host}:{config.web_server_port}")

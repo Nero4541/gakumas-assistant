@@ -5,7 +5,7 @@ from src.entity.Game.Components.TabBar import TabBar
 from src.entity.Game.Page.Main_UI.BasePage import BasePage
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
-from src.entity.Yolo_Results import Yolo_Results
+from src.entity.Yolo import Yolo_Results
 
 
 @dataclass

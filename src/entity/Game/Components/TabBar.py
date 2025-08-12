@@ -7,7 +7,7 @@ import numpy as np
 
 from src.entity.Yolo import Yolo_Box
 from src.utils.logger import logger
-from src.utils.ocr_instance import OCRService
+from src.core.services.ocr_service import OCRService
 from src.utils.opencv_tools import check_status_detection
 
 ocr_service = OCRService()

@@ -11,20 +11,22 @@ import win32api
 import win32com.client
 import win32con
 import win32gui
+
+from src.entity.BaseDevice import BaseDevice
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 
-class Windows_App:
+class Windows_App(BaseDevice):
     __window_name: str
-    def __init__(self, window_name):
-        if not self.is_admin():
+    def __init__(self, window_name: str):
+        if not self._is_admin():
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit()
         self.__window_name = window_name
 
     @staticmethod
-    def is_admin():
+    def _is_admin():
         try:
             return ctypes.windll.shell32.IsUserAnAdmin()
         except:

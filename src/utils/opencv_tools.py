@@ -1,6 +1,7 @@
 import colorsys
 import math
 from typing import Tuple, Optional
+from PIL import Image, ImageDraw, ImageFont
 
 import cv2
 import numpy as np
@@ -196,3 +197,48 @@ def center_crop(image: np.ndarray, size: int = 224) -> np.ndarray:
     cropped = image[start_y:start_y + size, start_x:start_x + size]
     assert cropped.shape[0] == size and cropped.shape[1] == size, f"Cropped shape error: {cropped.shape}"
     return cropped
+
+def draw_text(
+        image: np.ndarray,
+        text: str, position,
+        font_path,
+        font_size=20,
+        color=(255, 255, 255),
+        max_width=200, padding_x=5,
+        line_spacing=2):
+    """
+    在图像上绘制支持中文/日文并自动换行的文字
+    :param image: OpenCV 图像 (BGR)
+    :param text: 文字
+    :param position: 左上角坐标 (x, y)
+    :param font_path: 字体路径
+    :param font_size: 字号
+    :param color: 文字颜色 (RGB)
+    :param max_width: 最大行宽（像素）
+    :param padding_x: 左右边距
+    :param line_spacing: 行间距（像素）
+    """
+    image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(image_pil)
+    font = ImageFont.truetype(font_path, font_size)
+
+    # 自动换行（按像素宽度）
+    lines = []
+    line = ""
+    for char in text:
+        w = draw.textbbox((0, 0), line + char, font=font)[2]  # 宽度
+        if w <= max_width - 2 * padding_x:
+            line += char
+        else:
+            lines.append(line)
+            line = char
+    if line:
+        lines.append(line)
+
+    x, y = position
+    for line in lines:
+        draw.text((x + padding_x, y), line, font=font, fill=color)
+        y += font_size + line_spacing
+
+    # 转回 OpenCV BGR
+    return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)

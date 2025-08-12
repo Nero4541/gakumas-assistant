@@ -1,7 +1,7 @@
 # import cv2
 # import numpy as np
 #
-from src.utils.ocr_instance import OCRService
+from src.core.services.ocr_service import OCRService
 
 # 创建 OCR 服务实例
 ocr_service = OCRService()
@@ -42,7 +42,6 @@ ocr_service = OCRService()
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
 # 1. 读取图像
 img = cv2.imread('tabbar.png')

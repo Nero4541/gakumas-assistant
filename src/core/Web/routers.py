@@ -7,8 +7,10 @@ from src.core.Web.websocket import WebSocketManager
 from time import sleep
 from typing import TYPE_CHECKING
 
+from src.models import ConfigModel
+
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 
 def _api_return(status: bool, message: str = '', data: dict = None):
@@ -47,7 +49,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.get("/api/status")
     def get_status():
         return _api_return(True, 'OK', {
-            'platform': config.mode.lower(),
+            'platform': processor.config_service().base.run_mode.value.lower(),
             'yolo': processor.running,
             'task': processor.task_queue.queue_status(),
             'game': {
@@ -66,10 +68,14 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
 
     @app.post("/api/disable_task/{task_name:str}")
     def disable_task(task_name):
+        new_config = processor.config_service().base.disabled_tasks.value.append(task_name)
+        processor.config_service.save_config(new_config)
         return _api_return(True, 'OK', processor.task_queue.disable_task(task_name))
 
     @app.post("/api/enable_task/{task_name:str}")
     def enable_task(task_name):
+        new_config = processor.config_service().base.disabled_tasks.value.remove(task_name)
+        processor.config_service.save_config(new_config)
         return _api_return(True, 'OK', processor.task_queue.enable_task(task_name))
 
     @app.get("/api/switch_yolo_model/{model_name:str}")
@@ -80,7 +86,13 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         processor.load_model(model.upper())
         return _api_return(True, f"model switched to {model}")
 
+    @app.get("/api/config")
+    def get_config():
+        config_ = processor.config_service().to_json_dict()
+        return _api_return(True, 'OK', config_.to_json_dict())
+
     app.mount("/assets", StaticFiles(directory="dist/assets", html=True), name="static")
+    app.mount("/api/clip_image", StaticFiles(directory="data/CLIP", html=False), name="clip_images")
 
     @app.get("/")
     def read_index():

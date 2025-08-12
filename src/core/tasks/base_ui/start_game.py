@@ -4,7 +4,6 @@ from time import sleep
 
 from src.constants import *
 from src.constants.base_ui import labels
-from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 
@@ -20,37 +19,49 @@ def action__click_start_game(app: "AppProcessor"):
         raise TimeoutError("Timeout waiting for continue flag in the start menu.")
 
 @logger.catch
-def handle__network_error_modal_boxes(app: "AppProcessor"):
-    """处理：通信错误模态框"""
-    if app.latest_results.filter_by_label(labels.modal_header):
-        modal = get_modal(app.latest_results, app.latest_frame)
-        if modal_text.connection_error in modal.modal_title:
-            # Token失效
-            if str(modal_text.ConnectionError_Body.Token_Fail) in modal.modal_body:
-                app.app.click_element(modal.cancel_button)
-                action__click_start_game(app)
-            # 连接超时
-            elif str(modal_text.ConnectionError_Body.Timeout) in modal.modal_body:
-                app.app.click_element(modal.confirm_button)
-        # 下载新数据
-        elif modal_text.data_download in modal.modal_title:
+def _handle__modal_boxes(app: "AppProcessor"):
+    """处理模态框"""
+    logger.debug("_handle__modal_boxes")
+    modal = get_modal(app.latest_results, app.latest_frame)
+    logger.debug(modal)
+    if modal_text.connection_error in modal.modal_title:
+        # Token失效
+        if modal_text.ConnectionError_Body.Token_Fail in modal.modal_body_text:
+            logger.warning("Network connection error: Token fail")
+            app.app.click_element(modal.cancel_button)
+            action__click_start_game(app)
+        # 连接超时
+        elif modal_text.ConnectionError_Body.Timeout in modal.modal_body_text:
+            logger.warning("Network connection error: Timeout")
             app.app.click_element(modal.confirm_button)
-        app.game_utils.wait_loading()
-        handle__network_error_modal_boxes(app)
+        else:
+            logger.warning("Network connection error: Connection error")
+            app.app.click_element(modal.confirm_button)
+    # 下载新数据
+    elif modal_text.data_download in modal.modal_title:
+        logger.warning("game requires downloading new data.")
+        app.app.click_element(modal.confirm_button)
+    elif modal_text.init_error in modal.modal_title:
+        logger.error("Game initialization failed.")
+        app.app.click_element(modal.cancel_button)
+        action__click_start_game(app)
+    else:
+        raise RuntimeError("Unknown modal box")
+    sleep(1)
+    app.game_utils.wait_loading()
 
 def action__wait_enter_home(app: "AppProcessor"):
     """动作：检查主界面标识是否存在"""
-    if app.latest_results.exists_label(labels.tab_home):
-        return True
     while True:
-        handle__network_error_modal_boxes(app)
         if close_btn := app.latest_results.filter_by_label(labels.close_button):
             app.app.click_element(close_btn.first())
             sleep(1)
-        if skip_btn := app.latest_results.filter_by_label(labels.skip_button):
+        elif skip_btn := app.latest_results.filter_by_label(labels.skip_button):
             app.app.click_element(skip_btn.first())
             sleep(1)
-        elif app.latest_results.exists_label(labels.tab_home):
+        elif app.latest_results.filter_by_label(labels.modal_header):
+            _handle__modal_boxes(app)
+        elif app.latest_results.filter_by_label(labels.tab_home):
             return True
         else:
             height, width = app.latest_frame.shape[:2]

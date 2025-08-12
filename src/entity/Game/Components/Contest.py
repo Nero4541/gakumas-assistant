@@ -6,8 +6,7 @@ import cv2
 import numpy as np
 
 from src.entity.Yolo import Yolo_Box, Yolo_Results
-from src.utils.logger import logger
-from src.utils.ocr_instance import OCRService, OCR_Result
+from src.core.services.ocr_service import OCRService, OCR_Result
 from src.constants import *
 
 ocr_service = OCRService()

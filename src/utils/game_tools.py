@@ -1,18 +1,14 @@
-from typing import List
-
 import cv2
 import numpy as np
-from loguru import logger
 
-from src.constants.base_ui import labels
 from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
 
-from src.entity.Yolo import Yolo_Results, Yolo_Box
+from src.entity.Yolo import Yolo_Results
 from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
-from src.utils.ocr_instance import OCRService
+from src.core.services.ocr_service import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
 
 
@@ -170,8 +166,6 @@ def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False)
     :param frame: 图像帧
     :return: 解析后的 Modal 对象
     """
-    # try:
-    # 获取模态框头部
     if not yolo_result.exists_all_labels([base_labels.modal_header, base_labels.button]):
         logger.warning("模态框不完整")
         return None

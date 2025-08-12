@@ -1,18 +1,16 @@
 from time import sleep
 from typing import TYPE_CHECKING
 
-import cv2
-
 from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
-from src.utils.ocr_instance import OCRService
+from src.core.services.ocr_service import OCRService
 from src.utils.opencv_tools import check_color_in_region
 from src.utils.game_tools import get_modal
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 MAX_WORKS = 2
 ocr_service = OCRService()

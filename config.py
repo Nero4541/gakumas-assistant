@@ -1,9 +1,5 @@
 from src.entity.Yolo import YoloModelType
 
-# 运行模式（Phone | PC）
-mode: str = "PC"
-# 游戏窗口名称（仅PC）
-window_name: str = "gakumas"
 # Web服务器监听地址
 web_server_host: str = "127.0.0.1"
 # Web服务器监听端口

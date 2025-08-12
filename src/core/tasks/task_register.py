@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from src.main import AppProcessor
 
 def register_tasks(processor: "AppProcessor"):
-    @processor.register_task("start_game", "启动游戏", 120)
+    @processor.register_task("start_game", "启动游戏", 120, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):
         if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
             return
@@ -59,8 +59,9 @@ def register_tasks(processor: "AppProcessor"):
     @processor.register_task("automated_purchase", "自动每日交换")
     def _task__automated_purchase(app: "AppProcessor"):
         goto__shop_page(app)
-        # action__receive_weekly_gift(app)
-        commodity_target = ["アノマリーノート"]
+        if app.config_service().task__auto_purchase.weekly_gift.value:
+            action__receive_weekly_gift(app)
+        commodity_target = app.config_service().task__auto_purchase.daily_buy_list
         action__daily_exchange(app, commodity_target)
 
     @processor.register_task("automated_contest", "自动每日竞技场")

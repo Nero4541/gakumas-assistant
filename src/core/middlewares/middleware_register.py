@@ -1,19 +1,18 @@
-import cv2
-import numpy as np
-
-from src.core.CLIP_services.skill_card import SkillCardInfo
+from src.core.services.clip.skill_card import SkillCardInfo
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.utils.game_tools import extract_skill_card_and_info, get_current_location, get_modal
+from src.utils.game_tools import extract_skill_card_and_info, get_modal
 from src.utils.logger import logger
 from src.constants import *
 from typing import TYPE_CHECKING
 
-from src.utils.ocr_instance import OCRService, OCR_ResultList
+from src.core.services.ocr_service import OCRService, OCR_ResultList
+from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
 last_card_name = ""
+last_modal= False
 
 def register_middlewares(processor: "AppProcessor"):
     @processor.register_middleware()
@@ -21,20 +20,24 @@ def register_middlewares(processor: "AppProcessor"):
     def _init_location(app: "AppProcessor"):
         if app.game_status_manager.current_location is None and app.latest_results:
             app.game_utils.update_current_location()
-            # app.exec_task()
         return True
 
 
     @processor.register_middleware()
     @logger.catch
     def _handle_unexpected_modal(app: "AppProcessor"):
-        if app.latest_results.exists_label(base_labels.modal_header):
-            modal_header = get_modal(app.latest_results, app.latest_frame, True)
-            if modal_text.data_update in modal_header.modal_title or modal_text.date_update in modal_header.modal_title:
-                app.app.click_element(modal_header.cancel_button)
+        global last_modal
+        if app.latest_results.exists_label(base_labels.modal_header) and not last_modal:
+            last_modal = True
+            modal = get_modal(app.latest_results, app.latest_frame, True)
+            if string_match(modal.modal_title, [modal_text.data_update, modal_text.date_update], MatchConfig(fuzz_threshold=90)):
+                logger.warning("Restart game...")
+                app.app.click_element(modal.cancel_button)
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(base_labels.start_menu_logo)
                 app.exec_task("start_game")
+        else:
+            last_modal = False
         return True
 
     @processor.register_middleware()

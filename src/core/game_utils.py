@@ -10,7 +10,7 @@ from src.constants import *
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 class GameUtils:
     _app_processor: "AppProcessor"
@@ -29,7 +29,7 @@ class GameUtils:
         """
         WAIT_TIME = 0
         COUNT = 0
-        logger.debug(f"waiting for label: {label} (timeout={timeout}, interval={interval}, continuous={continuous})")
+        logger.debug(f"waiting for label: {label}")
         while WAIT_TIME <= timeout:
             if COUNT > continuous:
                 logger.debug(f"Label '{label}' appeared {continuous} times. Returning True.")
@@ -58,7 +58,7 @@ class GameUtils:
         :param match_config: 匹配配置
         :return:
         """
-        logger.debug(f"Waiting for modal with title: {modal_title} (timeout={timeout}, interval={interval}, no_body={no_body})")
+        logger.debug(f"Waiting for modal with title: {modal_title}")
         wait_time = 0
         match_config = match_config if match_config is not None else MatchConfig(fuzz_threshold=80)
         while wait_time < timeout:
@@ -93,7 +93,7 @@ class GameUtils:
         """
         WAIT_TIME = 0
         COUNT = 0
-        logger.debug(f"waiting to click label: {label} (timeout={timeout}, interval={interval})")
+        logger.debug(f"waiting to click label: {label}")
         while WAIT_TIME < timeout:
             boxs = self._app_processor.latest_results.filter_by_label(label)
             if boxs:

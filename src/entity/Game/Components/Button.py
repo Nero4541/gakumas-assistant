@@ -6,7 +6,7 @@ import numpy as np
 
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.constants import *
-from src.utils.ocr_instance import OCRService
+from src.core.services.ocr_service import OCRService
 from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()

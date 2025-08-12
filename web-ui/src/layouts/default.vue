@@ -22,7 +22,7 @@
           title="脚本执行中......"
           color="success"
         />
-        <WebSocketToolsBar />
+        <WebSocketToolsBar :status="status"/>
         <WebSocketView />
       </v-container>
     </v-main>

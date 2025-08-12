@@ -5,6 +5,7 @@ class ConnectionError_Body:
 data_update = "データ更新"
 date_update = "日付変更"
 data_download = "データダウンロード"
+init_error = "初期化エラー"
 receipt_completed = "受取完了"
 rate_reward = "レート報酬"
 exchange_confirmation = "交換確"
