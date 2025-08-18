@@ -27,8 +27,9 @@ def register_middlewares(processor: "AppProcessor"):
     @logger.catch
     def _handle_unexpected_modal(app: "AppProcessor"):
         global last_modal
-        if app.latest_results.exists_label(base_labels.modal_header) and not last_modal:
-            last_modal = True
+        if app.latest_results.exists_label(base_labels.modal_header):
+            if last_modal:
+                return True
             modal = get_modal(app.latest_results, app.latest_frame, True)
             if string_match(modal.modal_title, [modal_text.data_update, modal_text.date_update], MatchConfig(fuzz_threshold=90)):
                 logger.warning("Restart game...")
@@ -36,6 +37,7 @@ def register_middlewares(processor: "AppProcessor"):
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(base_labels.start_menu_logo)
                 app.exec_task("start_game")
+            last_modal = True
         else:
             last_modal = False
         return True

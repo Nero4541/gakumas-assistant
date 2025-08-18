@@ -19,6 +19,7 @@ import 'material-design-icons-iconfont/dist/material-design-icons.css'
 import '@mdi/font/css/materialdesignicons.css'
 import {mdi} from "vuetify/iconsets/mdi";
 
+
 // https://vuetifyjs.com/en/introduction/why-vuetify/#feature-guides
 export default createVuetify({
   theme: {
@@ -30,7 +31,7 @@ export default createVuetify({
     message: { zhHans },
   },
   icons: {
-    defaultSet: 'md',
+    defaultSet: 'mdi',
     aliases,
     sets: {
       mdi,

@@ -13,6 +13,12 @@ class Android_App(BaseDevice):
         self._adb_port = adb_port
         self._package_name = package_name
 
+    def startGame(self):
+        pass
+
+    def is_app_focused(self):
+        pass
+
     def scrollY(self, x, y, scroll_delta):
         pass
 

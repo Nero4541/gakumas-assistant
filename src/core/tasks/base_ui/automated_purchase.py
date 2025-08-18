@@ -72,8 +72,9 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 logger.debug(ocr_results)
                 ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
                 item_name = ocr_results.get_y_min()
-                item_name, item_desc = item_db.search(item_name.text)
-                item_info = ItemInfo(item_name, item_desc)
+                db_result = item_db.search(item_name.text)
+                item_name = db_result.name
+                item_info = ItemInfo(item_name, db_result.description)
                 # 添加到记忆中
                 app.clip_manager.item_clip.add_to_memory(modal_item_image, item_info, 0.99, True)
                 app.clip_manager.item_clip.add_to_memory(yolo_result_item, item_info, 0.99)

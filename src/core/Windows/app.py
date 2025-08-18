@@ -18,6 +18,8 @@ from src.utils.logger import logger
 
 class Windows_App(BaseDevice):
     __window_name: str
+    _cached_hwnd: int = None
+
     def __init__(self, window_name: str):
         if not self._is_admin():
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
@@ -35,12 +37,15 @@ class Windows_App(BaseDevice):
     def __find_window(self):
         """
         获取窗口实例
-        :return:
         """
+        if self._cached_hwnd and win32gui.IsWindow(self._cached_hwnd):
+            return self._cached_hwnd
         hwnd = win32gui.FindWindow(None, self.__window_name)
         if not hwnd:
             raise Exception(f'窗口 "{self.__window_name}" 未找到')
+        self._cached_hwnd = hwnd
         return hwnd
+
 
     def __get_window_region(self):
         """
@@ -73,6 +78,27 @@ class Windows_App(BaseDevice):
             pythoncom.CoUninitialize()  # 用完后释放
 
     @logger.catch
+    def is_app_focused(self):
+        """
+        判断当前窗口是否处于焦点（前台）
+        :return: True 如果窗口在前台，否则 False
+        """
+        try:
+            hwnd = self.__find_window()
+            foreground_hwnd = win32gui.GetForegroundWindow()
+            if hwnd == foreground_hwnd:
+                return True
+            active_parent = win32gui.GetParent(foreground_hwnd)
+            if active_parent and active_parent == hwnd:
+                return True
+            active_title = win32gui.GetWindowText(foreground_hwnd)
+            return active_title == self.__window_name
+        except Exception as e:
+            logger.error(f"检测窗口焦点失败: {e}")
+            return False
+
+
+    @logger.catch
     def capture(self):
         """
         截取窗口位置
@@ -96,7 +122,6 @@ class Windows_App(BaseDevice):
         abs_y = top + y
         return abs_x, abs_y
 
-    @logger.catch
     def click(self, x, y, el_label = ""):
         """
         点击窗口内容
@@ -110,11 +135,9 @@ class Windows_App(BaseDevice):
         logger.debug(f"click {el_label}: {abs_x, abs_y}" if el_label else f"click: {abs_x, abs_y}")
         return True
 
-    @logger.catch
     def click_element(self, element: Yolo_Box | Yolo_Results):
         self.click(*element.get_COL(), getattr(element, "label", ""))
 
-    @logger.catch
     def scrollY(self, x, y, scroll_delta):
         if scroll_delta == 0:
             logger.warning("scroll delta is 0, skipping scroll")

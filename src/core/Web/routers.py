@@ -1,8 +1,7 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-import config
 from src.core.Web.websocket import WebSocketManager
 from time import sleep
 from typing import TYPE_CHECKING
@@ -12,14 +11,12 @@ from src.models import ConfigModel
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
-
 def _api_return(status: bool, message: str = '', data: dict = None):
     return {
         'status': status,
         'message': message,
         'data': data
     }
-
 
 def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
     @app.websocket("/ws")
@@ -87,9 +84,49 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         return _api_return(True, f"model switched to {model}")
 
     @app.get("/api/config")
-    def get_config():
-        config_ = processor.config_service().to_json_dict()
-        return _api_return(True, 'OK', config_.to_json_dict())
+    def get_all_config():
+        config = processor.config_service()
+        return _api_return(True, 'OK', config.to_json_dict())
+
+    @app.get("/api/config/{task_name:str}")
+    def get_task_config(task_name: str):
+        if task_name not in processor.task_queue.get_task_list().keys():
+            return _api_return(False, "Invalid task name")
+        all_config = processor.config_service().to_json_dict()
+        task_name = f"task__{task_name}"
+        if task_name not in all_config.keys():
+            return _api_return(False, "The task does not have any configuration.")
+        return _api_return(True, "OK", all_config[task_name])
+
+    @app.put("/api/config")
+    async def set_all_config(request: Request):
+        data = await request.json()
+        config = processor.config_service()
+        status, errors = config.from_json_dict(data)
+        if status:
+            processor.config_service.save_config(config)
+            return _api_return(True, 'OK', config.to_json_dict())
+        else:
+            return _api_return(False, "error", {f"{e.section}.{e.field}": e.message for e in errors})
+
+    @app.put("/api/config/{task_name:str}")
+    async def set_task_config(request: Request, task_name: str):
+        if task_name not in processor.task_queue.get_task_list().keys():
+            return _api_return(False, "Invalid task name")
+        config = processor.config_service()
+        all_config = config.to_json_dict()
+        task_name = f"task__{task_name}"
+        if task_name not in all_config.keys():
+            return _api_return(False, "The task does not have any configuration.")
+        data = await request.json()
+        # 合并新的 task 配置
+        all_config[task_name] = data
+        status, errors = config.from_json_dict(all_config)
+        if status:
+            processor.config_service.save_config(config)
+            return _api_return(True, 'OK', config.to_json_dict()[task_name])
+        else:
+            return _api_return(False, "error", {f"{e.section}.{e.field}": e.message for e in errors})
 
     app.mount("/assets", StaticFiles(directory="dist/assets", html=True), name="static")
     app.mount("/api/clip_image", StaticFiles(directory="data/CLIP", html=False), name="clip_images")

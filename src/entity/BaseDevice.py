@@ -6,6 +6,10 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 
 
 class BaseDevice(abc.ABC):
+
+    def is_app_focused(self):
+        pass
+
     def capture(self) -> np.ndarray:
         """
         截取游戏画面

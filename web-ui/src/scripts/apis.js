@@ -18,7 +18,7 @@ function stop_task_queue() {
 
 /**
  * 执行指定任务
- * @param task_name
+ * @param task_name 任务名
  * @return {Promise<axios.AxiosResponse<any>>}
  */
 function run_task(task_name) {
@@ -43,19 +43,64 @@ function get_registered_tasks() {
 
 /**
  * 禁用任务
- * @param task_name
+ * @param task_name 任务名
  * @return {Promise<axios.AxiosResponse<any>>}
  */
 function disable_task(task_name) {
   return axiosplus.post(`/api/disable_task/${task_name}`);
 }
 
+/**
+ * 启用任务
+ * @param task_name 任务名
+ * @returns {Promise<axios.AxiosResponse<any>>}
+ */
 function enable_task(task_name) {
   return axiosplus.post(`/api/enable_task/${task_name}`);
 }
 
+/**
+ * 切换模型
+ * @param model_name 模型名
+ * @returns {Promise<axios.AxiosResponse<any>>}
+ */
 function switch_yolo_model(model_name) {
   return axiosplus.get(`/api/switch_yolo_model/${model_name}`);
+}
+/**
+ * 获取配置
+ * @return {Promise<axios.AxiosResponse<any>>}
+ */
+function get_config(){
+  return axiosplus.get("/api/config");
+}
+
+/**
+ * 获取指定任务配置
+ * @param task_name 任务名
+ * @returns {Promise<axios.AxiosResponse<any>>}
+ */
+function get_task_config(task_name) {
+  return axiosplus.get(`/api/config/${task_name}`);
+}
+
+/**
+ * 保存配置
+ * @param data 配置数据
+ * @return {Promise<axios.AxiosResponse<any>>}
+ */
+function save_config(data){
+  return axiosplus.put(`/api/config`, data);
+}
+
+/**
+ * 保存指定任务的配置
+ * @param task_name 任务名
+ * @param data 任务配置数据
+ * @returns {Promise<axios.AxiosResponse<any>>}
+ */
+function save_task_config(task_name, data) {
+  return axiosplus.put(`/api/config/${task_name}`, data);
 }
 
 export default {
@@ -67,4 +112,8 @@ export default {
   disable_task,
   enable_task,
   switch_yolo_model,
+  get_config,
+  save_config,
+  get_task_config,
+  save_task_config,
 }

@@ -10,12 +10,13 @@
   },
   "dependencies": {
     "@fontsource/roboto": "5.2.5",
-    "@mdi/font": "7.4.47",
-    "axios": "^1.10.0",
+    "axios": "1.11.0",
+    "pinia": "^3.0.3",
     "vue": "^3.5.13",
     "vuetify": "^3.8.1"
   },
   "devDependencies": {
+    "@mdi/font": "^7.4.47",
     "@vitejs/plugin-vue": "^5.2.3",
     "eslint": "^9.23.0",
     "eslint-config-vuetify": "^4.0.0",

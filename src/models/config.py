@@ -73,7 +73,7 @@ class ConfigModel(BaseModel):
                         'use_verify': config_item.use_verify or False,
                         'last_modified_time': datetime.now()
                     })
-                    if not created:
+                    if not created and config_row.value != value_str:
                         config_row.value = value_str
                         config_row.verify = config_item.verify
                         config_row.use_verify = config_item.use_verify

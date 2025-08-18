@@ -8,18 +8,6 @@
 // @use 'vuetify/settings' with (
 //   $color-pack: false
 // );
-.running {
-  animation: spinPause 3s linear infinite running;
-}
-
-@keyframes spinPause {
-  0% {
-    transform: rotate(0deg);
-  }
-  33.3% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
+.v-list-item .v-input {
+  padding-top: 10px;
 }

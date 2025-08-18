@@ -58,12 +58,14 @@ class Base(_BaseConfigGroup):
     run_mode = ConfigItem(default_value="PC", data_type=str, verify=r"Phone|PC", use_verify=True)
     # 游戏窗口名
     game_window_name = ConfigItem(default_value="gakumas", data_type=str)
+    # adb连接模式
+    adb_connect_mode = ConfigItem(default_value="Network", data_type=str, verify=r"USB|Network", use_verify=True)
     # adb地址
     adb_host = ConfigItem(default_value="127.0.0.1", data_type=str)
     # adb端口
-    adb_port = ConfigItem(default_value="3306", data_type=int)
+    adb_port = ConfigItem(default_value="5555", data_type=int)
     # 游戏APP名
-    game_app_name = ConfigItem(default_value="gakumas", data_type=str)
+    game_package_name = ConfigItem(default_value="com.bandainamcoent.idolmaster_gakuen", data_type=str)
     # 禁用任务列表
     disabled_tasks = ConfigItem(default_value=[], data_type=list)
     # 是否启用自动运行

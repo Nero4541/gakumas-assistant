@@ -8,6 +8,8 @@ from typing import Callable, Optional, TYPE_CHECKING
 from threading import Thread, Lock
 from time import time, sleep
 
+import pyautogui
+
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
 from src.utils.logger import logger
@@ -190,6 +192,7 @@ class TaskQueue:
             return partial(self._trace_calls, task=task)
         # 任务停止
         if self._stop_event:
+            task.status = TaskStatus.CANCELED
             raise UserCancelTask(task)
         # 拦截由库文件触发的
         if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
@@ -198,7 +201,7 @@ class TaskQueue:
         if task.timeout and task.timeout != -1 and (int(time()) - task.get_start_time()) > task.timeout:
             task.status = TaskStatus.FAILED
             raise TaskTimeout(task)
-        if not task.disabled_middleware:
+        if task.disabled_middleware:
             return partial(self._trace_calls, task=task)
         while not self._app.exec_middleware():
             logger.debug("wait middleware...")
@@ -219,7 +222,7 @@ class TaskQueue:
                 task.status = TaskStatus.CANCELED
             else:
                 task.status = TaskStatus.SUCCESS
-        except UserCancelTask:
+        except UserCancelTask or pyautogui.FailSafeException:
             task.status = TaskStatus.CANCELED
             logger.warning(f"Task '{task.description}({task.name})' cancelled")
         except Exception as e:

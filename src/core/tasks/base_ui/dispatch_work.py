@@ -8,6 +8,7 @@ from src.utils.logger import logger
 from src.core.services.ocr_service import OCRService
 from src.utils.opencv_tools import check_color_in_region
 from src.utils.game_tools import get_modal
+from src.utils.string_tools import string_match
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -41,7 +42,9 @@ def action__dispatch_all_available_work(app: "AppProcessor"):
     for group in item_group:
         if _is_work_already_dispatched(app, group, width):
             continue
-        _dispatch_single_work(app, group)
+        app.app.click_element(group)
+        sleep(1)
+        _dispatch_single_work(app)
         sleep(3)
         app.game_utils.wait_for_label(base_labels.avatar, 10)
 
@@ -67,7 +70,7 @@ def _is_avatar_guaranteed_success(avatar):
     """判断角色是否带有标志“好調：大成功確定”"""
     height, width = avatar.frame.shape[:2]
     region = (width / 2, 0, width, height / 2)
-    return check_color_in_region(avatar.frame, region, (97,230,250), (108,255,255), 20)
+    return check_color_in_region(avatar.frame, region, (97,230,250), (108,255,255), 25)
 
 def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
     """选中角色并点击时长按钮"""
@@ -76,16 +79,25 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
         sleep(0.5)
     app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
     sleep(1)
+    while True:
+        exists_modal = app.latest_results.exists_label(base_labels.modal_header)
+        if not app.latest_results.exists_label(base_labels.avatar) and not exists_modal:
+            break
+        if exists_modal:
+            modal = get_modal(app.latest_results, app.latest_frame)
+            if string_match(modal.modal_title, modal_text.confirm) and string_match(modal.modal_body_text, modal_text.DispatchWorkError.other_selectable_idols):
+                app.app.click_element(modal.cancel_button)
+                return False
     app.game_utils.wait_for_label(base_labels.button)
     duration_box = _select_work_duration(app)
     app.app.click_element(duration_box)
     sleep(1)
     app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
     sleep(1)
-
     modal = app.game_utils.wait_for_modal(modal_text.work_start_confirmation, 10, no_body=True)
     app.app.click_element(modal.confirm_button)
     sleep(1)
+    return True
 
 def _select_work_duration(app: "AppProcessor"):
     """选择工作时长"""
@@ -106,10 +118,8 @@ def _select_work_duration(app: "AppProcessor"):
     ]
     return max(candidates, key=lambda box: selects.index(box.label.replace("button__", "")))
 
-def _dispatch_single_work(app: "AppProcessor", group):
+def _dispatch_single_work(app: "AppProcessor"):
     """派遣单个任务"""
-    app.app.click_element(group)
-    sleep(1)
     app.game_utils.wait_for_label(base_labels.avatar)
     def _exec():
         avatars = app.latest_results.filter_by_label(base_labels.avatar)
@@ -119,8 +129,7 @@ def _dispatch_single_work(app: "AppProcessor", group):
                 logger.debug("Skip 'お仕事中' avatar")
                 continue
             if _is_avatar_guaranteed_success(avatar):
-                _assign_avatar_to_work(app, avatar)
-                return True
+                return _assign_avatar_to_work(app, avatar)
         return False
     if not _exec():
         x, y = app.latest_results.filter_by_label(base_labels.avatar).get_COL()

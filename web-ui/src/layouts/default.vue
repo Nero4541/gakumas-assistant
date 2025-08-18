@@ -1,14 +1,31 @@
 <template>
   <v-layout class="page_body rounded rounded-md">
-    <v-app-bar color="rgb(243,142,61)" title="《学园偶像大师》小助手(Gakumas Assistant)" />
+    <v-app-bar
+      id="app-bar"
+      height="80"
+      :color="app.config.globalProperties.$theme.color"
+    >
+      <v-avatar :image="app.config.globalProperties.$theme.icon" rounded="0" size="80"/>
+      <h1>Gakumas Assistant</h1>
+    </v-app-bar>
 
-    <task_list :data="task_list"/>
-
-    <v-navigation-drawer location="right">
-      <v-list nav>
-        <v-list-item title="脚本设置" />
+    <v-navigation-drawer permanent rail>
+      <v-list density="compact" v-model:selected="tabbar_model" nav :color="app.config.globalProperties.$theme.color">
+        <v-list-item
+          prepend-icon="md:format_list_bulleted"
+          title="任务列表"
+          value="tasks"
+        />
+        <v-divider/>
+        <v-list-item
+          prepend-icon="md:settings"
+          title="脚本配置"
+          value="settings"
+        />
       </v-list>
     </v-navigation-drawer>
+    <task_list v-if="tabbar_model[0] === 'tasks'" :data="task_list"/>
+    <settings v-else-if="tabbar_model[0] === 'settings'" :data="config_data"/>
 
     <v-main class="page_main d-flex align-center justify-center">
       <v-container class="page_container">
@@ -35,21 +52,40 @@
   import api from "@/scripts/apis.js"
   import WebSocketView from "@/components/WebSocketView.vue";
   import WebSocketToolsBar from "@/components/WebSocketToolsBar.vue";
+  import Settings from "@/components/lists/settings.vue";
+  import app from "@/main.js";
   let status = ref({})
   let task_list = ref({})
-  function get_data() {
-    api.get_status().then(res => {
-      status.value = res.data
-    })
-    api.get_registered_tasks().then(res => {
-      task_list.value = res.data
-    })
-    setTimeout(get_data, 1000)
+  let config_data = ref({})
+  let tabbar_model = ref(["tasks"])
+  async function get_data() {
+    try {
+      const [statusRes, taskRes] = await Promise.all([
+        api.get_status(),
+        api.get_registered_tasks()
+      ])
+      status.value = statusRes.data
+      task_list.value = taskRes.data
+    } catch (err) {
+      console.error("请求出错:", err)
+    } finally {
+      setTimeout(get_data, 1000)
+    }
   }
   get_data()
+  api.get_config().then(res => {
+    config_data.value = res.data
+  })
 </script>
 
 <style scoped lang="scss">
+#app-bar {
+  padding-left: 15px;
+  padding-right: 15px;
+  h1 {
+    color: white;
+  }
+}
 .page_body {
   width: 80vw;
   height: 85vh;
@@ -66,6 +102,9 @@
       height: 100%;
       display: flex;
       flex-direction: column;
+      .v-alert {
+        padding: 25px 15px;
+      }
     }
   }
   .page_footer {

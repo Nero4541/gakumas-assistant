@@ -56,7 +56,7 @@ def register_tasks(processor: "AppProcessor"):
         if action__has_gift_items(app):
             action__collect_all_gifts(app)
 
-    @processor.register_task("automated_purchase", "自动每日交换")
+    @processor.register_task("auto_purchase", "自动每日交换")
     def _task__automated_purchase(app: "AppProcessor"):
         goto__shop_page(app)
         if app.config_service().task__auto_purchase.weekly_gift.value:

@@ -69,3 +69,12 @@ Licensed under The GNU General Public License version 3 (GPLv3) (the "License");
 https://www.gnu.org/licenses/gpl-3.0.html
 
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+### 致谢
+本项目主要用到了以下开源项目，感谢各位开发者的付出：
+- **[GkmasObjectManager]("https://github.com/AllenHeartcore/GkmasObjectManager")**  
+游戏资源提取器
+- **[gakumasu-diff]("https://github.com/vertesan/gakumasu-diff")**  
+游戏数据
+- **[GakumasTranslationData]("https://github.com/chinosk6/GakumasTranslationData.git")**  
+游戏文本翻译

@@ -12,3 +12,6 @@ exchange_confirmation = "交換確"
 work_start_confirmation = "仕事開始確"
 expenditure = "活動費"
 destroying_production_data = "プロデュースデータの破棄"
+confirm = "確認"
+class DispatchWorkError:
+    other_selectable_idols = "他に選択可能な好調状態のアイドルがいます二のまま決へ進れでよろしいです力？"
