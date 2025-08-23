@@ -5,10 +5,6 @@ import numpy as np
 from src.core.ONNX import ONNXYoloResult
 from src.utils.number import median
 
-class YoloModelType:
-    BASE_UI: str = 'BASE_UI'
-    PRODUCER: str = 'PRODUCER'
-
 @dataclass
 class Yolo_Box:
     """
@@ -69,7 +65,7 @@ class Yolo_Results:
     """
     results: any
     boxes: list[Yolo_Box]
-    def __init__(self, yolo_results, frame: np.array, model = None):
+    def __init__(self, yolo_results, frame: np.ndarray, model = None):
         self.boxes = []
         if isinstance(yolo_results, ONNXYoloResult):
             self.results = yolo_results

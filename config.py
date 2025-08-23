@@ -1,4 +1,4 @@
-from src.entity.Yolo import YoloModelType
+from src.constants.yolo.model_type import YoloModelType
 
 # Web服务器监听地址
 web_server_host: str = "127.0.0.1"

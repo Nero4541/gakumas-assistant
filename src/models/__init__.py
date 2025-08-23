@@ -1,8 +1,8 @@
-from .clip import CLIPMemory, CLIPPayload
+from .clip import CLIPMemory, CLIPayload_Item
 from .config import ConfigModel
 
 all_models = [
     CLIPMemory,
-    CLIPPayload,
+    CLIPayload_Item,
     ConfigModel,
 ]

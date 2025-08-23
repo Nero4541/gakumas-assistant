@@ -2,6 +2,7 @@ from time import sleep
 from typing import TYPE_CHECKING
 
 from src.constants import *
+from src.constants.text.button_text import ButtonText
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
@@ -87,6 +88,7 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
             modal = get_modal(app.latest_results, app.latest_frame)
             if string_match(modal.modal_title, modal_text.confirm) and string_match(modal.modal_body_text, modal_text.DispatchWorkError.other_selectable_idols):
                 app.app.click_element(modal.cancel_button)
+                sleep(0.5)
                 return False
     app.game_utils.wait_for_label(base_labels.button)
     duration_box = _select_work_duration(app)
@@ -108,7 +110,11 @@ def _select_work_duration(app: "AppProcessor"):
     frame = app.latest_frame[y_start:y_end, 0:frame_w]
 
     ocr_results = ocr_service.ocr(frame)
-    selects = ["4時間", "8時間", "12時間"]
+    selects = [
+        ButtonText.WORK.TIME.TIME_4H,
+        ButtonText.WORK.TIME.TIME_8H,
+        ButtonText.WORK.TIME.TIME_12H
+    ]
     candidates = [
         Yolo_Box(
             x := o.x, y := y_start + o.y, w := x + o.w, h := y + o.h,

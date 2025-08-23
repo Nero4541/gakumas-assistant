@@ -1,5 +1,7 @@
 from src.constants import *
 from typing import TYPE_CHECKING
+
+from src.constants.text.button_text import ButtonText
 from src.entity.Game.Page.Types.index import GamePageTypes
 
 if TYPE_CHECKING:
@@ -53,7 +55,7 @@ def goto__shop_page(app: "AppProcessor"):
 def goto__contest_page(app: "AppProcessor"):
     """ 进入竞技场页面 """
     _goto_tab_contest(app)
-    app.game_utils.click_button("コンテスト")  # 点击进入竞技场功能
+    app.game_utils.click_button(ButtonText.MAIN_MENU__CONTEST.CONTEST)
     app.game_utils.wait_location_update(GamePageTypes.CONTEST_TAB.ARENA)
 
 def goto__claim_task_rewards_page(app: "AppProcessor"):

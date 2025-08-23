@@ -103,6 +103,13 @@ function save_task_config(task_name, data) {
   return axiosplus.put(`/api/config/${task_name}`, data);
 }
 
+/**
+ * 获取所有物品列表
+ */
+function get_all_item() {
+  return axiosplus.get("/api/item/list");
+}
+
 export default {
   start_task_queue,
   stop_task_queue,
@@ -116,4 +123,5 @@ export default {
   save_config,
   get_task_config,
   save_task_config,
+  get_all_item,
 }

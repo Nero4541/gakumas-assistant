@@ -62,8 +62,10 @@ class Base(_BaseConfigGroup):
     adb_connect_mode = ConfigItem(default_value="Network", data_type=str, verify=r"USB|Network", use_verify=True)
     # adb地址
     adb_host = ConfigItem(default_value="127.0.0.1", data_type=str)
-    # adb端口
+    # adb端口(Network)
     adb_port = ConfigItem(default_value="5555", data_type=int)
+    # adb端口(USB)
+    adb_serial = ConfigItem(default_value="", data_type=str)
     # 游戏APP名
     game_package_name = ConfigItem(default_value="com.bandainamcoent.idolmaster_gakuen", data_type=str)
     # 禁用任务列表

@@ -72,9 +72,9 @@ Unless required by applicable law or agreed to in writing, software distributed 
 
 ### 致谢
 本项目主要用到了以下开源项目，感谢各位开发者的付出：
-- **[GkmasObjectManager]("https://github.com/AllenHeartcore/GkmasObjectManager")**  
+- **[GkmasObjectManager](https://github.com/AllenHeartcore/GkmasObjectManager)**  
 游戏资源提取器
-- **[gakumasu-diff]("https://github.com/vertesan/gakumasu-diff")**  
+- **[gakumasu-diff](https://github.com/vertesan/gakumasu-diff)**  
 游戏数据
-- **[GakumasTranslationData]("https://github.com/chinosk6/GakumasTranslationData.git")**  
+- **[GakumasTranslationData](https://github.com/chinosk6/GakumasTranslationData.git)**  
 游戏文本翻译

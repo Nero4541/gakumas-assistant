@@ -13,7 +13,6 @@ import win32con
 import win32gui
 
 from src.entity.BaseDevice import BaseDevice
-from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 
 class Windows_App(BaseDevice):
@@ -25,6 +24,7 @@ class Windows_App(BaseDevice):
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit()
+        ctypes.windll.user32.SetProcessDPIAware()
         self.__window_name = window_name
 
     @staticmethod
@@ -134,9 +134,6 @@ class Windows_App(BaseDevice):
         pyautogui.click(abs_x, abs_y, button='left')
         logger.debug(f"click {el_label}: {abs_x, abs_y}" if el_label else f"click: {abs_x, abs_y}")
         return True
-
-    def click_element(self, element: Yolo_Box | Yolo_Results):
-        self.click(*element.get_COL(), getattr(element, "label", ""))
 
     def scrollY(self, x, y, scroll_delta):
         if scroll_delta == 0:

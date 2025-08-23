@@ -1,17 +1,22 @@
+import os.path
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from src.constants.data_path import DataPath
 from src.core.Web.websocket import WebSocketManager
 from time import sleep
 from typing import TYPE_CHECKING
 
 from src.models import ConfigModel
+from src.utils.diff_tools import GakumasuDiffItemDataUtils
+from src.utils.i18n_tools import I18nJsonUtils
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
-def _api_return(status: bool, message: str = '', data: dict = None):
+def _api_return(status: bool, message: str = '', data: dict | list = None):
     return {
         'status': status,
         'message': message,
@@ -19,6 +24,8 @@ def _api_return(status: bool, message: str = '', data: dict = None):
     }
 
 def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
+    item_db = GakumasuDiffItemDataUtils(DataPath.GakumasuDiffData.ITEM)
+    item_translation = I18nJsonUtils(DataPath.GakumasTranslationData.ITEM)
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
@@ -127,6 +134,26 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
             return _api_return(True, 'OK', config.to_json_dict()[task_name])
         else:
             return _api_return(False, "error", {f"{e.section}.{e.field}": e.message for e in errors})
+
+    @app.get("/api/item/list")
+    def get_all_items():
+        items = item_db.get_all_item()
+        all_items = []
+        for item in items:
+            translation = item_translation.get_by_id(item.id)
+            all_items.append({
+                "id": item.id,
+                "name": item.name,
+                "description": item.description,
+                "acquisitionRouteDescription": item.acquisitionRouteDescription,
+                "translation": {
+                    "name": translation.name,
+                    "description": translation.description,
+                    "acquisitionRouteDescription": translation.acquisitionRouteDescription,
+                } if translation else {},
+                "image": os.path.exists(os.path.join(processor.data_path, f"CLIP/items/{item.id}.png")),
+            })
+        return _api_return(True, "OK", all_items)
 
     app.mount("/assets", StaticFiles(directory="dist/assets", html=True), name="static")
     app.mount("/api/clip_image", StaticFiles(directory="data/CLIP", html=False), name="clip_images")

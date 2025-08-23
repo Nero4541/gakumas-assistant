@@ -1,10 +1,9 @@
 from time import sleep
 
+from src.constants.text.button_text import ButtonText
 from src.entity.Game.Components.Button import ButtonList
-from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
-from src.utils.game_tools import get_modal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -22,10 +21,10 @@ def action__collect_all_gifts(app: "AppProcessor"):
     尝试点击“一括受取”按钮并处理弹窗确认。
     如果弹窗未出现则抛出超时异常。
     """
-    ButtonList(app.latest_results).get_button_by_text("一括受取")
+    ButtonList(app.latest_results).get_button_by_text(ButtonText.COLLECT_ALL)
     app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
     sleep(1)
-    modal = app.game_utils.wait_for_modal(modal_text.receipt_completed, 15,True)
+    modal = app.game_utils.wait_for_modal(modal_text.receipt_completed, 15, True)
     if not modal:
         logger.warning("Gift collection failed")
         return False

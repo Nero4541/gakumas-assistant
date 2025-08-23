@@ -1,7 +1,7 @@
 
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
-from src.core.tasks.base_ui.automated_purchase import action__receive_weekly_gift, action__daily_exchange
+from src.core.tasks.base_ui.auto_purchase import action__receive_weekly_gift, action__daily_exchange
 from src.core.tasks.base_ui.claim_task_rewards import claim_task_rewards
 from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
 from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
@@ -11,7 +11,6 @@ from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
     action__wait_enter_home
 )
-from src.entity.Game.Components.TabBar import TabBar
 from time import sleep
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *

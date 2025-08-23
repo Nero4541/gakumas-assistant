@@ -1,15 +1,17 @@
+import abc
 import os
 import pickle
+from abc import abstractmethod
 from uuid import UUID, uuid4
 
 import cv2
 import numpy as np
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from src.core.ONNX import CLIPModelFromONNX
-from src.models.clip import CLIPMemory, CLIPPayload
+from src.models.clip import CLIPMemory
 from src.utils.logger import logger
 
 @dataclass
@@ -17,21 +19,30 @@ class CLIPRetrieveData:
     payload: any
     similarity: float
 
-class CLIPTools:
+class CLIPTools(abc.ABC):
     _image_file_path: str
-    _type: str
+    _clip_name: str
     _engine: CLIPModelFromONNX
 
-    def __init__(self, model_session: CLIPModelFromONNX, save_file_name: str):
+    def __init__(self, model_session: CLIPModelFromONNX, clip_name: str):
         self._engine = model_session
-        self._type = save_file_name
-        self._image_file_path = os.path.join(os.getcwd(), "data/CLIP", save_file_name)
+        self._clip_name = clip_name
+        self._image_file_path = os.path.join(os.getcwd(), "data/CLIP", clip_name)
         os.makedirs(self._image_file_path, exist_ok=True)
 
     def _cosine_similarity(self, a: np.ndarray, b: np.ndarray):
+        """计算向量相似度"""
         a = a.flatten()
         b = b.flatten()
         return (np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))).item()
+
+    @abstractmethod
+    def _save_payload(self, image: np.ndarray, features: np.ndarray, payload: Any):
+        pass
+
+    @abstractmethod
+    def _load_payload(self, payload_ref):
+        pass
 
     def add_to_memory(self, image: np.ndarray, payload, similarity_threshold: float = 0.9, save_image: bool = False) -> bool:
         image_features = self._engine.forward(image)
@@ -39,28 +50,20 @@ class CLIPTools:
             raise RuntimeError("Image features is None")
 
         # 查询同类型向量并比对相似度
-        for memory in CLIPMemory.select().where(CLIPMemory.type == self._type):
+        for memory in CLIPMemory.select().where(CLIPMemory.clip_name == self._clip_name):
             existing_features = pickle.loads(memory.features)
             similarity = self._cosine_similarity(image_features, existing_features)
             if similarity > similarity_threshold:
                 logger.debug(f"Image already exists with similarity: {similarity:.4f}")
                 return False
 
-        # 存储 CLIPPayload（可复用）
-        payload_hash = hash(pickle.dumps(payload))
-        payload_record = CLIPPayload.save_payload(payload)
+        payload_ref = self._save_payload(image, image_features, payload)
 
-        # 保存 CLIPMemory
-        CLIPMemory.create(
-            type=self._type,
-            payload=payload_record,
+        CLIPMemory.save_vector(
+            clip_name=self._clip_name,
+            payload_obj=payload_ref,
             features=pickle.dumps(image_features)
         )
-
-        if save_image and not os.path.exists(save_name := f"{payload_hash}.png"):
-            cv2.imwrite(os.path.join(self._image_file_path, save_name), image)
-
-        logger.debug(f"[{payload_hash}] Added image to memory")
         return True
 
     def retrieve(self, image: np.ndarray, similarity_threshold: float = 0.9) -> Optional[CLIPRetrieveData]:
@@ -71,15 +74,15 @@ class CLIPTools:
         best_similarity = -1
         best_payload = None
 
-        for memory in CLIPMemory.select().where(CLIPMemory.type == self._type):
+        for memory in CLIPMemory.select().where(CLIPMemory.clip_name == self._clip_name):
             existing_features = pickle.loads(memory.features)
             similarity = self._cosine_similarity(image_features, existing_features)
 
             if similarity > best_similarity:
                 best_similarity = similarity
-                best_payload = memory.payload
+                best_payload = memory.load_payload()
 
         if best_similarity > similarity_threshold:
-            return CLIPRetrieveData(best_payload.load_payload(), best_similarity)
+            return CLIPRetrieveData(self._load_payload(best_payload), best_similarity)
 
         return None

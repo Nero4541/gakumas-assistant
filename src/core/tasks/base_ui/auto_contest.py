@@ -1,12 +1,11 @@
 from time import sleep
 
+from src.constants.text.button_text import ButtonText
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList
-from src.entity.Game.Page.Types.index import GamePageTypes
 from src.constants import *
 from src.utils.logger import logger
-from src.utils.game_tools import get_modal
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -59,13 +58,13 @@ def _auto_form_team(app: "AppProcessor"):
     如果有空的编队槽位，执行自动编队。
     依次点击：编成 -> おまかせ -> 決定 -> 閉じる。
     """
-    app.game_utils.click_button("ユニッ卜編成")
+    app.game_utils.click_button(ButtonText.UNIT_FORMATION)
     sleep(1)
-    app.game_utils.click_button("おまかせ")
+    app.game_utils.click_button(ButtonText.AUTO_SELECT)
     sleep(1)
-    app.game_utils.click_button("決定")
+    app.game_utils.click_button(ButtonText.CONFIRM)
     sleep(0.5)
-    app.game_utils.click_button("閉じる")
+    app.game_utils.click_button(ButtonText.CLOSE)
     app.game_utils.back_next_page()
 
 def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
@@ -74,7 +73,7 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     若勾选框未启用，自动勾选“跳过”。
     重复点击直到跳过按钮消失。
     """
-    app.game_utils.click_button("挑戦開始")
+    app.game_utils.click_button(ButtonText.START_CHALLENGE)
     app.game_utils.wait_for_label(base_labels.checkbox)
     check_box = CheckBox(app.latest_results.filter_by_label(base_labels.checkbox).first())
     if not check_box.checked:
@@ -94,7 +93,7 @@ def _finish_battle(app: "AppProcessor"):
     COUNT, WAIT = 0, 15
     while COUNT < WAIT:
         buttons = ButtonList(app.latest_results)
-        if button := buttons.get_button_by_text("次へ"):
+        if button := buttons.get_button_by_text(ButtonText.NEXT):
             app.app.click_element(button)
             break
         app.app.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
@@ -102,7 +101,7 @@ def _finish_battle(app: "AppProcessor"):
         COUNT += 1
     if COUNT >= WAIT:
         raise TimeoutError("Waiting for the challenge to end timeout")
-    app.game_utils.click_button("終了")
+    app.game_utils.click_button(ButtonText.EXIT)
     while True:
         if app.latest_results.exists_label(base_labels.back_btn):
             return

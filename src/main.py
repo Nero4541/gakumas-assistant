@@ -1,5 +1,4 @@
 import os
-import sys
 import threading
 import webbrowser
 
@@ -11,6 +10,7 @@ from typing import Union, Callable, List, TYPE_CHECKING
 from fastapi import FastAPI
 from time import sleep
 
+from src.constants.device.device_type import DeviceType
 from src.core.ONNX import YoloModelFromONNX
 from src.core.Android.app import Android_App
 from src.core.services.clip_services import CLIPServiceManager
@@ -23,7 +23,8 @@ from src.core.services.config_service import ConfigService
 from src.core.tasks.task_register import register_tasks
 from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocket_Data import WebSocket_Data
-from src.entity.Yolo import YoloModelType, Yolo_Results
+from src.constants.yolo.model_type import YoloModelType
+from src.entity.Yolo import Yolo_Results
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 
@@ -42,7 +43,7 @@ class AppProcessor:
     # 画面Debug工具
     debug_tools: DebugTools
     # 最新帧
-    latest_frame: np.array = None
+    latest_frame: np.ndarray = None
     # 最新推理结果
     latest_results: Yolo_Results | None = None
     # 任务队列
@@ -101,18 +102,19 @@ class AppProcessor:
         :param model_type:
         :return:
         """
-        def _init(model_type: str):
+        def _init():
             logger.debug(f"Loading YOLO model {model_type}...")
             model_config = config.model_config.get(model_type)
             model = YoloModelFromONNX(model_config.get("model_path"))
             return model
 
         if model_type in YoloModelType.__dict__.keys():
-            self.pause_capture_frame()
-            self.model = _init(model_type)
+            self.pause_capture()
+            self.model = _init()
             self.current_model_type = model_type
-            self.resume_capture_frame()
+            self.resume_capture()
         else:
+            print(YoloModelType.__dict__.keys())
             raise ValueError(f'Unknown model type: {model_type}')
 
     def register_task(
@@ -136,14 +138,15 @@ class AppProcessor:
             self._middleware_registry.append(func)
         return decorator
 
-    def pause_capture_frame(self):
+    def pause_capture(self):
+        """暂停屏幕截图"""
         if self.running and not self._pause_capture_frame:
-            logger.debug("Pause capture frame......")
             self._pause_capture_frame = True
             self.capture_thread.join()
             logger.debug("Paused capture frame")
 
-    def resume_capture_frame(self):
+    def resume_capture(self):
+        """恢复屏幕截图"""
         if self.running and self._pause_capture_frame:
             self._pause_capture_frame = False
             self.capture_thread = threading.Thread(target=self._capture_and_infer, daemon=True)
@@ -155,17 +158,17 @@ class AppProcessor:
         创建App操作实例
         """
         mode = self.config_service().base.run_mode.value.lower()
-        if mode == 'phone':
+        if mode == DeviceType.PHONE:
             logger.debug("Initializing Android mode")
             return Android_App(
+                self.config_service().base.adb_connect_mode.value,
+                self.config_service().base.game_package_name.value,
                 self.config_service().base.adb_host.value,
                 self.config_service().base.adb_port.value,
-                self.config_service().base.game_app_name.value
+                self.config_service().base.adb_serial.value,
             )
-        if mode == 'pc':
+        if mode == DeviceType.PC:
             logger.debug("Initializing Windows mode")
-            import ctypes
-            ctypes.windll.user32.SetProcessDPIAware()
             return Windows_App(
                 self.config_service().base.game_window_name.value
             )

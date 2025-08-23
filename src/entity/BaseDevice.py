@@ -31,6 +31,7 @@ class BaseDevice(abc.ABC):
         :param element: Yolo_Box | Yolo_Results
         :return:
         """
+        self.click(*element.get_COL(), getattr(element, "label", ""))
 
     def scrollY(self, x, y, scroll_delta):
         """

@@ -6,6 +6,7 @@
 
 // Plugins
 import { registerPlugins } from '@/plugins'
+import autoSave from "@/directives/auto_save.js"
 
 // Components
 import App from './App.vue'
@@ -23,6 +24,7 @@ registerPlugins(app)
 
 const theme = getRandomTheme()
 app.config.globalProperties.$theme = theme
+app.directive("auto-save", autoSave)
 
 app.mount('#app')
 

@@ -1,11 +1,12 @@
-import os
 from copy import copy
 from time import sleep
 
 from src.constants import *
 from typing import TYPE_CHECKING, List
 
-from src.core.services.clip.item import ItemInfo
+from src.constants.data_path import DataPath
+from src.constants.text.button_text import ButtonText
+from src.core.services.clip.item import Item
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.TabBar import TabBar
 from src.entity.Game.Page.Types.index import GamePageTypes
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
     from src.main import AppProcessor
 
 ocr_service = OCRService()
-item_db = GakumasuDiffItemDataUtils(os.path.join(os.getcwd(), "assets/gakumasu-diff/Item.yaml"))
+item_db = GakumasuDiffItemDataUtils(DataPath.GakumasuDiffData.ITEM)
 
 def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
     logger.info(f"Shopping list: {commodity_target}")
@@ -47,13 +48,11 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 app.debug_tools.add_box(item.x, item.y, item.w, item.h, label=f"{index} 已获取到存储\n\n物品名：{clip_result.name}", color=(0,255,0))
                 # 在购买列表中
                 if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
-                    app.debug_tools.hide()
                     logger.info(f"purchase {clip_result.name}(index={index}, x={item.x}, y={item.y}) items......")
                     app.app.click_element(item_boxe)
                     modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
                     app.app.click_element(modal.confirm_button)
                     sleep(0.5)
-                    app.debug_tools.show()
                 else:
                     logger.debug(f"{clip_result.name} is not on the shopping list, so skip the purchase.")
                 current_list.append(clip_result.name)
@@ -72,12 +71,12 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 logger.debug(ocr_results)
                 ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
                 item_name = ocr_results.get_y_min()
-                db_result = item_db.search(item_name.text)
-                item_name = db_result.name
-                item_info = ItemInfo(item_name, db_result.description)
-                # 添加到记忆中
-                app.clip_manager.item_clip.add_to_memory(modal_item_image, item_info, 0.99, True)
-                app.clip_manager.item_clip.add_to_memory(yolo_result_item, item_info, 0.99)
+                status, result = item_db.search(item_name.text)
+                if status:
+                    _item = Item(result.id, result.name, result.description)
+                    app.clip_manager.item_clip.add_to_memory(modal_item_image, _item, 0.99)
+                    app.clip_manager.item_clip.add_to_memory(yolo_result_item, _item, 0.99)
+                item_name = result.name
                 current_list.append(item_name)
                 # 在购买列表的情况下购买
                 if string_match(item_name, commodity_target, MatchConfig(fuzz_threshold=80)):
@@ -101,26 +100,26 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
 
 def action__receive_weekly_gift(app: "AppProcessor"):
     """领取每周礼包"""
-    app.game_utils.click_button("パック", match_config=MatchConfig(use_fuzz=False))
+    app.game_utils.click_button(ButtonText.SHOP.PACK, match_config=MatchConfig(use_fuzz=False))
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
     sleep(3)
     height, width = app.latest_frame.shape[:2]
     for _ in range(3):
         buttons = ButtonList(app.latest_results)
         for button in buttons:
-            if "無料" in button.text and button.is_disabled() is False:
+            if ButtonText.FREE in button.text and button.is_disabled() is False:
                 app.app.click_element(button)
                 sleep(0.5)
-                app.game_utils.click_button("決定")
+                app.game_utils.click_button(ButtonText.CONFIRM)
                 sleep(0.5)
-                app.game_utils.click_button("閉じる")
+                app.game_utils.click_button(ButtonText.CLOSE)
         app.app.scrollY(width//2, height//2, -20)
     app.game_utils.back_next_page()
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
 
 def action__daily_exchange(app: "AppProcessor", commodity_target: List[str]):
-    app.game_utils.click_button("デイリー交換所")
+    app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE)
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
     tabbar = TabBar(app.latest_results.filter_by_label(base_labels.tab_bar).first())
     for tab_item in tabbar:

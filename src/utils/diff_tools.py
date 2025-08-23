@@ -4,10 +4,11 @@ from typing import Any
 
 import yaml
 
+from src.entity.Base import SingletonByFileMeta
 from src.utils.string_tools import string_match, MatchConfig
 from src.utils.logger import logger
 
-class GakumasuDiffItemDataUtils:
+class GakumasuDiffItemDataUtils(metaclass=SingletonByFileMeta):
     _diff_file: str
     _data: list[dict[str, Any]]
     _names:list[str] = []
@@ -17,6 +18,7 @@ class GakumasuDiffItemDataUtils:
         id: str | None
         name: str
         description: str | None
+        acquisitionRouteDescription: str | None
 
     def __init__(self, diff_file):
         self._diff_file = diff_file
@@ -33,7 +35,21 @@ class GakumasuDiffItemDataUtils:
 
     def search(self, ocr_result, match_config: MatchConfig = None):
         result = string_match(ocr_result, self._names, match_config)
-        logger.debug(result)
         if not result:
-            return self.Result(None, ocr_result, None)
-        return self.Result(self._data[self._names.index(result.result)]["id"], ocr_result, self._data[self._names.index(result.result)]["description"])
+            return False, self.Result(None, ocr_result, None)
+        return True, self.Result(self._data[self._names.index(result.result)]["id"], result.result, self._data[self._names.index(result.result)]["description"])
+
+    def get_by_id(self, id: str) -> "Result":
+        for index, row in enumerate(self._data):
+            if row["id"] == id:
+                return self.Result(row["id"], row["name"], row["description"])
+        return False
+
+    def get_by_name(self, name: str) -> "Result":
+        for index, row in enumerate(self._data):
+            if row["name"] == name:
+                return self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"])
+        return False
+
+    def get_all_item(self):
+        return [self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"]) for row in self._data]
