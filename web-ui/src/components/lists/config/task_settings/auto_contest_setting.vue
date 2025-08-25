@@ -2,11 +2,13 @@
 import apis from "@/scripts/apis.js";
 import message from "@/scripts/utils/message.js";
 import {hash} from "@/scripts/utils/hash.js";
+import app from "@/main.js";
 
 const props = defineProps({
   task: Object,
   task_name: String,
 })
+
 const configData = ref({})
 let configHash
 apis.get_task_config(props.task_name).then(response => {
@@ -37,32 +39,20 @@ function save() {
     <v-row dense v-else>
       <v-col cols="12">
         <v-switch
-          label="购买每周礼包"
-          hint="每日检查礼包页面是否有免费可购买项"
+          label="挑战前自动重新配置队伍"
+          hint="如果队伍中有空位仍会触发自动配置"
+          :color="app.config.globalProperties.$theme.color"
           persistent-hint
-          clearable
-          density="comfortable"
-          v-model="configData.weekly_gift.value"
+          v-model="configData.auto_reconfigure_team_before_challenge.value"
         />
       </v-col>
       <v-col cols="12">
-        <select_item :data="configData"/>
+        <select_challenge_order :data="configData"/>
       </v-col>
     </v-row>
   </v-form>
 </template>
 
 <style scoped>
-.v-row {
-  padding-top: 15px;
-}
 
-.v-text-field,
-.v-select,
-.v-autocomplete,
-.v-switch,
-.v-slider,
-.v-textarea {
-  margin-bottom: 12px;
-}
 </style>

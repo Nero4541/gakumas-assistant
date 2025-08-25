@@ -14,7 +14,7 @@ from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersi
 
 from src.utils.opencv_tools import letterbox
 from src.utils.performance_tools import timeit
-from src.utils.string_tools import fullwidth_to_halfwidth
+from src.utils.string_tools import fullwidth_to_halfwidth, MatchConfig, string_match
 
 
 class OCRLoader(metaclass=SingletonMeta):
@@ -176,22 +176,24 @@ class OCR_ResultList:
         new_results = [result for result in self.results if result not in exclude_list]
         return self._from(new_results)
 
-    def search(self, query: str) -> 'OCR_ResultList':
+    def search(self, query: str | list[str], config: MatchConfig = None) -> 'OCR_ResultList':
         """
-        使用正则表达式或者关键字查询OCR结果
-        :param query: 查询关键字/正则表达式
-        :return:
+        使用 string_match 查询 OCR 结果
+        :param query: 查询关键字或列表
+        :param config: 匹配配置
+        :return: OCR_ResultList
         """
-        matched_results = []
+        if config is None:
+            config = MatchConfig()
 
+        matched_results = []
         for result in self.results:
-            try:
-                if re.search(query, result.text):
-                    matched_results.append(result)
-            except re.error:
-                if query in result.text:
-                    matched_results.append(result)
+            match_result = string_match(result.text, query, config)
+            if match_result:
+                matched_results.append(result)
+
         return self._from(matched_results)
+
 
 
 class OCRService:

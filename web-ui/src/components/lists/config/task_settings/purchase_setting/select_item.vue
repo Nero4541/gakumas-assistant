@@ -24,18 +24,22 @@ function filter(value, queryText, item) {
 </script>
 
 <template>
-  <v-autocomplete
+  <v-select
     v-model="data.daily_buy_list.value"
     :items="items"
     item-value="id"
     :label="label"
-    hide-no-data
     multiple
     clearable
     :custom-filter="filter"
   >
     <template v-slot:item="{ item, props }">
-      <v-list-item @click="props.onClick" class="select_item">
+      <v-list-item
+        v-bind="props"
+        width="400"
+        :title="item.raw.translation?.name || item.raw.name"
+        :subtitle="item.raw.translation?.name ? item.raw.name : ''"
+        :key="item.raw.id" class="select_item">
         <template v-slot:prepend>
           <v-img
             v-if="item.raw.image"
@@ -45,11 +49,6 @@ function filter(value, queryText, item) {
           />
         </template>
         <div class="item-content">
-          <div class="item-title">
-            {{ item.raw.translation?.name || item.raw.name }}
-            <span v-if="item.raw.translation?.name" class="item-subtitle">({{ item.raw.name }})</span>
-          </div>
-
           <div class="item-description">
             {{ item.raw.translation?.description || item.raw.description }}
           </div>
@@ -78,7 +77,7 @@ function filter(value, queryText, item) {
         </template>
       </v-chip>
     </template>
-  </v-autocomplete>
+  </v-select>
 </template>
 
 <style scoped>

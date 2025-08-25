@@ -3,6 +3,9 @@ from typing import TYPE_CHECKING
 
 from src.constants import *
 from src.constants.text.button_text import ButtonText
+from src.constants.text.modal_text import ModalText
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
+from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
@@ -24,7 +27,7 @@ def handle__work_dispatch_results(app: "AppProcessor"):
     while count < MAX_WORKS + 2:
         if app.game_utils.update_current_location() == GamePageTypes.HOME_TAB.WORK:
             return
-        if app.game_utils.wait_for_label(base_labels.modal_header, 3):
+        if app.game_utils.wait_for_label(BaseUILabels.MODAL_HEADER, 3):
             modal = get_modal(app.latest_results, app.latest_frame, True)
             app.app.click_element(modal.cancel_button)
             count += 1
@@ -35,7 +38,7 @@ def handle__work_dispatch_results(app: "AppProcessor"):
 def action__dispatch_all_available_work(app: "AppProcessor"):
     """派遣任务逻辑"""
     height, width = app.latest_frame.shape[:2]
-    item_group = app.latest_results.filter_by_label(base_labels.item).group_yolo_boxes_by_position(10, width / 4)
+    item_group = app.latest_results.filter_by_label(BaseUILabels.ITEM).group_yolo_boxes_by_position(10, width // 4)
 
     if len(item_group) != MAX_WORKS:
         raise RuntimeError("Error in calculating the range of the box body")
@@ -47,11 +50,11 @@ def action__dispatch_all_available_work(app: "AppProcessor"):
         sleep(1)
         _dispatch_single_work(app)
         sleep(3)
-        app.game_utils.wait_for_label(base_labels.avatar, 10)
+        app.game_utils.wait_for_label(BaseUILabels.AVATAR, 10)
 
 def _is_work_already_dispatched(app: "AppProcessor", group, width):
     """判断该任务是否已派遣"""
-    return group.get_vertical_range_elements(app.latest_results, width / 4).exists_label(base_labels.avatar)
+    return group.get_vertical_range_elements(app.latest_results, width / 4).exists_label(BaseUILabels.AVATAR)
 
 def _is_avatar_busy(avatar, full_frame):
     """判断角色是否“工作中”"""
@@ -78,25 +81,25 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
     if avatar:  # 当有头像元素时
         app.app.click_element(avatar)
         sleep(0.5)
-    app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
+    app.app.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
     sleep(1)
     while True:
-        exists_modal = app.latest_results.exists_label(base_labels.modal_header)
-        if not app.latest_results.exists_label(base_labels.avatar) and not exists_modal:
+        exists_modal = app.latest_results.exists_label(BaseUILabels.MODAL_HEADER)
+        if not app.latest_results.exists_label(BaseUILabels.AVATAR) and not exists_modal:
             break
         if exists_modal:
             modal = get_modal(app.latest_results, app.latest_frame)
-            if string_match(modal.modal_title, modal_text.confirm) and string_match(modal.modal_body_text, modal_text.DispatchWorkError.other_selectable_idols):
+            if string_match(modal.modal_title, ModalText.TITLE.CONFIRM) and string_match(modal.modal_body_text, ModalText.BODY.DISPATCH_WORK_ERROR.OTHER_SELECTABLE_IDOLS):
                 app.app.click_element(modal.cancel_button)
                 sleep(0.5)
                 return False
-    app.game_utils.wait_for_label(base_labels.button)
+    app.game_utils.wait_for_label(BaseUILabels.BUTTON)
     duration_box = _select_work_duration(app)
     app.app.click_element(duration_box)
     sleep(1)
-    app.app.click_element(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first())
+    app.app.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
     sleep(1)
-    modal = app.game_utils.wait_for_modal(modal_text.work_start_confirmation, 10, no_body=True)
+    modal = app.game_utils.wait_for_modal(ModalText.TITLE.WORK_START_CONFIRMATION, 10, no_body=True)
     app.app.click_element(modal.confirm_button)
     sleep(1)
     return True
@@ -105,7 +108,7 @@ def _select_work_duration(app: "AppProcessor"):
     """选择工作时长"""
     frame_h, frame_w = app.latest_frame.shape[:2]
     y_start = frame_h // 2
-    y_end = int(app.latest_results.filter_by_label(base_labels.button).get_y_max_element().first().y)
+    y_end = int(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first().y)
     y_end = min(frame_h, max(y_start + 1, y_end))
     frame = app.latest_frame[y_start:y_end, 0:frame_w]
 
@@ -126,9 +129,9 @@ def _select_work_duration(app: "AppProcessor"):
 
 def _dispatch_single_work(app: "AppProcessor"):
     """派遣单个任务"""
-    app.game_utils.wait_for_label(base_labels.avatar)
+    app.game_utils.wait_for_label(BaseUILabels.AVATAR)
     def _exec():
-        avatars = app.latest_results.filter_by_label(base_labels.avatar)
+        avatars = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
         avatars = Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])
         for avatar in avatars:
             if _is_avatar_busy(avatar, app.latest_frame):
@@ -138,7 +141,7 @@ def _dispatch_single_work(app: "AppProcessor"):
                 return _assign_avatar_to_work(app, avatar)
         return False
     if not _exec():
-        x, y = app.latest_results.filter_by_label(base_labels.avatar).get_COL()
+        x, y = app.latest_results.filter_by_label(BaseUILabels.AVATAR).get_COL()
         app.app.scrollY(x, y, -10)
         sleep(0.5)
         if _exec():

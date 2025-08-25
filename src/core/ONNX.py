@@ -194,7 +194,7 @@ class YoloModelFromONNX:
             input_image
         )
 
-    def __call__(self, img: np.ndarray, conf_threshold: float = 0.7, iou_threshold: float = 0.5) -> ONNXYoloResult:
+    def __call__(self, img: np.ndarray, conf_threshold: float = 0.5, iou_threshold: float = 0.5) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)
         outputs = self._engine.run(None, {self._model_input_name: input_tensor})
         return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh)

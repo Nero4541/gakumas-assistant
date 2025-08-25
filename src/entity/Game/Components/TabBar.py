@@ -73,7 +73,7 @@ class TabBar(Yolo_Box):
         word_boxes = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            if w > 20 and h > 10:  # 过滤噪声
+            if w > 10 and h > 10:  # 过滤噪声
                 word_boxes.append((x, y, w, h))
         word_boxes = sorted(word_boxes, key=lambda b: b[0])  # 按x排序
         logger.debug(f"word_boxes={word_boxes}")

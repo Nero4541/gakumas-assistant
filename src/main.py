@@ -17,7 +17,7 @@ from src.core.services.clip_services import CLIPServiceManager
 from src.core.Web.routers import register_routes
 from src.core.Web.websocket import WebSocketManager
 from src.core.Windows.app import Windows_App
-from src.core.game_utils import GameUtils
+from src.core.services.game_utils import GameUtils
 from src.core.middlewares.middleware_register import register_middlewares
 from src.core.services.config_service import ConfigService
 from src.core.tasks.task_register import register_tasks
@@ -29,7 +29,7 @@ from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 
 if TYPE_CHECKING:
-    from src.core.task import TaskQueue
+    from src.core.services.task_service import TaskQueue
 
 class AppProcessor:
     data_path: str
@@ -68,7 +68,7 @@ class AppProcessor:
         self._init_database()
         self.config_service = ConfigService()
         print(self.config_service())
-        from src.core.task import TaskQueue
+        from src.core.services.task_service import TaskQueue
         self.app = self._create_app_instance()
         self.load_model()
         self._middleware_registry = []
@@ -104,8 +104,8 @@ class AppProcessor:
         """
         def _init():
             logger.debug(f"Loading YOLO model {model_type}...")
-            model_config = config.model_config.get(model_type)
-            model = YoloModelFromONNX(model_config.get("model_path"))
+            model_path = config.model_config.get(model_type)
+            model = YoloModelFromONNX(model_path)
             return model
 
         if model_type in YoloModelType.__dict__.keys():

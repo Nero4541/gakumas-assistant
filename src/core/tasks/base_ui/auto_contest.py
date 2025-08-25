@@ -1,10 +1,12 @@
+import random
 from time import sleep
 
 from src.constants.text.button_text import ButtonText
+from src.constants.text.modal_text import ModalText
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.CheckBox import CheckBox
-from src.entity.Game.Components.Contest import ContestList
-from src.constants import *
+from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
@@ -17,7 +19,7 @@ def action__check_and_collect_rewards(app: "AppProcessor"):
     奖励出现时通常位于屏幕下半部，通过点击领取。
     """
     height, width = app.latest_frame.shape[:2]
-    items = app.latest_results.filter_by_label(base_labels.item)
+    items = app.latest_results.filter_by_label(BaseUILabels.ITEM)
     if not items:
         return
     items_cx, items_cy = items.get_COL()
@@ -33,6 +35,8 @@ def action__loop_challenge_contest(app: "AppProcessor"):
     持续挑战竞技场，直到没有可挑战对象为止。
     """
     height, width = app.latest_frame.shape[:2]
+    if app.config_service().task__auto_contest.auto_reconfigure_team_before_challenge.value:
+        _auto_form_team(app)
     while True:
         contest: ContestList | None = None
         for i in range(3):
@@ -44,11 +48,23 @@ def action__loop_challenge_contest(app: "AppProcessor"):
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")
             break
-        target = contest.get_combat_power_min()
+        target: ContestItem
+        match app.config_service().task__auto_contest.challenge_order.value:
+            case "highest_power":
+                target = contest.get_combat_power_max()
+            case "lowest_power":
+                target = contest.get_combat_power_min()
+            case "balanced_power":
+                avg_power = sum(c.combat_power for c in contest.contests) / len(contest.contests)
+                target = min(contest.contests, key=lambda x: abs(x.combat_power - avg_power))
+            case "random":
+                target = random.choice(contest.contests)
+            case _:
+                target = random.choice(contest.contests)
         logger.info(f"try contest: {target}")
         app.app.click_element(target)
         sleep(1)
-        if app.latest_results.exists_label(base_labels.blank_slot):
+        if app.latest_results.exists_label(BaseUILabels.BLANK_SLOT):
             _auto_form_team(app)
         _start_battle_and_skip(app, width, height)
         _finish_battle(app)
@@ -74,13 +90,13 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     重复点击直到跳过按钮消失。
     """
     app.game_utils.click_button(ButtonText.START_CHALLENGE)
-    app.game_utils.wait_for_label(base_labels.checkbox)
-    check_box = CheckBox(app.latest_results.filter_by_label(base_labels.checkbox).first())
+    app.game_utils.wait_for_label(BaseUILabels.CHECKBOX)
+    check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
     if not check_box.checked:
         app.app.click_element(check_box)
-    app.game_utils.click_on_label(base_labels.skip_button)
+    app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
     sleep(1)
-    while app.latest_results.exists_label(base_labels.skip_button):
+    while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
         app.app.click(width // 2, height // 2)
         sleep(1)
     app.app.click(width // 2, height // 2)
@@ -103,8 +119,8 @@ def _finish_battle(app: "AppProcessor"):
         raise TimeoutError("Waiting for the challenge to end timeout")
     app.game_utils.click_button(ButtonText.EXIT)
     while True:
-        if app.latest_results.exists_label(base_labels.back_btn):
+        if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
             return
-        if app.latest_results.exists_label(base_labels.modal_header):
-            modal = app.game_utils.wait_for_modal(modal_text.rate_reward, no_body=True)
+        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+            modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
             app.app.click_element(modal.cancel_button)

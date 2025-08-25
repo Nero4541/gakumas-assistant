@@ -1,3 +1,6 @@
+from src.constants.location import Location
+from src.constants.text.modal_text import ModalText
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 from src.constants import *
@@ -24,15 +27,17 @@ def register_middlewares(processor: "AppProcessor"):
     @logger.catch
     def _handle_unexpected_modal(app: "AppProcessor"):
         global last_modal
-        if app.latest_results.exists_label(base_labels.modal_header):
+        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
             if last_modal:
                 return True
             modal = get_modal(app.latest_results, app.latest_frame, True)
-            if string_match(modal.modal_title, [modal_text.data_update, modal_text.date_update], MatchConfig(fuzz_threshold=90)):
+            if modal is None:
+                return True
+            if string_match(modal.modal_title, [ModalText.TITLE.DATA_UPDATE, ModalText.TITLE.DATE_UPDATE], MatchConfig(fuzz_threshold=90)):
                 logger.warning("Restart game...")
                 app.app.click_element(modal.cancel_button)
                 app.game_utils.wait_loading()
-                app.game_utils.wait_for_label(base_labels.start_menu_logo)
+                app.game_utils.wait_for_label(BaseUILabels.START_MENU_LOGO)
                 app.exec_task("start_game")
             last_modal = True
         else:

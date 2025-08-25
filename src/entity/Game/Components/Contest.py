@@ -5,6 +5,7 @@ from typing import List
 import cv2
 import numpy as np
 
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.services.ocr_service import OCRService, OCR_Result
 from src.constants import *
@@ -20,8 +21,6 @@ class ContestItem(Yolo_Box):
     def __init__(self, x: float, y: float, w: float, h: float, label: str, frame: np.ndarray):
         super().__init__(x, y, w, h, label, frame)
         ocr_result = ocr_service.ocr(frame)
-        # logger.debug(f"ocr_result: {ocr_result}")
-        # [OCR_Result(x=514, y=0, w=89, h=24, text='+139p+', confidence=0.8393095135688782), OCR_Result(x=30, y=32, w=104, h=23, text='総合力合計', confidence=0.999838650226593), OCR_Result(x=26, y=71, w=165, h=32, text='106980', confidence=0.9857919216156006), OCR_Result(x=20, y=128, w=80, h=22, text='ふ一ちや', confidence=0.8578659892082214)]
         self._parse_ocr_results(ocr_result)
 
     def _parse_ocr_results(self, ocr_results: List[OCR_Result]):
@@ -55,11 +54,15 @@ class ContestList:
     _end_y: float
     _width: float
 
-    def __init__(self, results: Yolo_Results, frame: np.array):
+    def __init__(self, results: Yolo_Results, frame: np.ndarray):
         _, self._width = frame.shape[:2]
-        self._start_y = results.filter_by_label(base_labels.button).get_y_max_element().first().h
-        self._end_y = results.filter_by_label(base_labels.back_btn).first().y
+        if not results.filter_by_label(BaseUILabels.BUTTON):
+            return
+        self._start_y = results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first().h
+        self._end_y = results.filter_by_label(BaseUILabels.BACK_BTN).first().y
         self.contest_area = frame[self._start_y:self._end_y, 0:self._width]
+        if self.contest_area.size == 0:
+            return
         if not [res for res in ocr_service.ocr(self.contest_area) if "消費しました" in res.text]:
             self._get_contest_items()
 

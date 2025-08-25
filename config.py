@@ -12,14 +12,6 @@ auto_reload_server: bool = False
 debug: bool = True
 
 model_config = {
-    YoloModelType.BASE_UI: {
-        "model_path": "model/base_ui.onnx",
-        "conf_threshold": 0.5,
-        "iou_threshold": 0.5
-    },
-    YoloModelType.PRODUCER: {
-        "model_path": "model/producer.onnx",
-        "conf_threshold": 0.5,
-        "iou_threshold": 0.5
-    },
+    YoloModelType.BASE_UI: "model/base_ui.onnx",
+    YoloModelType.PRODUCER: "model/producer.onnx"
 }

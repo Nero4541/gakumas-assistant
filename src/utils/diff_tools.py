@@ -36,13 +36,14 @@ class GakumasuDiffItemDataUtils(metaclass=SingletonByFileMeta):
     def search(self, ocr_result, match_config: MatchConfig = None):
         result = string_match(ocr_result, self._names, match_config)
         if not result:
-            return False, self.Result(None, ocr_result, None)
-        return True, self.Result(self._data[self._names.index(result.result)]["id"], result.result, self._data[self._names.index(result.result)]["description"])
+            return False, self.Result(None, ocr_result, None, None)
+        data = self._data[self._names.index(result.result)]
+        return True, self.Result(data["id"], result.result, data["description"], data["acquisitionRouteDescription"])
 
     def get_by_id(self, id: str) -> "Result":
         for index, row in enumerate(self._data):
             if row["id"] == id:
-                return self.Result(row["id"], row["name"], row["description"])
+                return self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"])
         return False
 
     def get_by_name(self, name: str) -> "Result":

@@ -53,7 +53,7 @@ class _BaseConfigGroup:
                     lines.append(val._to_str(indent + 4))
         return "\n".join(lines)
 
-class Base(_BaseConfigGroup):
+class _Base(_BaseConfigGroup):
     # 脚本运行模式
     run_mode = ConfigItem(default_value="PC", data_type=str, verify=r"Phone|PC", use_verify=True)
     # 游戏窗口名
@@ -75,16 +75,25 @@ class Base(_BaseConfigGroup):
     # 自动运行触发时间
     auto_startup_time = ConfigItem(default_value="12:00", data_type=str)
 
-class Task__AutoPurchase(_BaseConfigGroup):
-    # 是否购买每周礼包
-    weekly_gift = ConfigItem(default_value=True, data_type=bool)
-    # 每日购买的物品
-    daily_buy_list = ConfigItem(default_value=[], data_type=list)
+class _Task:
+
+    class AutoPurchase(_BaseConfigGroup):
+        # 是否购买每周礼包
+        weekly_gift = ConfigItem(default_value=True, data_type=bool)
+        # 每日购买的物品
+        daily_buy_list = ConfigItem(default_value=[], data_type=list)
+
+    class AutoContest(_BaseConfigGroup):
+        # 挑战前自动重新配置队伍
+        auto_reconfigure_team_before_challenge = ConfigItem(default_value=False, data_type=bool)
+        # 挑战顺序
+        challenge_order = ConfigItem(default_value="random", data_type=str, verify=r"random|highest_power|lowest_power|balanced_power", use_verify=True)
 
 @dataclass
 class Config(_BaseConfigGroup):
-    base = Base()
-    task__auto_purchase = Task__AutoPurchase()
+    base = _Base()
+    task__auto_purchase = _Task.AutoPurchase()
+    task__auto_contest = _Task.AutoContest()
 
     @classmethod
     def to_json_dict(cls) -> dict:

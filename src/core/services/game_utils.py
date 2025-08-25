@@ -1,12 +1,12 @@
 from time import sleep
 from typing import TYPE_CHECKING, Optional
 
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
-from src.constants import *
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ class GameUtils:
     def __init__(self, app_processor: "AppProcessor"):
         self._app_processor = app_processor
 
-    def wait_for_label(self, label, timeout=30, interval=1, continuous=1):
+    def wait_for_label(self, label, timeout=15, interval=1, continuous=1):
         """
         等待指定标签的框出现
         :param label: 标签
@@ -48,7 +48,7 @@ class GameUtils:
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' not found.")
         return False
 
-    def wait_for_modal(self, modal_title, timeout=30, interval=1, no_body: bool = False, match_config: MatchConfig = None) -> Optional[Modal]:
+    def wait_for_modal(self, modal_title, timeout=10, interval=1, no_body: bool = False, match_config: MatchConfig = None) -> Optional[Modal]:
         """
         等待指定标题的模态框出现
         :param modal_title: 模态框标题
@@ -62,8 +62,8 @@ class GameUtils:
         wait_time = 0
         match_config = match_config if match_config is not None else MatchConfig(fuzz_threshold=80)
         while wait_time < timeout:
-            headers = self._app_processor.latest_results.filter_by_label(base_labels.modal_header)
-            buttons = self._app_processor.latest_results.filter_by_label(base_labels.button)
+            headers = self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER)
+            buttons = self._app_processor.latest_results.filter_by_label(BaseUILabels.BUTTON)
 
             if not (headers and buttons):
                 logger.debug(f"No modal header or button found, waiting... ({wait_time}/{timeout})")
@@ -110,7 +110,7 @@ class GameUtils:
             WAIT_TIME += interval
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' not found.")
         return False
-    
+
     def wait_loading(self, timeout=60):
         """
         等待加载
@@ -120,9 +120,10 @@ class GameUtils:
         WAIT_TIME = 0
         COUNT = 0
         sleep(1)
-        logger.debug("Waiting for loading")
         while WAIT_TIME < timeout:
-            if self._app_processor.latest_results.filter_by_labels([base_labels.general_loading1, base_labels.general_loading2]):
+            if self._app_processor.latest_results.filter_by_labels([BaseUILabels.GENERAL_LOADING1, BaseUILabels.GENERAL_LOADING2]):
+                if WAIT_TIME == 0:
+                   logger.debug("Waiting for loading")
                 sleep(1)
                 WAIT_TIME += 1
             else:
@@ -142,7 +143,7 @@ class GameUtils:
         :param timeout: 超时时间
         :return:
         """
-        logger.debug(f"waiting click label: {text}")
+        logger.debug(f"waiting click button: {text}")
         self._app_processor.app.click_element(self.wait_button(text,timeout, match_config))
 
     def wait_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
@@ -178,15 +179,18 @@ class GameUtils:
                 if name.startswith("MAIN_MENU__")
             ]
             if self.update_current_location() in main_menu_items:
-                self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(base_labels.tab_home).first())
+                self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME).first())
                 self.wait_loading()
                 self.update_current_location()
                 return
-            elif go_home_btn := self._app_processor.latest_results.filter_by_label(base_labels.go_home_btn):
+            elif go_home_btn := self._app_processor.latest_results.filter_by_label(BaseUILabels.GO_HOME_BTN):
                 self._app_processor.app.click_element(go_home_btn.first())
                 self.wait_loading()
                 self.update_current_location()
                 return
+            elif modal_header := self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
+                modal_header = modal_header.first()
+                self._app_processor.app.click(modal_header.cx, modal_header.y - 20)
             sleep(1)
         raise RuntimeError("Going home failed")
 
@@ -197,8 +201,8 @@ class GameUtils:
         :return:
         """
         logger.debug("Going back next page")
-        if self.wait_for_label(base_labels.back_btn, 3):
-            self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(base_labels.back_btn).first())
+        if self.wait_for_label(BaseUILabels.BACK_BTN, 3):
+            self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first())
         else:
             raise TimeoutError("Waiting for a back button timeout")
 

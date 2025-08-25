@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING, List
 
 from src.constants.data_path import DataPath
 from src.constants.text.button_text import ButtonText
+from src.constants.text.modal_text import ModalText
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.services.clip.item import Item
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.TabBar import TabBar
@@ -31,14 +33,14 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
     while True:
         # 当前页面物品（名）列表
         current_list = []
-        item_commodity = app.latest_results.filter_by_labels([base_labels.item,base_labels.card__commodity])
-        item_commodity_group = item_commodity.find_containing_groups(base_labels.card__commodity, [base_labels.item])
+        item_commodity = app.latest_results.filter_by_labels([BaseUILabels.ITEM,BaseUILabels.CARD_COMMODITY])
+        item_commodity_group = item_commodity.find_containing_groups(BaseUILabels.CARD_COMMODITY, [BaseUILabels.ITEM])
         scroll_x, scroll_y = item_commodity.get_COL()
         # 循环每一个物品
         for index, item_boxe in enumerate(item_commodity_group):
-            item = item_boxe.filter_by_label(base_labels.item).first()
+            item = item_boxe.filter_by_label(BaseUILabels.ITEM).first()
             # 跳过无法交换的物品
-            if ocr_service.ocr(item.frame).search("交換済み"):
+            if ocr_service.ocr(item.frame).search("交換済み", MatchConfig(fuzz_threshold=75)):
                 app.debug_tools.add_box(item.x, item.y, item.w, item.h, label=f"{index} 已跳过：无库存", color=(255,255,0))
                 logger.debug(f"Skip item {index}(x={item.x},y={item.y}) Reason: 交換済み")
                 continue
@@ -50,7 +52,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
                     logger.info(f"purchase {clip_result.name}(index={index}, x={item.x}, y={item.y}) items......")
                     app.app.click_element(item_boxe)
-                    modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
+                    modal = app.game_utils.wait_for_modal(ModalText.TITLE.EXCHANGE_CONFIRMATION)
                     app.app.click_element(modal.confirm_button)
                     sleep(0.5)
                 else:
@@ -63,7 +65,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 # 点击物品
                 app.app.click_element(item_boxe)
                 app.debug_tools.hide()
-                modal = app.game_utils.wait_for_modal(modal_text.exchange_confirmation)
+                modal = app.game_utils.wait_for_modal(ModalText.TITLE.EXCHANGE_CONFIRMATION)
                 yolo_result_item = copy(item.frame)
                 # 截取物品和物品信息
                 modal_item_image, item_info = modal_body_extract_item_info(modal.modal_body)
@@ -118,10 +120,14 @@ def action__receive_weekly_gift(app: "AppProcessor"):
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
 
-def action__daily_exchange(app: "AppProcessor", commodity_target: List[str]):
+def action__daily_exchange(app: "AppProcessor"):
     app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE)
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
-    tabbar = TabBar(app.latest_results.filter_by_label(base_labels.tab_bar).first())
+    tabbar = TabBar(app.latest_results.filter_by_label(BaseUILabels.TAB_BAR).first())
+    commodity_target = []
+    for item_id in app.config_service().task__auto_purchase.daily_buy_list.value:
+        if (result := item_db.get_by_id(item_id)) is not None:
+            commodity_target.append(result.name)
     for tab_item in tabbar:
         app.app.click_element(tab_item)
         sleep(2)

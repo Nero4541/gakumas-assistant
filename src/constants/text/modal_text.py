@@ -1,17 +1,22 @@
-connection_error = "通信エラー"
-class ConnectionError_Body:
-    Token_Fail = "ERR_AM_IDTOKEN_FAIL"
-    Timeout = "FBR_ERR_TIMEOUT"
-data_update = "データ更新"
-date_update = "日付変更"
-data_download = "データダウンロード"
-init_error = "初期化エラー"
-receipt_completed = "受取完了"
-rate_reward = "レート報酬"
-exchange_confirmation = "交換確"
-work_start_confirmation = "仕事開始確"
-expenditure = "活動費"
-destroying_production_data = "プロデュースデータの破棄"
-confirm = "確認"
-class DispatchWorkError:
-    other_selectable_idols = "他に選択可能な好調状態のアイドルがいます二のまま決へ進れでよろしいです力？"
+class ModalText:
+    class TITLE:
+        CONNECTION_ERROR = "通信エラー"
+        DATA_UPDATE = "データ更新"
+        DATE_UPDATE = "日付変更"
+        DATA_DOWNLOAD = "データダウンロード"
+        INIT_ERROR = "初期化エラー"
+        RECEIPT_COMPLETED = "受取完了"
+        RATE_REWARD = "レート報酬"
+        EXCHANGE_CONFIRMATION = "交換確"
+        WORK_START_CONFIRMATION = "仕事開始確"
+        EXPENDITURE = "活動費"
+        DESTROYING_PRODUCTION_DATA = "プロデュースデータの破棄"
+        CONFIRM = "確認"
+
+    class BODY:
+        class CONNECTION_ERROR_BODY:
+            TOKEN_FAIL = "ERR_AM_IDTOKEN_FAIL"
+            TIMEOUT = "FBR_ERR_TIMEOUT"
+
+        class DISPATCH_WORK_ERROR:
+            OTHER_SELECTABLE_IDOLS = "他に選択可能な好調状態のアイドルがいます二のまま決へ進れでよろしいです力？"

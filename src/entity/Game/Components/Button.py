@@ -4,8 +4,8 @@ from typing import List
 import cv2
 import numpy as np
 
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
-from src.constants import *
 from src.core.services.ocr_service import OCRService
 from src.utils.string_tools import string_match, MatchConfig
 
@@ -69,7 +69,7 @@ class ButtonList:
     buttons: List[Button]
 
     def __init__(self, yolo_results: Yolo_Results):
-        self.buttons = [Button(el) for el in yolo_results.filter_by_label(base_labels.button)]
+        self.buttons = [Button(el) for el in yolo_results.filter_by_label(BaseUILabels.BUTTON)]
 
     def __bool__(self):
         return bool(self.buttons)

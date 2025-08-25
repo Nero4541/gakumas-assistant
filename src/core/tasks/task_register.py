@@ -1,4 +1,5 @@
-
+from src.constants.text.modal_text import ModalText
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
 from src.core.tasks.base_ui.auto_purchase import action__receive_weekly_gift, action__daily_exchange
@@ -34,11 +35,11 @@ def register_tasks(processor: "AppProcessor"):
     def _task__get_expenditure(app: "AppProcessor"):
         goto__get_expenditure(app)
         sleep(3)
-        if modal := app.game_utils.wait_for_modal(modal_text.expenditure, no_body=True, timeout=10):
+        if modal := app.game_utils.wait_for_modal(ModalText.TITLE.EXPENDITURE, no_body=True, timeout=10):
             app.app.click_element(modal.cancel_button)
             sleep(3)
             return True
-        elif app.latest_results.exists_label(base_labels.tab_home):
+        elif app.latest_results.exists_label(BaseUILabels.TAB_HOME):
             logger.warning("There are no claimable expenses")
             return True
         raise TimeoutError("Timeout waiting for modal to appear.")
@@ -60,12 +61,12 @@ def register_tasks(processor: "AppProcessor"):
         goto__shop_page(app)
         if app.config_service().task__auto_purchase.weekly_gift.value:
             action__receive_weekly_gift(app)
-        commodity_target = app.config_service().task__auto_purchase.daily_buy_list.value
-        action__daily_exchange(app, commodity_target)
+        action__daily_exchange(app)
 
-    @processor.register_task("automated_contest", "自动每日竞技场")
+    @processor.register_task("auto_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):
         goto__contest_page(app)
+        sleep(3)
         action__check_and_collect_rewards(app)
         action__loop_challenge_contest(app)
 

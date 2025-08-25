@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
 
+from src.constants.location import Location
+from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
+from src.constants.yolo.labels.producer_Labels import ProducerLabels
 from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
 
@@ -11,49 +14,49 @@ from src.utils.logger import logger
 from src.core.services.ocr_service import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
 
+ocr_service = OCRService()
 
 @logger.catch
 def get_current_location(boxes: Yolo_Results) -> str | None:
-    if boxes.exists_label(base_labels.start_menu_logo):
+    if boxes.exists_label(BaseUILabels.START_MENU_LOGO):
         return GamePageTypes.START_GAME
-    if boxes.exists_label(base_labels.general_loading1) or boxes.exists_label(
-        base_labels.general_loading2):
+    if boxes.exists_label(BaseUILabels.GENERAL_LOADING1) or boxes.exists_label(
+            BaseUILabels.GENERAL_LOADING2):
         return GamePageTypes.LOADING
     # 映射标签 → 页面类型
     TAB_LABEL_TO_PAGE = {
-        base_labels.tab_communicate: GamePageTypes.MAIN_MENU__COMMUNICATE,
-        base_labels.tab_idol: GamePageTypes.MAIN_MENU__IDOL,
-        base_labels.tab_home: GamePageTypes.MAIN_MENU__HOME,
-        base_labels.tab_gacha: GamePageTypes.MAIN_MENU__GACHA,
-        base_labels.tab_contest: GamePageTypes.MAIN_MENU__CONTEST,
-        location.page__present: GamePageTypes.HOME_TAB.GIFT,
-        location.page__daily_task: GamePageTypes.HOME_TAB.TASK,
-        location.page__achievement: GamePageTypes.HOME_TAB.ACHIEVEMENT,
-        location.page__achievement_idol: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.IDOL,
-        location.page__achievement_producer: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.PRODUCER,
-        location.page__achievement_other: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.OTHER,
-        location.page__plan: GamePageTypes.HOME_TAB.MISSION_PASS,
-        location.page__dispatch_work: GamePageTypes.HOME_TAB.WORK,
-        location.page__shop: GamePageTypes.HOME_TAB.SHOP,
-        location.page__shop_gem: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.GEM,
-        location.page__shop_pack: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK,
-        location.page__shop_pass: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PASS,
-        location.page__shop_coin_gacha: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.COIN_GACHA,
-        location.page__shop_daily_exchange: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE,
-        location.page__shop_costume_exchange: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.COSTUME_EXCHANGE,
-        location.page__shop_item_exchange: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.ITEM_EXCHANGE,
-        location.page__shop_ticket_exchange: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.TICKET_EXCHANGE,
-        location.page__contest: GamePageTypes.CONTEST_TAB.ARENA,
-        location.page__the_road_to_idols: GamePageTypes.CONTEST_TAB.THE_ROAD_TO_IDOL,
-        location.page__hatsusei_community: GamePageTypes.Communicate_TAB.MAIN_STORY,
-        location.page__idol_community: GamePageTypes.Communicate_TAB.BOND_STORIES,
-        location.page__produce_card_list: GamePageTypes.Communicate_TAB.SUPPORT_CARD_ARCHIVE,
-        location.page__event_plot: GamePageTypes.Communicate_TAB.PAST_EVENTS,
-        location.page__producer_illustrated: GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED,
+        BaseUILabels.TAB_COMMUNICATE: GamePageTypes.MAIN_MENU__COMMUNICATE,
+        BaseUILabels.TAB_IDOL: GamePageTypes.MAIN_MENU__IDOL,
+        BaseUILabels.TAB_HOME: GamePageTypes.MAIN_MENU__HOME,
+        BaseUILabels.TAB_GACHA: GamePageTypes.MAIN_MENU__GACHA,
+        BaseUILabels.TAB_CONTEST: GamePageTypes.MAIN_MENU__CONTEST,
+        Location.MAIN_UI.Page.PRESENT: GamePageTypes.HOME_TAB.GIFT,
+        Location.MAIN_UI.Page.DAILY_TASK: GamePageTypes.HOME_TAB.TASK,
+        Location.MAIN_UI.Page.ACHIEVEMENT: GamePageTypes.HOME_TAB.ACHIEVEMENT,
+        Location.MAIN_UI.Page.ACHIEVEMENT_IDOL: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.IDOL,
+        Location.MAIN_UI.Page.ACHIEVEMENT_PRODUCER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.PRODUCER,
+        Location.MAIN_UI.Page.ACHIEVEMENT_OTHER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.OTHER,
+        Location.MAIN_UI.Page.PLAN: GamePageTypes.HOME_TAB.MISSION_PASS,
+        Location.MAIN_UI.Page.DISPATCH_WORK: GamePageTypes.HOME_TAB.WORK,
+        Location.MAIN_UI.Page.SHOP: GamePageTypes.HOME_TAB.SHOP,
+        Location.MAIN_UI.Page.SHOP_GEM: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.GEM,
+        Location.MAIN_UI.Page.SHOP_PACK: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK,
+        Location.MAIN_UI.Page.SHOP_PASS: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PASS,
+        Location.MAIN_UI.Page.SHOP_COIN_GACHA: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.COIN_GACHA,
+        Location.MAIN_UI.Page.SHOP_DAILY_EXCHANGE: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE,
+        Location.MAIN_UI.Page.SHOP_COSTUME_EXCHANGE: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.COSTUME_EXCHANGE,
+        Location.MAIN_UI.Page.SHOP_ITEM_EXCHANGE: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.ITEM_EXCHANGE,
+        Location.MAIN_UI.Page.SHOP_TICKET_EXCHANGE: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.TICKET_EXCHANGE,
+        Location.MAIN_UI.Page.CONTEST: GamePageTypes.CONTEST_TAB.ARENA,
+        Location.MAIN_UI.Page.THE_ROAD_TO_IDOLS: GamePageTypes.CONTEST_TAB.THE_ROAD_TO_IDOL,
+        Location.MAIN_UI.Page.HATSUSEI_COMMUNITY: GamePageTypes.Communicate_TAB.MAIN_STORY,
+        Location.MAIN_UI.Page.IDOL_COMMUNITY: GamePageTypes.Communicate_TAB.BOND_STORIES,
+        Location.MAIN_UI.Page.PRODUCE_CARD_LIST: GamePageTypes.Communicate_TAB.SUPPORT_CARD_ARCHIVE,
+        Location.MAIN_UI.Page.EVENT_PLOT: GamePageTypes.Communicate_TAB.PAST_EVENTS,
+        Location.MAIN_UI.Page.PRODUCER_ILLUSTRATED: GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED,
     }
     MAIN_UI_TABS = list(TAB_LABEL_TO_PAGE.keys())[:5]
     if boxes.exists_all_labels(MAIN_UI_TABS):
-        # logger.debug("Main UI mode")
         home_tab_bar = boxes.filter_by_labels(MAIN_UI_TABS)
         for item in home_tab_bar:
             if check_status_detection(
@@ -64,19 +67,16 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
                 background_lower_color=(0,35,225)
             ):
                 return TAB_LABEL_TO_PAGE.get(item.label)
-    elif boxes.exists_label(base_labels.current_location):
-        # logger.debug("Current location mode")
-        current_location = boxes.filter_by_label(base_labels.current_location).first()
+    elif current_location := boxes.filter_by_label(BaseUILabels.CURRENT_LOCATION):
+        current_location = current_location.first()
         if current_location.frame is None or current_location.frame.size == 0:
             logger.debug("Not current location frame")
             return GamePageTypes.UNKNOWN
-        ocr_service = OCRService()
         ocr_result = ocr_service.ocr(current_location.frame)
         if ocr_result is None:
             logger.debug("Current location not text")
             return GamePageTypes.UNKNOWN
         location_text = "".join([ocr_item.text for ocr_item in ocr_result])
-        logger.debug(location_text)
         for label in TAB_LABEL_TO_PAGE.keys():
             if label in location_text:
                 return TAB_LABEL_TO_PAGE.get(label)
@@ -158,7 +158,7 @@ def modal_body_extract_item_info(img):
 
 
 @logger.catch
-def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False) -> Modal | None:
+def get_modal(yolo_result: Yolo_Results, frame: np.ndarray, no_body: bool = False) -> Modal | None:
     """
     获取模态框
     :param no_body: 不识别模态框主体（加速）
@@ -166,24 +166,23 @@ def get_modal(yolo_result: Yolo_Results, frame: np.array, no_body: bool = False)
     :param frame: 图像帧
     :return: 解析后的 Modal 对象
     """
-    if not yolo_result.exists_all_labels([base_labels.modal_header, base_labels.button]):
+    if not yolo_result.exists_all_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON]):
         logger.warning("模态框不完整")
         return None
-    modal = yolo_result.filter_by_labels([base_labels.modal_header, base_labels.button])
-    modal_header = modal.filter_by_label(base_labels.modal_header).first()
-    ocr_service = OCRService()
+    modal = yolo_result.filter_by_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON])
+    modal_header = modal.filter_by_label(BaseUILabels.MODAL_HEADER).first()
     modal_header_ocr_result = ocr_service.ocr(modal_header.frame)
     modal_header_ocr_result.auto_merge_lines()
     modal_header_text = modal_header_ocr_result.first().text
     # 获取确认和取消按钮
-    buttons = modal.filter_by_label(base_labels.button).group_yolo_boxes_by_position(30, None)
+    buttons = modal.filter_by_label(BaseUILabels.BUTTON).group_yolo_boxes_by_position(30, None)
     if buttons:
         buttons = buttons.pop()
         confirm_button = buttons.get_x_max_element()
         cancel_button = buttons.get_x_min_element()
     else:
         # 不区分按钮类型时，取最下面的按钮作为取消按钮
-        buttons = modal.filter_by_label(base_labels.button).get_y_max_element()
+        buttons = modal.filter_by_label(BaseUILabels.BUTTON).get_y_max_element()
         confirm_button = None
         cancel_button = buttons
     if not confirm_button and not cancel_button:
