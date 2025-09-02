@@ -1,4 +1,3 @@
-from src.constants import *
 from typing import TYPE_CHECKING
 
 from src.constants.text.button_text import ButtonText

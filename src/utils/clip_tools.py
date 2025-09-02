@@ -2,15 +2,13 @@ import abc
 import os
 import pickle
 from abc import abstractmethod
-from uuid import UUID, uuid4
 
-import cv2
 import numpy as np
 
 from dataclasses import dataclass
-from typing import Optional, List, Any
+from typing import Optional, Any
 
-from src.core.ONNX import CLIPModelFromONNX
+from src.core.inference.ONNX import CLIPModelFromONNX
 from src.models.clip import CLIPMemory
 from src.utils.logger import logger
 

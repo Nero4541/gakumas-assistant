@@ -4,29 +4,28 @@ import traceback
 from dataclasses import dataclass
 from functools import partial
 from queue import Queue
-from typing import Callable, Optional, TYPE_CHECKING
+from typing import Callable, Optional, TYPE_CHECKING, List
 from threading import Thread, Lock
 from time import time, sleep
 
-import pyautogui
+from pyautogui import FailSafeException
 
+from src.constants.task_status import TaskStatus
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
+from src.entity.WebSocketData import WebSocketData
 from src.utils.logger import logger
+from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
 config_service = ConfigService()
 
-class TaskStatus:
-    PENDING = "PENDING"
-    RUNNING = "RUNNING"
-    SUCCESS = "SUCCESS"
-    RETRY = "RETRY"
-    FAILED = "FAILED"
-    CANCELED = "CANCELED"
-
+EXECUTE_MIDDLEWARE_WHITELIST = [
+    "src/core/tasks",
+    "src/core/services/game_utils.py"
+]
 
 @dataclass
 class Task:
@@ -65,8 +64,10 @@ class Task:
         return self._end_time
 
     def update_status(self, status: str):
-        if self.status in [TaskStatus.RUNNING, TaskStatus.PENDING]:
-            self.status = status
+        """更新任务状态"""
+        old_status = self.status
+        self.status = status
+        logger.debug(f"[TaskStatus] {self.name}: {old_status} -> {status}")
 
     def get_start_time(self):
         return self._start_time
@@ -75,7 +76,7 @@ class Task:
 class TaskQueue:
     _app: "AppProcessor" = None
     _task_queue = Queue()
-    _task_list = []
+    _task_list: List[Task] = []
     _run_lock: Lock
     _worker_thread: Thread = None
     _stop_event: bool
@@ -127,19 +128,24 @@ class TaskQueue:
             if task_name not in self._get_task_names():
                 logger.warning(f"Task '{task_name}' does not exist.")
                 return False
-            self._task_queue.put(self._find_task(task_name))
+            task = self._find_task(task_name)
+            task.status = TaskStatus.PENDING
+            self._task_queue.put(task)
         else:
             for task in self._get_enable_tasks():
                 if task.manual_only:
                     continue
+                task.status = TaskStatus.PENDING
                 self._task_queue.put(task)
+        self._app.ws_manager.broadcast_sync(WebSocketData(message={
+            "action": "task_queue:start"
+        }))
         if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
             self._worker_thread.start()
         else:
             logger.error("Task Running Thread is alive")
             return False
-
         return True
 
     def _get_task_names(self):
@@ -151,6 +157,9 @@ class TaskQueue:
 
     def _processor_task_queue(self):
         """任务队列处理器，确保任务按顺序执行"""
+        self._app.yolo_engine.resume()
+        while self._app.latest_results is None:
+            sleep(0.1)
         try:
             while not self._task_queue.empty():
                 task = self._task_queue.get()
@@ -162,11 +171,14 @@ class TaskQueue:
                     with self._task_queue.mutex:
                         self._task_queue.queue.clear()
                     break
-
+            self._app.ws_manager.broadcast_sync(WebSocketData(message={
+                "action": "task_queue:end"
+            }))
             logger.debug("[Exit]Task queue is empty or stopped")
         finally:
             if self._run_lock.locked():
                 self._run_lock.release()
+            self._app.yolo_engine.pause()
 
     @staticmethod
     def _get_call_stack(frame):
@@ -192,47 +204,54 @@ class TaskQueue:
             return partial(self._trace_calls, task=task)
         # 任务停止
         if self._stop_event:
-            task.status = TaskStatus.CANCELED
             raise UserCancelTask(task)
         # 拦截由库文件触发的
         if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
             return partial(self._trace_calls, task=task)
         # 超时抛出
         if task.timeout and task.timeout != -1 and (int(time()) - task.get_start_time()) > task.timeout:
-            task.status = TaskStatus.FAILED
             raise TaskTimeout(task)
-        if task.disabled_middleware:
+        # 不在焦点不执行
+        while not self._app.device.is_app_focused():
+            sleep(0.2)
+        # 判断是否执行中间件
+        if task.disabled_middleware or not string_match(frame.f_code.co_filename, EXECUTE_MIDDLEWARE_WHITELIST, MatchConfig(use_fuzz=False, use_regex=False)):
             return partial(self._trace_calls, task=task)
         while not self._app.exec_middleware():
-            logger.debug("wait middleware...")
-            sleep(0.1)
+            sleep(0.2)
         # if "src" in frame.f_code.co_filename:
-        # print(f"执行文件: {frame.f_code.co_filename}, 当前行: {frame.f_lineno}")
+        #     print(f"执行文件: {frame.f_code.co_filename}, 当前行: {frame.f_lineno}")
         return partial(self._trace_calls, task=task)
 
     def _task_thread(self, task: Task):
-        """执行任务"""
-        logger.debug(f"Executing task: {task.name}")
-
+        """
+        执行任务
+        :param task: 任务实例
+        :return:
+        """
         try:
             task.status = TaskStatus.RUNNING
             task.update_start_time()
+            # 启动任务跟踪
             sys.settrace(partial(self._trace_calls, task=task))
-            if task.function(self._app) is False:
-                task.status = TaskStatus.CANCELED
+            task_result = task.function(self._app)
+            if task_result in TaskStatus.__dict__.keys():
+                task.update_status(task_result)
+            elif task_result is False:
+                task.update_status(TaskStatus.CANCELED)
             else:
-                task.status = TaskStatus.SUCCESS
-        except UserCancelTask or pyautogui.FailSafeException:
-            task.status = TaskStatus.CANCELED
+                task.update_status(TaskStatus.SUCCESS)
+        except (UserCancelTask, FailSafeException):
+            task.update_status(TaskStatus.CANCELED)
             logger.warning(f"Task '{task.description}({task.name})' cancelled")
         except Exception as e:
-            task.status = TaskStatus.FAILED
+            task.update_status(TaskStatus.FAILED)
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
             logger.error(f"Task '{task.description}({task.name})' failed:\n{tb_str}")
         finally:
             task.update_end_time()
             sys.settrace(None)
-            logger.debug(f"Task Status: {task.status}")
+            logger.info(f"Task '{task.description}({task.name})' status: {task.status}")
 
     def _find_task(self, task_name: str):
         """查找任务"""

@@ -54,7 +54,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     def get_status():
         return _api_return(True, 'OK', {
             'platform': processor.config_service().base.run_mode.value.lower(),
-            'yolo': processor.running,
+            'yolo': processor.yolo_engine.running,
             'task': processor.task_queue.queue_status(),
             'game': {
                 'current_location': processor.game_status_manager.current_location,
@@ -87,7 +87,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         model_list = ["base_ui", "producer"]
         if model.lower() not in model_list:
             return _api_return(False, "Invalid model name")
-        processor.load_model(model.upper())
+        processor.yolo_engine.load_model(model.upper())
         return _api_return(True, f"model switched to {model}")
 
     @app.get("/api/config")

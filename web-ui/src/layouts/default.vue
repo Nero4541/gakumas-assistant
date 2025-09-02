@@ -76,6 +76,45 @@
   api.get_config().then(res => {
     config_data.value = res.data
   })
+
+  let WebSocketManager = {
+    socket: null,
+    status: false,
+  }
+
+  function connectWebSocket () {
+    if (WebSocketManager.status) {
+      WebSocketManager.socket.close()
+      WebSocketManager.socket = null
+      WebSocketManager.status = false
+    }
+    // drawPlaceholder('连接中......')
+
+    WebSocketManager.socket = new WebSocket(`ws://${location.host}/ws`)
+    WebSocketManager.socket.binaryType = 'arraybuffer'
+
+    socket.onmessage = event => {
+      if (event.data instanceof ArrayBuffer) {
+        renderToCanvas(event.data)
+      }
+    }
+
+    socket.onopen = () => {
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer)
+        reconnectTimer = null
+      }
+    }
+
+    socket.onerror = () => {
+      socket.close()
+    }
+
+    socket.onclose = () => {
+      drawPlaceholder('正在重建连接......')
+      reconnectTimer = setTimeout(connectWebSocket, 1000)
+    }
+  }
 </script>
 
 <style scoped lang="scss">

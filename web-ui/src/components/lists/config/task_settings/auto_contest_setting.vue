@@ -1,7 +1,6 @@
 <script setup>
 import apis from "@/scripts/apis.js";
 import message from "@/scripts/utils/message.js";
-import {hash} from "@/scripts/utils/hash.js";
 import app from "@/main.js";
 
 const props = defineProps({
@@ -10,16 +9,11 @@ const props = defineProps({
 })
 
 const configData = ref({})
-let configHash
 apis.get_task_config(props.task_name).then(response => {
   configData.value = response.data
-  configHash = hash(response.data);
 })
 
 function save() {
-  if (hash(configData.value) === configHash) {
-    return;
-  }
   apis.save_task_config(props.task_name, configData.value).then(() => {
     message.showSuccess("设置保存成功")
   })

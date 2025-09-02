@@ -1,7 +1,7 @@
 # import cv2
 # import numpy as np
 #
-from src.core.services.ocr_service import OCRService
+from src.core.inference.ocr_engine import OCRService
 
 # 创建 OCR 服务实例
 ocr_service = OCRService()

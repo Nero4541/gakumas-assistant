@@ -1,6 +1,6 @@
 from src.core.services.clip.item import ItemCLIP
 # from src.core.services.clip.skill_card import SkillCardCLIP
-from src.core.ONNX import CLIPModelFromONNX
+from src.core.inference.ONNX import CLIPModelFromONNX
 
 class CLIPServiceManager:
     _model_session: CLIPModelFromONNX

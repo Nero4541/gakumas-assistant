@@ -3,7 +3,6 @@ from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
-from src.constants import *
 from typing import TYPE_CHECKING
 
 from src.utils.string_tools import string_match, MatchConfig
@@ -35,7 +34,7 @@ def register_middlewares(processor: "AppProcessor"):
                 return True
             if string_match(modal.modal_title, [ModalText.TITLE.DATA_UPDATE, ModalText.TITLE.DATE_UPDATE], MatchConfig(fuzz_threshold=90)):
                 logger.warning("Restart game...")
-                app.app.click_element(modal.cancel_button)
+                app.device.click_element(modal.cancel_button)
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(BaseUILabels.START_MENU_LOGO)
                 app.exec_task("start_game")
@@ -46,12 +45,12 @@ def register_middlewares(processor: "AppProcessor"):
 
     # @processor.register_middleware()
     # @logger.catch
-    # def _add_skill(app: "AppProcessor"):
+    # def _add_skill(device: "AppProcessor"):
     #     global last_card_name
-    #     if app.game_status_manager.current_location == GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
-    #         if app.game_utils.update_current_location() != GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
+    #     if device.game_status_manager.current_location == GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
+    #         if device.game_utils.update_current_location() != GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
     #             return
-    #         roi , skill_card, card_info = extract_skill_card_and_info(app.latest_frame)
+    #         roi , skill_card, card_info = extract_skill_card_and_info(device.latest_frame)
     #         if skill_card is None or card_info is None:
     #             return
     #         ocr_service = OCRService()
@@ -67,13 +66,13 @@ def register_middlewares(processor: "AppProcessor"):
     #         card_info = OCR_ResultList([item for item in card_info if len(item.text) > 2])
     #         skill_card_types = [base_labels.skill_card, base_labels.skill_card__mental, base_labels.skill_card__active, base_labels.skill_card__trap]
     #
-    #         if not app.clip_manager.skill_card_clip.add_to_memory(
+    #         if not device.clip_manager.skill_card_clip.add_to_memory(
     #                 skill_card,
     #                 SkillCardInfo(
     #                     card_title,
-    #                     app.latest_results.filter_by_labels(
+    #                     device.latest_results.filter_by_labels(
     #                     skill_card_types).get_y_min_element().first().label.replace("Skill Card: ", ""),
     #                     [item.text for item in card_info]
     #                 ), 0.97
     #         ):
-    #             logger.debug(app.clip_manager.skill_card_clip.retrieve(skill_card))
+    #             logger.debug(device.clip_manager.skill_card_clip.retrieve(skill_card))

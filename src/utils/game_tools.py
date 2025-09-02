@@ -3,15 +3,13 @@ import numpy as np
 
 from src.constants.location import Location
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
-from src.constants.yolo.labels.producer_Labels import ProducerLabels
 from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
 
 from src.entity.Yolo import Yolo_Results
-from src.constants import *
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
-from src.core.services.ocr_service import OCRService
+from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
 
 ocr_service = OCRService()

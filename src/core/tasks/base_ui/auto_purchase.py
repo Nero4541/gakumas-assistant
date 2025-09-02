@@ -1,7 +1,5 @@
 from copy import copy
 from time import sleep
-
-from src.constants import *
 from typing import TYPE_CHECKING, List
 
 from src.constants.data_path import DataPath
@@ -15,12 +13,12 @@ from src.entity.Game.Page.Types.index import GamePageTypes
 from src.models import CLIPMemory
 from src.utils.diff_tools import GakumasuDiffItemDataUtils
 from src.utils.game_tools import modal_body_extract_item_info
-from src.core.services.ocr_service import OCRService, OCR_ResultList
+from src.core.inference.ocr_engine import OCRService, OCR_ResultList
 from src.utils.string_tools import MatchConfig, string_match
 from src.utils.logger import logger
 
 if TYPE_CHECKING:
-    from src.main import AppProcessor
+    pass
 
 ocr_service = OCRService()
 item_db = GakumasuDiffItemDataUtils(DataPath.GakumasuDiffData.ITEM)
@@ -51,9 +49,9 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 # 在购买列表中
                 if string_match(clip_result.name, commodity_target, MatchConfig(fuzz_threshold=80)):
                     logger.info(f"purchase {clip_result.name}(index={index}, x={item.x}, y={item.y}) items......")
-                    app.app.click_element(item_boxe)
+                    app.device.click_element(item_boxe)
                     modal = app.game_utils.wait_for_modal(ModalText.TITLE.EXCHANGE_CONFIRMATION)
-                    app.app.click_element(modal.confirm_button)
+                    app.device.click_element(modal.confirm_button)
                     sleep(0.5)
                 else:
                     logger.debug(f"{clip_result.name} is not on the shopping list, so skip the purchase.")
@@ -63,7 +61,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 logger.debug(f"Item {index} (x={item.x}, y={item.y}) not found in memory, adding to memory.")
                 app.debug_tools.add_box(item.x, item.y, item.w, item.h, label=f"{index} 不存在于记忆中", color=(255,0,0))
                 # 点击物品
-                app.app.click_element(item_boxe)
+                app.device.click_element(item_boxe)
                 app.debug_tools.hide()
                 modal = app.game_utils.wait_for_modal(ModalText.TITLE.EXCHANGE_CONFIRMATION)
                 yolo_result_item = copy(item.frame)
@@ -83,10 +81,10 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 # 在购买列表的情况下购买
                 if string_match(item_name, commodity_target, MatchConfig(fuzz_threshold=80)):
                     logger.info(f"purchase {item_name}(index={index}, x={item.x}, y={item.y}) items......")
-                    app.app.click_element(modal.confirm_button)
+                    app.device.click_element(modal.confirm_button)
                 else:
                     logger.debug(f"{item_name} is not on the shopping list, so skip the purchase.")
-                    app.app.click_element(modal.cancel_button)
+                    app.device.click_element(modal.cancel_button)
                 app.debug_tools.show()
                 sleep(0.5)
         # sleep(5)
@@ -94,7 +92,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
         app.debug_tools.clear_all_boxes()
         if last_list_hash != hash(frozenset(current_list)):
             last_list_hash = hash(frozenset(current_list))
-            app.app.scrollY(scroll_x,scroll_y,-5)
+            app.device.scrollY(scroll_x, scroll_y, -5)
             sleep(1)
         else:
             break
@@ -110,12 +108,12 @@ def action__receive_weekly_gift(app: "AppProcessor"):
         buttons = ButtonList(app.latest_results)
         for button in buttons:
             if ButtonText.FREE in button.text and button.is_disabled() is False:
-                app.app.click_element(button)
+                app.device.click_element(button)
                 sleep(0.5)
                 app.game_utils.click_button(ButtonText.CONFIRM)
                 sleep(0.5)
                 app.game_utils.click_button(ButtonText.CLOSE)
-        app.app.scrollY(width//2, height//2, -20)
+        app.device.scrollY(width // 2, height // 2, -20)
     app.game_utils.back_next_page()
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
@@ -129,6 +127,6 @@ def action__daily_exchange(app: "AppProcessor"):
         if (result := item_db.get_by_id(item_id)) is not None:
             commodity_target.append(result.name)
     for tab_item in tabbar:
-        app.app.click_element(tab_item)
+        app.device.click_element(tab_item)
         sleep(2)
         _exchange_items(app, commodity_target)

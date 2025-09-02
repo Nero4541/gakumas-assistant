@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Optional, Dict
+from typing import List, Tuple, Union, Optional
 
 import numpy as np
-from src.core.ONNX import ONNXYoloResult
+from src.core.inference.ONNX import ONNXYoloResult
 from src.utils.number import median
 
 @dataclass

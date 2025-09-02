@@ -7,8 +7,7 @@ import numpy as np
 
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
-from src.core.services.ocr_service import OCRService, OCR_Result
-from src.constants import *
+from src.core.inference.ocr_engine import OCRService, OCR_Result
 
 ocr_service = OCRService()
 

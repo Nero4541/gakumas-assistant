@@ -1,10 +1,12 @@
 from time import sleep
 from typing import TYPE_CHECKING, Optional
 
+from config import debug
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
+from src.utils.debug_tools import DebugTools
 from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
 from src.utils.string_tools import string_match, MatchConfig
@@ -14,6 +16,7 @@ if TYPE_CHECKING:
 
 class GameUtils:
     _app_processor: "AppProcessor"
+    debug_tools = DebugTools()
 
     def __init__(self, app_processor: "AppProcessor"):
         self._app_processor = app_processor
@@ -98,7 +101,7 @@ class GameUtils:
             boxs = self._app_processor.latest_results.filter_by_label(label)
             if boxs:
                 logger.debug(f"Found label '{label}', clicking...")
-                self._app_processor.app.click_element(boxs.first())
+                self._app_processor.device.click_element(boxs.first())
                 return True
             else:
                 COUNT += 1
@@ -144,7 +147,7 @@ class GameUtils:
         :return:
         """
         logger.debug(f"waiting click button: {text}")
-        self._app_processor.app.click_element(self.wait_button(text,timeout, match_config))
+        self._app_processor.device.click_element(self.wait_button(text, timeout, match_config))
 
     def wait_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
         """
@@ -179,18 +182,18 @@ class GameUtils:
                 if name.startswith("MAIN_MENU__")
             ]
             if self.update_current_location() in main_menu_items:
-                self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME).first())
+                self._app_processor.device.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME).first())
                 self.wait_loading()
                 self.update_current_location()
                 return
             elif go_home_btn := self._app_processor.latest_results.filter_by_label(BaseUILabels.GO_HOME_BTN):
-                self._app_processor.app.click_element(go_home_btn.first())
+                self._app_processor.device.click_element(go_home_btn.first())
                 self.wait_loading()
                 self.update_current_location()
                 return
             elif modal_header := self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
                 modal_header = modal_header.first()
-                self._app_processor.app.click(modal_header.cx, modal_header.y - 20)
+                self._app_processor.device.click(modal_header.cx, max(modal_header.y - 20, 0))
             sleep(1)
         raise RuntimeError("Going home failed")
 
@@ -202,7 +205,7 @@ class GameUtils:
         """
         logger.debug("Going back next page")
         if self.wait_for_label(BaseUILabels.BACK_BTN, 3):
-            self._app_processor.app.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first())
+            self._app_processor.device.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first())
         else:
             raise TimeoutError("Waiting for a back button timeout")
 

@@ -1,21 +1,19 @@
 from time import sleep
 from typing import TYPE_CHECKING
 
-from src.constants import *
 from src.constants.text.button_text import ButtonText
 from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
-from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
-from src.core.services.ocr_service import OCRService
+from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_color_in_region
 from src.utils.game_tools import get_modal
 from src.utils.string_tools import string_match
 
 if TYPE_CHECKING:
-    from src.main import AppProcessor
+    pass
 
 MAX_WORKS = 2
 ocr_service = OCRService()
@@ -29,7 +27,7 @@ def handle__work_dispatch_results(app: "AppProcessor"):
             return
         if app.game_utils.wait_for_label(BaseUILabels.MODAL_HEADER, 3):
             modal = get_modal(app.latest_results, app.latest_frame, True)
-            app.app.click_element(modal.cancel_button)
+            app.device.click_element(modal.cancel_button)
             count += 1
             sleep(3)
     else:
@@ -46,7 +44,7 @@ def action__dispatch_all_available_work(app: "AppProcessor"):
     for group in item_group:
         if _is_work_already_dispatched(app, group, width):
             continue
-        app.app.click_element(group)
+        app.device.click_element(group)
         sleep(1)
         _dispatch_single_work(app)
         sleep(3)
@@ -79,9 +77,9 @@ def _is_avatar_guaranteed_success(avatar):
 def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
     """选中角色并点击时长按钮"""
     if avatar:  # 当有头像元素时
-        app.app.click_element(avatar)
+        app.device.click_element(avatar)
         sleep(0.5)
-    app.app.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
+    app.device.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
     sleep(1)
     while True:
         exists_modal = app.latest_results.exists_label(BaseUILabels.MODAL_HEADER)
@@ -90,17 +88,17 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar=None):
         if exists_modal:
             modal = get_modal(app.latest_results, app.latest_frame)
             if string_match(modal.modal_title, ModalText.TITLE.CONFIRM) and string_match(modal.modal_body_text, ModalText.BODY.DISPATCH_WORK_ERROR.OTHER_SELECTABLE_IDOLS):
-                app.app.click_element(modal.cancel_button)
+                app.device.click_element(modal.cancel_button)
                 sleep(0.5)
                 return False
     app.game_utils.wait_for_label(BaseUILabels.BUTTON)
     duration_box = _select_work_duration(app)
-    app.app.click_element(duration_box)
+    app.device.click_element(duration_box)
     sleep(1)
-    app.app.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
+    app.device.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
     sleep(1)
     modal = app.game_utils.wait_for_modal(ModalText.TITLE.WORK_START_CONFIRMATION, 10, no_body=True)
-    app.app.click_element(modal.confirm_button)
+    app.device.click_element(modal.confirm_button)
     sleep(1)
     return True
 
@@ -142,7 +140,7 @@ def _dispatch_single_work(app: "AppProcessor"):
         return False
     if not _exec():
         x, y = app.latest_results.filter_by_label(BaseUILabels.AVATAR).get_COL()
-        app.app.scrollY(x, y, -10)
+        app.device.scrollY(x, y, -10)
         sleep(0.5)
         if _exec():
             return

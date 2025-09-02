@@ -6,7 +6,7 @@ import onnx
 import torch
 from ultralytics import YOLO
 
-BASE_PATH = os.path.join(os.getcwd(), '../', "model")
+BASE_PATH = os.path.join(os.getcwd(), "model")
 
 print("Exporting YOLO model...")
 for filename in os.listdir(BASE_PATH):
@@ -44,14 +44,7 @@ dummy_input = torch.randn(1, 3, 224, 224).to(device)  # CLIP 的标准输入尺�
 
 # 导出路径
 os.makedirs("onnx_models", exist_ok=True)
-output_path = "../model/clip_visual.onnx"
-
-# 获取模型参数
-model_params = {}
-for name, param in visual_model.named_parameters():
-    model_params[name] = param.shape
-
-print(model_params)
+output_path = os.path.join(BASE_PATH, "clip_visual.onnx")
 
 # 导出 ONNX 模型
 torch.onnx.export(

@@ -6,7 +6,7 @@ import numpy as np
 
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
-from src.core.services.ocr_service import OCRService
+from src.core.inference.ocr_engine import OCRService
 from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()

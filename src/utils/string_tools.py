@@ -6,7 +6,7 @@ from typing import List
 import unicodedata
 from rapidfuzz import fuzz
 
-from src.utils.performance_tools import timeit
+# from src.utils.performance_tools import timeit
 
 
 @dataclass
@@ -30,7 +30,7 @@ class MatchResult:
     def __bool__(self) -> bool:
         return bool(self.status)
 
-@timeit
+# @timeit
 def string_match(source: List[str] | str, match: List[str] | str, config: MatchConfig = None) -> MatchResult:
     match_obj = match if isinstance(match, list) else [match]
     config = config if config is not None else MatchConfig()

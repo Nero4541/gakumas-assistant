@@ -24,9 +24,9 @@ def action__check_and_collect_rewards(app: "AppProcessor"):
         return
     items_cx, items_cy = items.get_COL()
     if items and (height // 2) < items_cy:
-        app.app.click(items_cx, items_cy)
+        app.device.click(items_cx, items_cy)
         sleep(2)
-        app.app.click(items_cx, items_cy)
+        app.device.click(items_cx, items_cy)
         logger.info("Last season's rewards have been claimed.")
         sleep(2)
 
@@ -62,7 +62,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
             case _:
                 target = random.choice(contest.contests)
         logger.info(f"try contest: {target}")
-        app.app.click_element(target)
+        app.device.click_element(target)
         sleep(1)
         if app.latest_results.exists_label(BaseUILabels.BLANK_SLOT):
             _auto_form_team(app)
@@ -93,13 +93,13 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     app.game_utils.wait_for_label(BaseUILabels.CHECKBOX)
     check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
     if not check_box.checked:
-        app.app.click_element(check_box)
+        app.device.click_element(check_box)
     app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
     sleep(1)
     while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
-        app.app.click(width // 2, height // 2)
+        app.device.click(width // 2, height // 2)
         sleep(1)
-    app.app.click(width // 2, height // 2)
+    app.device.click(width // 2, height // 2)
 
 def _finish_battle(app: "AppProcessor"):
     """
@@ -110,9 +110,9 @@ def _finish_battle(app: "AppProcessor"):
     while COUNT < WAIT:
         buttons = ButtonList(app.latest_results)
         if button := buttons.get_button_by_text(ButtonText.NEXT):
-            app.app.click_element(button)
+            app.device.click_element(button)
             break
-        app.app.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
+        app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
         sleep(1)
         COUNT += 1
     if COUNT >= WAIT:
@@ -123,4 +123,4 @@ def _finish_battle(app: "AppProcessor"):
             return
         if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
             modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
-            app.app.click_element(modal.cancel_button)
+            app.device.click_element(modal.cancel_button)

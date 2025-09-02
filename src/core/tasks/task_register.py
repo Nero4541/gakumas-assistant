@@ -14,7 +14,6 @@ from src.core.tasks.base_ui.start_game import (
 )
 from time import sleep
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.constants import *
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
@@ -22,8 +21,9 @@ if TYPE_CHECKING:
     from src.main import AppProcessor
 
 def register_tasks(processor: "AppProcessor"):
-    @processor.register_task("start_game", "启动游戏", 120, disabled_middleware=True)
+    @processor.register_task("start_game", "启动游戏", 360, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):
+        sleep(2)
         if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
             return
         action__click_start_game(app)
@@ -36,7 +36,7 @@ def register_tasks(processor: "AppProcessor"):
         goto__get_expenditure(app)
         sleep(3)
         if modal := app.game_utils.wait_for_modal(ModalText.TITLE.EXPENDITURE, no_body=True, timeout=10):
-            app.app.click_element(modal.cancel_button)
+            app.device.click_element(modal.cancel_button)
             sleep(3)
             return True
         elif app.latest_results.exists_label(BaseUILabels.TAB_HOME):

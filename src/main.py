@@ -1,59 +1,45 @@
 import os
-import threading
 import webbrowser
 
 import cv2
-import numpy as np
 
 import config
-from typing import Union, Callable, List, TYPE_CHECKING
+from typing import Union, Callable, List
 from fastapi import FastAPI
 from time import sleep
 
 from src.constants.device.device_type import DeviceType
-from src.core.ONNX import YoloModelFromONNX
-from src.core.Android.app import Android_App
+from src.core.device.Android.app import Android_App
+from src.core.inference.yolo_engine import YoloInferenceEngine
+from src.core.services.task_service import TaskQueue
 from src.core.services.clip_services import CLIPServiceManager
 from src.core.Web.routers import register_routes
 from src.core.Web.websocket import WebSocketManager
-from src.core.Windows.app import Windows_App
+from src.core.device.Windows.app import Windows_App
 from src.core.services.game_utils import GameUtils
-from src.core.middlewares.middleware_register import register_middlewares
+from src.core.tasks.middlewares.middleware_register import register_middlewares
 from src.core.services.config_service import ConfigService
 from src.core.tasks.task_register import register_tasks
 from src.entity.Game.Game_Info import GameStatusManager
-from src.entity.WebSocket_Data import WebSocket_Data
-from src.constants.yolo.model_type import YoloModelType
-from src.entity.Yolo import Yolo_Results
+from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 
-if TYPE_CHECKING:
-    from src.core.services.task_service import TaskQueue
+# if TYPE_CHECKING:
+#     from src.core.services.task_service import TaskQueue
 
 class AppProcessor:
     data_path: str
+    # 配置服务
     config_service: ConfigService
-    # Yolo模型
-    model: YoloModelFromONNX
     # 操作设备
-    app: Android_App | Windows_App
-    # 当前Yolo模型
-    current_model_type: str
-    # 画面Debug工具
-    debug_tools: DebugTools
-    # 最新帧
-    latest_frame: np.ndarray = None
-    # 最新推理结果
-    latest_results: Yolo_Results | None = None
+    device: Android_App | Windows_App
     # 任务队列
     task_queue: "TaskQueue"
-    # 捕获帧状态
-    running: bool = False
-    # 捕获帧线程
-    capture_thread: threading.Thread = None
-    # 暂停捕获帧标志
-    _pause_capture_frame: bool = False
+    # Yolo推理引擎
+    yolo_engine: YoloInferenceEngine
+    # 图像debug工具
+    debug_tools: DebugTools
     # 中间件注册列表
     _middleware_registry: List[Callable]
     # 游戏实用工具
@@ -62,24 +48,27 @@ class AppProcessor:
     game_status_manager: GameStatusManager
     # 图像记忆管理器
     clip_manager: CLIPServiceManager
+    # Websocket Session管理器
+    ws_manager: WebSocketManager
 
     def __init__(self):
         self._init_environment()
         self._init_database()
         self.config_service = ConfigService()
         print(self.config_service())
-        from src.core.services.task_service import TaskQueue
-        self.app = self._create_app_instance()
-        self.load_model()
+        self.device = self._create_device_instance()
+        self.yolo_engine = YoloInferenceEngine(self.device)
+        self.debug_tools = DebugTools()
+        self.yolo_engine.register_infer_callback(self._send_frame_to_clients)
         self._middleware_registry = []
         self.task_queue = TaskQueue(self)
         self.game_status_manager = GameStatusManager()
         self.game_utils = GameUtils(self)
         self.clip_manager = CLIPServiceManager()
-        self.debug_tools = DebugTools()
         register_tasks(self)
         register_middlewares(self)
-        self.start()
+        self.ws_manager = WebSocketManager()
+        register_routes(app, self, self.ws_manager)
         logger.success("Application Initialized")
 
     def _init_environment(self):
@@ -96,26 +85,13 @@ class AppProcessor:
         db.close()
         logger.success("Database Initialized")
 
-    def load_model(self, model_type: str = YoloModelType.BASE_UI):
-        """
-        加载指定类型的Yolo模型
-        :param model_type:
-        :return:
-        """
-        def _init():
-            logger.debug(f"Loading YOLO model {model_type}...")
-            model_path = config.model_config.get(model_type)
-            model = YoloModelFromONNX(model_path)
-            return model
+    @property
+    def latest_frame(self):
+        return self.yolo_engine.latest_frame
 
-        if model_type in YoloModelType.__dict__.keys():
-            self.pause_capture()
-            self.model = _init()
-            self.current_model_type = model_type
-            self.resume_capture()
-        else:
-            print(YoloModelType.__dict__.keys())
-            raise ValueError(f'Unknown model type: {model_type}')
+    @property
+    def latest_results(self):
+        return self.yolo_engine.latest_results
 
     def register_task(
             self,
@@ -125,37 +101,33 @@ class AppProcessor:
             disabled_middleware: bool = False,
             manual_only: bool = False
     ):
-        """实例方法：注册任务"""
+        """
+        注册任务
+        :param task_name: 任务名（唯一）
+        :param description: 任务介绍
+        :param timeout: 超时时间
+        :param disabled_middleware: 禁用中间件
+        :param manual_only: 仅手动模式执行
+        :return:
+        """
         logger.debug(f"register task: {task_name}")
         def decorator(func: Callable):
             self.task_queue.reg_task(task_name, description, func, disabled_middleware, manual_only, timeout)
         return decorator
 
     def register_middleware(self):
-        """实例方法：注册中间件"""
+        """
+        注册中间件
+        :return:
+        """
         def decorator(func: Callable):
             logger.debug(f"register middleware: {func.__name__}")
             self._middleware_registry.append(func)
         return decorator
 
-    def pause_capture(self):
-        """暂停屏幕截图"""
-        if self.running and not self._pause_capture_frame:
-            self._pause_capture_frame = True
-            self.capture_thread.join()
-            logger.debug("Paused capture frame")
-
-    def resume_capture(self):
-        """恢复屏幕截图"""
-        if self.running and self._pause_capture_frame:
-            self._pause_capture_frame = False
-            self.capture_thread = threading.Thread(target=self._capture_and_infer, daemon=True)
-            self.capture_thread.start()
-            logger.debug("Resumed capture frame")
-
-    def _create_app_instance(self) -> Union[Android_App, Windows_App]:
+    def _create_device_instance(self) -> Union[Android_App, Windows_App]:
         """
-        创建App操作实例
+        创建设备操作实例
         """
         mode = self.config_service().base.run_mode.value.lower()
         if mode == DeviceType.PHONE:
@@ -172,41 +144,29 @@ class AppProcessor:
             return Windows_App(
                 self.config_service().base.game_window_name.value
             )
-        raise ValueError(f"Invalid mode: {mode}")
+        raise ValueError(f"Invalid device type: {mode}")
 
-    def _capture_and_infer(self):
-        """
-        截图并推理
-        """
-        while self.running and not self._pause_capture_frame:
-            frame = self.app.capture()
-            if frame is None or frame.size <= 0:
-                sleep(0.3)
-                continue
-            self.latest_frame = frame
-            results = self.model(frame)
-            self.latest_results = Yolo_Results(results, frame)
-            self._send_frame_to_clients()
-
-    @logger.catch
-    def _send_frame_to_clients(self):
+    def _send_frame_to_clients(self, latest_frame, latest_results):
         """将最新的图像的二进制数据发送给 WebSocket 客户端。"""
-        if self.latest_frame is None:
+        if latest_frame is None:
             return
         # 获取图像尺寸
-        height, width = self.latest_frame.shape[:2]
-        if not self.latest_results.results:
-            _, encoded_frame = cv2.imencode('.jpg', self.latest_frame)
+        height, width = latest_frame.shape[:2]
+        if not latest_results.results:
+            _, encoded_frame = cv2.imencode('.jpg', latest_frame)
             frame_bytes = encoded_frame.tobytes()
-            ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
-        annotated_frame = self.latest_results.results.plot()
+            self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
+        annotated_frame = latest_results.results.plot()
         annotated_frame = self.debug_tools.draw_boxes(annotated_frame)
         _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
         frame_bytes = encoded_frame.tobytes()
-        ws_manager.broadcast_sync(WebSocket_Data(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
+        self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 
     def exec_middleware(self):
-        """注册处理中间件"""
+        """
+        执行中间件
+        :return:
+        """
         flag: bool = True
         for func in self._middleware_registry:
             if func(self) is False:
@@ -214,39 +174,26 @@ class AppProcessor:
                 flag = False
         return flag
 
-    def start(self):
-        if not self.running or self._pause_capture_frame:
-            self.running = True
-            self.capture_thread = threading.Thread(target=self._capture_and_infer, daemon=True)
-            self.capture_thread.start()
-            logger.success("Started inference thread.")
-
-    def stop(self):
-        if self.running:
-            self.running = False
-            self.capture_thread.join(timeout=3)
-            logger.success("Stopped inference thread.")
-
     def exec_task(self, task_name: str = None):
-        if isinstance(self.app, Windows_App):
-            self.app.bring_to_front()
+        if isinstance(self.device, Windows_App):
+            self.device.bring_to_front()
             sleep(0.5)
         return self.task_queue.exec_task(task_name)
 
 
 app = FastAPI()
 processor = AppProcessor()
-ws_manager = WebSocketManager()
 
-register_routes(app, processor, ws_manager)
 
 @app.on_event("shutdown")
 def shutdown_event():
-    processor.stop()
+    processor.yolo_engine.stop()
 
 @app.on_event("startup")
 def start_event():
-    processor.start()
+    processor.yolo_engine.start()
+    # processor.yolo_engine.pause()
+    url = f"http://{config.web_server_host}:{config.web_server_port}"
     if config.auto_open_web_browser:
-        webbrowser.open(f"http://{config.web_server_host}:{config.web_server_port}")
-    logger.success(f"Server started at http://{config.web_server_host}:{config.web_server_port}")
+        webbrowser.open(url)
+    logger.success(f"Server started at {url}")

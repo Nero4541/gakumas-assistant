@@ -7,6 +7,7 @@ from typing import Tuple, List, Optional
 import cv2
 import numpy as np
 
+from src.entity.Base import SingletonMeta
 from src.utils.opencv_tools import draw_text
 
 
@@ -37,15 +38,10 @@ class DebugBox:
     def bottom_right(self) -> Tuple[int, int]:
         return self.w, self.h
 
-class DebugTools:
-    _boxes: List[DebugBox]
-    _lock: Lock
-    _hide: bool
-
-    def __init__(self):
-        self._boxes: List[DebugBox] = []
-        self._lock = Lock()
-        self._hide = False
+class DebugTools(metaclass=SingletonMeta):
+    _boxes: List[DebugBox] = []
+    _lock: Lock = Lock()
+    _hide: bool = False
 
     def add_box(
             self,

@@ -16,7 +16,6 @@ def action__click_start_game(app: "AppProcessor"):
     else:
         raise TimeoutError("Timeout waiting for continue flag in the start menu.")
 
-@logger.catch
 def _handle__modal_boxes(app: "AppProcessor"):
     """处理模态框"""
     logger.debug("_handle__modal_boxes")
@@ -26,22 +25,22 @@ def _handle__modal_boxes(app: "AppProcessor"):
         # Token失效
         if ModalText.BODY.CONNECTION_ERROR_BODY.TOKEN_FAIL in modal.modal_body_text:
             logger.warning("Network connection error: Token fail")
-            app.app.click_element(modal.cancel_button)
+            app.device.click_element(modal.cancel_button)
             action__click_start_game(app)
         # 连接超时
         elif ModalText.BODY.CONNECTION_ERROR_BODY.TIMEOUT in modal.modal_body_text:
             logger.warning("Network connection error: Timeout")
-            app.app.click_element(modal.confirm_button)
+            app.device.click_element(modal.confirm_button)
         else:
             logger.warning("Network connection error: Connection error")
-            app.app.click_element(modal.confirm_button)
+            app.device.click_element(modal.confirm_button)
     # 下载新数据
-    elif ModalText.TITLE.DATA_UPDATE in modal.modal_title:
+    elif ModalText.TITLE.DATA_DOWNLOAD in modal.modal_title:
         logger.warning("game requires downloading new data.")
-        app.app.click_element(modal.confirm_button)
+        app.device.click_element(modal.confirm_button)
     elif ModalText.TITLE.INIT_ERROR in modal.modal_title:
         logger.error("Game initialization failed.")
-        app.app.click_element(modal.cancel_button)
+        app.device.click_element(modal.cancel_button)
         action__click_start_game(app)
     else:
         raise RuntimeError("Unknown modal box")
@@ -52,10 +51,10 @@ def action__wait_enter_home(app: "AppProcessor"):
     """动作：检查主界面标识是否存在"""
     while True:
         if close_btn := app.latest_results.filter_by_label(BaseUILabels.CLOSE_BUTTON):
-            app.app.click_element(close_btn.first())
+            app.device.click_element(close_btn.first())
             sleep(1)
         elif skip_btn := app.latest_results.filter_by_label(BaseUILabels.SKIP_BUTTON):
-            app.app.click_element(skip_btn.first())
+            app.device.click_element(skip_btn.first())
             sleep(1)
         elif app.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
             _handle__modal_boxes(app)
@@ -63,5 +62,5 @@ def action__wait_enter_home(app: "AppProcessor"):
             return True
         else:
             height, width = app.latest_frame.shape[:2]
-            app.app.click(width // 3, height // 2)
+            app.device.click(width // 3, height // 2)
             sleep(1)

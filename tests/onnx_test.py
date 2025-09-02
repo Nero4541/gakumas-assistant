@@ -156,7 +156,7 @@ import cv2
 #
 # cv2.waitKey(0)
 
-from src.core.ONNX import CLIPModelFromONNX
+from src.core.inference.ONNX import CLIPModelFromONNX
 clip = CLIPModelFromONNX("../model/clip_visual.onnx")
 base_path = os.path.join(os.getcwd(), "button_disabled_test")
 for filename in os.listdir(base_path):

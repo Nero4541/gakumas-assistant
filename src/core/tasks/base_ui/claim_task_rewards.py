@@ -1,6 +1,4 @@
 from time import sleep
-
-from src.constants import *
 from typing import TYPE_CHECKING
 
 from src.constants.text.modal_text import ModalText
@@ -31,7 +29,7 @@ def _process_single_tab(app: "AppProcessor", tab_item: TabBarItem):
     """
     点击 tab 并处理其对应的任务奖励。
     """
-    app.app.click_element(tab_item)
+    app.device.click_element(tab_item)
     sleep(3)
     button = _get_centered_enabled_button(app)
 
@@ -59,8 +57,8 @@ def _claim_reward(app: "AppProcessor", tab: TabBarItem, button: Button):
     """
     点击领奖按钮并处理领奖成功的弹窗。
     """
-    app.app.click_element(button)
+    app.device.click_element(button)
     modal = app.game_utils.wait_for_modal(ModalText.TITLE.RECEIPT_COMPLETED, no_body=True, timeout=10)
-    app.app.click_element(modal.cancel_button)
+    app.device.click_element(modal.cancel_button)
     app.game_utils.click_on_label(BaseUILabels.CLOSE_BUTTON)
     logger.info(f"The task reward of {tab.text} has been claimed")
