@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from src.main import AppProcessor
 
 def register_tasks(processor: "AppProcessor"):
-    @processor.register_task("start_game", "启动游戏", 360, disabled_middleware=True)
+    @processor.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):
         sleep(2)
         if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:

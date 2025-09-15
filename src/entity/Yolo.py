@@ -1,5 +1,6 @@
+from copy import copy
 from dataclasses import dataclass
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple, Union, Optional, Any
 
 import numpy as np
 from src.core.inference.ONNX import ONNXYoloResult
@@ -21,11 +22,11 @@ class Yolo_Box:
     w: float
     h: float
     label: str
-    frame: np.ndarray | None
+    frame: Optional[np.ndarray]
     cx: int
     cy: int
 
-    def __init__(self, x: float, y: float, w: float, h: float, label: str | None, frame: np.ndarray | None):
+    def __init__(self, x: float, y: float, w: float, h: float, label: str | None, frame: Optional[np.ndarray]):
         self.x = x
         self.y = y
         self.w = w
@@ -63,28 +64,19 @@ class Yolo_Results:
         results: 原始YOLO模型结果。
         boxes: 提取后的目标框列表。
     """
-    results: any
-    boxes: list[Yolo_Box]
-    def __init__(self, yolo_results, frame: np.ndarray, model = None):
+    results: Any
+    boxes: List[Yolo_Box]
+    frame: Optional[np.ndarray]
+    def __init__(self, yolo_results, frame: np.ndarray):
         self.boxes = []
-        if isinstance(yolo_results, ONNXYoloResult):
-            self.results = yolo_results
-            for index, box in enumerate(yolo_results):
-                x, y, w, h = map(int, box)
-                label_id = int(yolo_results.class_ids[index])
-                label = yolo_results.model_mata.names[label_id]
-                self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
-        else:
-            self.results = list(yolo_results)
-            for result in self.results:
-                if not hasattr(result, 'boxes'):
-                    continue
-                for box in result.boxes:
-                    class_id = int(box.cls)
-                    class_name = model.names[class_id]
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])
-                    self.boxes.append(Yolo_Box(x1, y1, x2, y2, class_name, frame[y1:y2, x1:x2]))
+        self.results = yolo_results
+        for index, box in enumerate(yolo_results):
+            x, y, w, h = map(int, box)
+            label_id = int(yolo_results.class_ids[index])
+            label = yolo_results.model_mata.names[label_id]
+            self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
         self.sort_boxes()
+        self.frame = copy(frame)
 
     def __bool__(self):
         return bool(self.boxes)
@@ -129,11 +121,12 @@ class Yolo_Results:
         inst = cls.__new__(cls)
         inst.results = []
         inst.boxes = boxes
-        inst.boxes.sort(key=lambda box: (box.label, box.x, box.y))
+        inst.frame = None
+        inst.sort_boxes()
         return inst
 
     def first(self):
-        return self.boxes[0]
+        return self.boxes[0] if self.boxes else None
 
     def index(self, index):
         return self.boxes[index]
@@ -191,6 +184,16 @@ class Yolo_Results:
             yolo_box: 要移除的 Yolo_Box 对象。
         """
         return self.from_boxes([box for box in self.boxes if box != yolo_box])
+
+    def remove_by_yolo_boxes(self, target_yolo_boxes: List[Yolo_Box]) -> "Yolo_Results":
+        """
+        移除与指定 Yolo_Box 列表中的元素相同的目标框。
+
+        Args:
+            target_yolo_boxes: 要删除的 Yolo_Box 对象列表。
+        """
+        other_boxes = set(target_yolo_boxes)
+        return self.from_boxes([box for box in self.boxes if box not in other_boxes])
 
     def exists_label(self, label: str) -> bool:
         """

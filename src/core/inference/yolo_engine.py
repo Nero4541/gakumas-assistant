@@ -21,7 +21,6 @@ class YoloInferenceEngine:
     _engine: YoloModelFromONNX
     _device: Android_App | Windows_App
     _model_type: str
-    _latest_frame: np.ndarray = None
     _latest_results: Yolo_Results | None = None
     _pause_capture_frame: bool = False
     _capture_thread: Thread
@@ -123,7 +122,7 @@ class YoloInferenceEngine:
 
     @property
     def latest_frame(self):
-        return self._latest_frame
+        return self._latest_results.frame
 
     @property
     def latest_results(self):
@@ -163,7 +162,6 @@ class YoloInferenceEngine:
                 continue
             results = self._engine(frame)
             with self.__result_write_lock:
-                self._latest_frame = frame
                 self._latest_results = Yolo_Results(results, frame)
             self._exec_infer_callback()
         self.__flag_loop = False

@@ -8,7 +8,7 @@ from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from app import AppProcessor
+    from src.main import AppProcessor
 
 def action__has_gift_items(app: "AppProcessor") -> bool:
     """

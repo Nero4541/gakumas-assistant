@@ -2,6 +2,7 @@
 import apis from "@/scripts/apis.js";
 import auto_purchase_setting from "@/components/lists/config/task_settings/auto_purchase_setting.vue"
 import auto_contest_setting from "@/components/lists/config/task_settings/auto_contest_setting.vue";
+import dispatch_work_setting from "@/components/lists/config/task_settings/dispatch_work_setting.vue";
 const props = defineProps({
   data: Object
 })
@@ -9,6 +10,7 @@ const props = defineProps({
 const settingComponents = {
   auto_purchase: auto_purchase_setting,
   auto_contest: auto_contest_setting,
+  dispatch_work: dispatch_work_setting,
 }
 
 const statusMap = {

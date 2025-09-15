@@ -77,6 +77,12 @@ class _Base(_BaseConfigGroup):
 
 class _Task:
 
+    class DispatchWork(_BaseConfigGroup):
+        # 每次重新配置工作时间
+        reconfigure_work_hours = ConfigItem(default_value=True, data_type=bool)
+        # 工作时间
+        working_hours = ConfigItem(default_value="12H", data_type=str, verify=r"4H|8H|12H", use_verify=True)
+
     class AutoPurchase(_BaseConfigGroup):
         # 是否购买每周礼包
         weekly_gift = ConfigItem(default_value=True, data_type=bool)
@@ -94,6 +100,7 @@ class Config(_BaseConfigGroup):
     base = _Base()
     task__auto_purchase = _Task.AutoPurchase()
     task__auto_contest = _Task.AutoContest()
+    task__dispatch_work = _Task.DispatchWork()
 
     @classmethod
     def to_json_dict(cls) -> dict:

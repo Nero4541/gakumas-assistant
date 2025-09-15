@@ -1,24 +1,8 @@
-opencv-python
+-r requirements.txt
 torch
 torchvision
 torchaudio
 ultralytics
-onnxruntime-directml
-pyautogui
-loguru
-numpy
-adbutils
-fastapi
-uvicorn[standard]
 git+https://github.com/openai/CLIP.git
-starlette
-pywin32
-pillow
-scikit-learn
 matplotlib
-rapidfuzz
-rapidocr
 nuitka
-peewee
-openai
-pyyaml

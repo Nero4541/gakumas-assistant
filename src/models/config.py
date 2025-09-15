@@ -16,6 +16,9 @@ class ConfigModel(BaseModel):
     use_verify = BooleanField(default=False)
     last_modified_time = DateTimeField(default=datetime.now)
 
+    class Meta:
+        table_name = "config"
+
     @classmethod
     def load_config(cls) -> ConfigEntity:
         config = ConfigEntity()

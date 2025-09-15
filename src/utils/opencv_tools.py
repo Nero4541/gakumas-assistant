@@ -76,11 +76,25 @@ def hsv_range_to_image_cv(lower, upper, height=50, width=300):
     cv2.imshow(f"HSV Range {upper} - {lower}", img)
     # cv2.waitKey(0)
 
-def check_color_in_region(
-        frame: np.array,
-        region: Tuple[int, int, int, int],
+def check_color(
+        frame: np.ndarray,
         lower_color: Tuple[int, int, int],
         upper_color: Tuple[int, int, int],
+        threshold=1
+):
+    if frame.size == 0:
+        return False
+    hsv_roi = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv_roi, lower_color, upper_color)
+    total_pixels = frame.size // frame.shape[2]
+    logger.debug((cv2.countNonZero(mask)/total_pixels * 100))
+    return (cv2.countNonZero(mask)/total_pixels * 100) >= threshold
+
+def check_color_in_region(
+        frame: np.ndarray,
+        lower_color: Tuple[int, int, int],
+        upper_color: Tuple[int, int, int],
+        region: Tuple[int, int, int, int],
         threshold=1
 ):
     """
@@ -92,13 +106,11 @@ def check_color_in_region(
     roi = frame[y:y + h, x:x + w]
     if roi.size == 0:
         return False
-    hsv_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-    mask = cv2.inRange(hsv_roi, lower_color, upper_color)
-    return cv2.countNonZero(mask) >= threshold
+    return check_color(roi, lower_color, upper_color, threshold)
 
 @logger.catch
 def check_status_detection(
-        frame: np.array,
+        frame: np.ndarray,
         threshold=0.15,
         upper_color: Tuple[int, int, int] = (22, 255, 255),
         lower_color: Tuple[int, int, int] = (8, 100, 100),

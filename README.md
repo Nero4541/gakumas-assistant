@@ -9,14 +9,14 @@
  - 进入游戏
  - 领取活动费
  - 每日派遣
+   - 重新选择任务时长
  - 自动领取礼物
-    - 自动学习物品信息
+   - 自动学习物品信息
  - 自动竞技场
  - 自动领取任务奖励
 ### 待实现/待完善：
  - 动态修改脚本设置
  - 工具框架
- - WebUI
  - 完善任务
  - 自动P卡
 
@@ -46,18 +46,27 @@
 
 **继续下载、安装或使用本项目，即表示您已完全阅读、理解并同意承担以上所有风险和条款。如果您不同意，请立即停止使用并删除本项目的所有相关文件。**
 
+## 安装
+**拉取项目**
+```bash
+git clone https://github.com/Pigeon-Server/gakumas-assistant.git
+```
+**启动脚本**
+运行start_app.bat
+
+其他内容参见[【使用手册】](./docs/use_script.md)
 
 ## 开发
-### 安装环境
+**安装环境**
 ```bash
 python3 -m pip install -r requirements.dev.txt
 ```
-### 拉取子模块
+**拉取子模块**
 ```bash
 git submodule init
 git submodule update
 ```
-### YOLO训练数据
+**YOLO训练数据**  
 待开放，如有需要请联系**skyfsj@qq.com**
 
 ## 许可证

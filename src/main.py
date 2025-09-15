@@ -152,7 +152,7 @@ class AppProcessor:
             return
         # 获取图像尺寸
         height, width = latest_frame.shape[:2]
-        if not latest_results.results:
+        if not latest_results:
             _, encoded_frame = cv2.imencode('.jpg', latest_frame)
             frame_bytes = encoded_frame.tobytes()
             self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))

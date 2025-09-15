@@ -1,3 +1,5 @@
+from copy import copy
+
 import cv2
 import numpy as np
 
@@ -156,22 +158,35 @@ def modal_body_extract_item_info(img):
 
 
 @logger.catch
-def get_modal(yolo_result: Yolo_Results, frame: np.ndarray, no_body: bool = False) -> Modal | None:
+def get_modal(yolo_result: Yolo_Results, no_body: bool = False) -> Modal | None:
     """
     获取模态框
+    :param yolo_result: yolo结果集
     :param no_body: 不识别模态框主体（加速）
-    :param yolo_result: yolo 识别结果
-    :param frame: 图像帧
     :return: 解析后的 Modal 对象
     """
     if not yolo_result.exists_all_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON]):
         logger.warning("模态框不完整")
         return None
+    yolo_result = copy(yolo_result)
     modal = yolo_result.filter_by_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON])
     modal_header = modal.filter_by_label(BaseUILabels.MODAL_HEADER).first()
-    modal_header_ocr_result = ocr_service.ocr(modal_header.frame)
+    # 获取 header 内按钮的最小 x
+    buttons_in_header = [
+        btn.x for btn in modal.filter_by_labels([BaseUILabels.BUTTON])
+        if modal_header.x < btn.cx < modal_header.w and
+           modal_header.y < btn.cy < modal_header.h
+    ]
+    modal_button_min_x = min(buttons_in_header, default=modal_header.w)
+
+    # OCR 模态框头部（排除按钮部分）
+    modal_header_ocr_result = ocr_service.ocr(
+        modal_header.frame[:, :modal_button_min_x]
+    )
     modal_header_ocr_result.auto_merge_lines()
     modal_header_text = modal_header_ocr_result.first().text
+    # 在结果集中排除模态框头部按钮
+    modal = modal.remove_by_yolo_boxes(buttons_in_header)
     # 获取确认和取消按钮
     buttons = modal.filter_by_label(BaseUILabels.BUTTON).group_yolo_boxes_by_position(30, None)
     if buttons:
@@ -193,6 +208,6 @@ def get_modal(yolo_result: Yolo_Results, frame: np.ndarray, no_body: bool = Fals
         modal_body_y = max(cancel_button.y, confirm_button.y)
     else:
         modal_body_y = confirm_button.y if confirm_button else cancel_button.y
-    modal_body_frame = frame[modal_header.h:modal_body_y, modal_header.x:modal_header.w]
-    modal_body_text = "" if no_body else " ".join([item.text for item in ocr_service.ocr(modal_body_frame)])
+    modal_body_frame = yolo_result.frame[modal_header.h:modal_body_y, modal_header.x:modal_header.w]
+    modal_body_text = None if no_body else " ".join([item.text for item in ocr_service.ocr(modal_body_frame)])
     return Modal(modal_header_text, modal_body_frame, modal_body_text, confirm_button, cancel_button)

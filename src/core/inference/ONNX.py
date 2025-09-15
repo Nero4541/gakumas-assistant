@@ -28,20 +28,6 @@ class ONNXYoloResult:
     model_mata: ONNXYoloModelMeta
     image: np.ndarray
 
-    def __init__(
-            self,
-            boxes: np.ndarray,
-            scores: np.ndarray,
-            class_ids: np.ndarray,
-            model_mata: ONNXYoloModelMeta,
-            image: np.ndarray
-    ) -> None:
-        self.boxes: np.ndarray = boxes
-        self.scores: np.ndarray = scores
-        self.class_ids: np.ndarray = class_ids
-        self.model_mata = model_mata
-        self.image: np.ndarray = image
-
     def __bool__(self):
         return bool(self.boxes.size > 0)
 

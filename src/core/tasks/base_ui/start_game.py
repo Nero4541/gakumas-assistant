@@ -19,7 +19,7 @@ def action__click_start_game(app: "AppProcessor"):
 def _handle__modal_boxes(app: "AppProcessor"):
     """处理模态框"""
     logger.debug("_handle__modal_boxes")
-    modal = get_modal(app.latest_results, app.latest_frame)
+    modal = get_modal(app.latest_results)
     logger.debug(modal)
     if ModalText.TITLE.CONNECTION_ERROR in modal.modal_title:
         # Token失效

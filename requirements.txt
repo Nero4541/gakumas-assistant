@@ -1,3 +1,4 @@
+-i https://mirrors.cloud.tencent.com/pypi/simple
 opencv-python
 onnxruntime-directml
 pyautogui

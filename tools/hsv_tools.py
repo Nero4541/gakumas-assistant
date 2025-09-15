@@ -51,10 +51,10 @@ def get_hsv_value(event, x, y, flags, param):
         cv2.setTrackbarPos('Upper V', 'Trackbars', min(v + 50, 255))
 
 # 读取图像
-img = cv2.imread(r"../tests/avatar_disabled_test/20250604164351.png")
+img = cv2.imread(r"../tests/avatar_disabled_test/all.png")
 
 # 创建窗口
-cv2.namedWindow('Trackbars')
+cv2.namedWindow('Trackbars', cv2.WINDOW_NORMAL)
 
 # 创建滑动条，调节HSV的上下限
 cv2.createTrackbar('Lower H', 'Trackbars', 0, 179, nothing)

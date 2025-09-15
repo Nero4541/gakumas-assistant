@@ -71,7 +71,7 @@ class GameUtils:
             if not (headers and buttons):
                 logger.debug(f"No modal header or button found, waiting... ({wait_time}/{timeout})")
             else:
-                modal = get_modal(self._app_processor.latest_results, self._app_processor.latest_frame, no_body)
+                modal = get_modal(self._app_processor.latest_results, no_body)
                 if modal:
                     if modal_title is None or string_match(modal.modal_title, modal_title, match_config):
                         logger.debug(f"Modal found: {modal.modal_title}")
