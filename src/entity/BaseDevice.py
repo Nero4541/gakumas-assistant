@@ -10,6 +10,13 @@ class BaseDevice(abc.ABC):
     def is_app_focused(self):
         pass
 
+    def start_game(self):
+        """
+        启动游戏
+        :return:
+        """
+        pass
+
     def capture(self) -> np.ndarray:
         """
         截取游戏画面
@@ -35,7 +42,16 @@ class BaseDevice(abc.ABC):
 
     def scrollY(self, x, y, scroll_delta):
         """
-        向下滚动窗口
+        向上下滚动窗口
+        :param x: x轴窗口内坐标
+        :param y: y轴窗口内坐标
+        :param scroll_delta: 滚动距离（各系统可能不大相同）
+        :return:
+        """
+
+    def scrollX(self, x, y, scroll_delta):
+        """
+        向左右滚动窗口
         :param x: x轴窗口内坐标
         :param y: y轴窗口内坐标
         :param scroll_delta: 滚动距离（各系统可能不大相同）

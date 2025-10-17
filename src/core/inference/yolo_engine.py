@@ -11,6 +11,7 @@ from src.constants.yolo.model_type import YoloModelType
 from src.core.device.Android.app import Android_App
 from src.core.device.Windows.app import Windows_App
 from src.core.inference.ONNX import YoloModelFromONNX
+from src.entity.BaseDevice import BaseDevice
 from src.entity.WebSocketData import WebSocketData
 from src.entity.Yolo import Yolo_Results
 from src.utils.logger import logger
@@ -19,7 +20,7 @@ from src.utils.logger import logger
 
 class YoloInferenceEngine:
     _engine: YoloModelFromONNX
-    _device: Android_App | Windows_App
+    _device: BaseDevice
     _model_type: str
     _latest_results: Yolo_Results | None = None
     _pause_capture_frame: bool = False
@@ -33,7 +34,7 @@ class YoloInferenceEngine:
     __result_write_lock: threading.Lock  # 写入锁
 
 
-    def __init__(self, device: Android_App | Windows_App):
+    def __init__(self, device: BaseDevice):
         self._device = device
         self._infer_callback_list = []
         self.__action_lock = threading.Lock()
@@ -160,7 +161,7 @@ class YoloInferenceEngine:
             if frame is None or frame.size <= 0:
                 sleep(0.1)
                 continue
-            results = self._engine(frame)
+            results = self._engine(frame, conf_threshold=0.7)
             with self.__result_write_lock:
                 self._latest_results = Yolo_Results(results, frame)
             self._exec_infer_callback()

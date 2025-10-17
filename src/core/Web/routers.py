@@ -1,15 +1,14 @@
 import os.path
 
+import adbutils
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from src.constants.data_path import DataPath
+from src.constants.path.data_path import DataPath
 from src.core.Web.websocket import WebSocketManager
-from time import sleep
 from typing import TYPE_CHECKING
 
-from src.models import ConfigModel
 from src.utils.diff_tools import GakumasuDiffItemDataUtils
 from src.utils.i18n_tools import I18nJsonUtils
 
@@ -35,17 +34,17 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
 
-    @app.get("/api/start")
+    @app.get("/api/task/start")
     def start_task_queue():
         processor.exec_task()
         return _api_return(True, "OK")
 
-    @app.get("/api/run_task/{task_name:str}")
+    @app.get("/api/task/start/{task_name:str}")
     def run_task(task_name: str):
         processor.exec_task(task_name)
         return _api_return(True, "OK")
 
-    @app.get("/api/stop")
+    @app.get("/api/task/stop")
     def stop_task_queue():
         processor.task_queue.stop()
         return _api_return(True, "OK")
@@ -66,23 +65,23 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
             }
         })
 
-    @app.get("/api/get_registered_tasks")
+    @app.get("/api/task/get_registered_tasks")
     def get_registered_tasks():
         return _api_return(True, 'OK', processor.task_queue.get_task_list())
 
-    @app.post("/api/disable_task/{task_name:str}")
+    @app.post("/api/task/disable/{task_name:str}")
     def disable_task(task_name):
         new_config = processor.config_service().base.disabled_tasks.value.append(task_name)
         processor.config_service.save_config(new_config)
         return _api_return(True, 'OK', processor.task_queue.disable_task(task_name))
 
-    @app.post("/api/enable_task/{task_name:str}")
+    @app.post("/api/task/enable/{task_name:str}")
     def enable_task(task_name):
         new_config = processor.config_service().base.disabled_tasks.value.remove(task_name)
         processor.config_service.save_config(new_config)
         return _api_return(True, 'OK', processor.task_queue.enable_task(task_name))
 
-    @app.get("/api/switch_yolo_model/{model_name:str}")
+    @app.get("/api/debug/switch_yolo_model/{model_name:str}")
     def switch_yolo_model(model: str):
         model_list = ["base_ui", "producer"]
         if model.lower() not in model_list:
@@ -134,6 +133,20 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
             return _api_return(True, 'OK', config.to_json_dict()[task_name])
         else:
             return _api_return(False, "error", {f"{e.section}.{e.field}": e.message for e in errors})
+
+    @app.get("/api/adb/devices")
+    def get_adb_devices():
+        return _api_return(True, 'OK', {
+            "devices": [s.serial for s in adbutils.adb.device_list()],
+        })
+
+    @app.get("/api/adb/devices/usb")
+    def get_adb_usb_serial_list():
+        serial_list = adbutils.adb.device_list()
+        serial_list = [s.serial for s in serial_list if ":" not in str(s.serial)]
+        return _api_return(True, 'OK', {
+            "devices": serial_list,
+        })
 
     @app.get("/api/item/list")
     def get_all_items():

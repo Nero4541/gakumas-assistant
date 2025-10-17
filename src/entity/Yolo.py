@@ -428,16 +428,32 @@ class Yolo_Results:
 
         return result_groups
 
+    @property
+    def x(self):
+        return min(box.x for box in self.boxes)
+
+    @property
+    def y(self):
+        return min(box.y for box in self.boxes)
+
+    @property
+    def w(self):
+        return max(box.w for box in self.boxes)
+
+    @property
+    def h(self):
+        return max(box.h for box in self.boxes)
+
     def get_COL(self) -> Tuple[float, float]:
         """获取集合的中心点"""
         if not self.boxes:
             raise ValueError("The number of boxes is 0, and the center point cannot be obtained")
-        min_x = min(box.x for box in self.boxes)
-        max_x = max(box.w for box in self.boxes)
-        min_y = min(box.y for box in self.boxes)
-        max_y = max(box.h for box in self.boxes)
-        center_x = (min_x + max_x) / 2
-        center_y = (min_y + max_y) / 2
+        # min_x = min(box.x for box in self.boxes)
+        # max_x = max(box.w for box in self.boxes)
+        # min_y = min(box.y for box in self.boxes)
+        # max_y = max(box.h for box in self.boxes)
+        center_x = (self.x + self.w) / 2
+        center_y = (self.y + self.h) / 2
         return int(center_x), int(center_y)
 
     def get_vertical_range_elements(self, all_boxes: "Yolo_Results", x_tolerance: float) -> "Yolo_Results":

@@ -23,9 +23,9 @@ class HomeTab:
     WORK = "WORK"
     GIFT = "GIFT"
     TASK = "TASK"
-    MISSION_PASS = "MISSION_PASS"
+    PASS_REWARD = "PASS_REWARD"
     ACHIEVEMENT = "ACHIEVEMENT"
-    ACHIEVEMENT_SUB_PAGR = AchievementSubPage
+    ACHIEVEMENT_SUB_PAGE = AchievementSubPage
     SHOP = "SHOP"
     SHOP_SUB_PAGE = ShopSubPage
     PRODUCER = "PRODUCER"

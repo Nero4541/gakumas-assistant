@@ -1,7 +1,9 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Any
+
+from src.constants.device.adb import ADBOperation, ADBConnectMode
 
 
 @dataclass
@@ -10,7 +12,7 @@ class ConfigItem:
     配置项
     """
     # 默认值
-    default_value: any
+    default_value: Any
     # 数据类型
     data_type: type = str
     # 验证规则（正则表达式）
@@ -18,7 +20,7 @@ class ConfigItem:
     # 是否启用验证
     use_verify: bool = False
     # 配置项实际值
-    value: any = None
+    value: Any = None
     # 最后修改时间
     last_modified_time: datetime = None
 
@@ -59,13 +61,32 @@ class _Base(_BaseConfigGroup):
     # 游戏窗口名
     game_window_name = ConfigItem(default_value="gakumas", data_type=str)
     # adb连接模式
-    adb_connect_mode = ConfigItem(default_value="Network", data_type=str, verify=r"USB|Network", use_verify=True)
+    adb_connect_mode = ConfigItem(
+        default_value="Network",
+        data_type=str,
+        verify="|".join(k for k in ADBConnectMode.__dict__ if not k.startswith("__") and not callable(k)),
+        use_verify=True
+    )
     # adb地址
     adb_host = ConfigItem(default_value="127.0.0.1", data_type=str)
     # adb端口(Network)
     adb_port = ConfigItem(default_value="5555", data_type=int)
     # adb端口(USB)
     adb_serial = ConfigItem(default_value="", data_type=str)
+    # Android截图服务
+    android_screen_capture_service = ConfigItem(
+        default_value="ADB",
+        data_type=str,
+        verify="|".join(k for k in ADBOperation.ScreenCaptureService.__dict__ if not k.startswith("__") and not callable(k)),
+        use_verify=True
+    )
+    # Android点击服务
+    android_touch_service = ConfigItem(
+        default_value="ADB",
+        data_type=str,
+        verify="|".join(k for k in ADBOperation.TouchService.__dict__ if not k.startswith("__") and not callable(k)),
+        use_verify=True
+    )
     # 游戏APP名
     game_package_name = ConfigItem(default_value="com.bandainamcoent.idolmaster_gakuen", data_type=str)
     # 禁用任务列表

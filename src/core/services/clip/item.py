@@ -5,8 +5,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from src.constants.data_path import DataPath
-from src.models.clip import CLIPayload_Item, CLIPMemory
+from src.constants.path.data_path import DataPath
+from src.models.clip import CLIPayload_Item
 from src.utils.diff_tools import GakumasuDiffItemDataUtils
 from src.utils.logger import logger
 from src.utils.clip_tools import CLIPTools

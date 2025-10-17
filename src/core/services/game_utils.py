@@ -114,7 +114,7 @@ class GameUtils:
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' not found.")
         return False
 
-    def wait_loading(self, timeout=60):
+    def wait_loading(self, timeout=-1):
         """
         等待加载
         :param timeout: 超时时间
@@ -123,7 +123,7 @@ class GameUtils:
         WAIT_TIME = 0
         COUNT = 0
         sleep(1)
-        while WAIT_TIME < timeout:
+        while timeout == -1 or WAIT_TIME < timeout:
             if self._app_processor.latest_results.filter_by_labels([BaseUILabels.GENERAL_LOADING1, BaseUILabels.GENERAL_LOADING2]):
                 if WAIT_TIME == 0:
                    logger.debug("Waiting for loading")

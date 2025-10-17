@@ -29,7 +29,6 @@ class WebSocketManager:
         })
         self.broadcast_sync(data)
 
-
     async def connect(self, websocket: WebSocket):
         """接收新的 WebSocket 连接并接受消息"""
         await websocket.accept()

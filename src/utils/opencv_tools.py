@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 import cv2
 import numpy as np
 
+from src.entity.GeneralResult import GeneralResult__Threshold
 from src.utils.logger import logger
 
 
@@ -36,11 +37,12 @@ def get_max_contour(contours):
 
 def extract_roi_from_mask(img, lower_color, upper_color):
     """提取最大轮廓的ROI"""
-    contours = get_mask_contours(img, lower_color, upper_color)
+    contours = get_mask_contours(img, lower_color, upper_color, ksize=(15, 15))
     max_contour = get_max_contour(contours)
 
     if max_contour is not None:
         x, y, w, h = cv2.boundingRect(max_contour)
+        logger.debug(f"max_contour: x={x}, y={y}, w={w}, h={h}")
         return x, y, w, h
     return None
 
@@ -81,14 +83,19 @@ def check_color(
         lower_color: Tuple[int, int, int],
         upper_color: Tuple[int, int, int],
         threshold=1
-):
+) -> GeneralResult__Threshold:
     if frame.size == 0:
-        return False
+        return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
     hsv_roi = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv_roi, lower_color, upper_color)
     total_pixels = frame.size // frame.shape[2]
-    logger.debug((cv2.countNonZero(mask)/total_pixels * 100))
-    return (cv2.countNonZero(mask)/total_pixels * 100) >= threshold
+    # logger.debug((cv2.countNonZero(mask)/total_pixels * 100))
+    value = cv2.countNonZero(mask)/total_pixels * 100
+    return GeneralResult__Threshold(
+        status=value >= threshold,
+        threshold=threshold,
+        value=value
+    )
 
 def check_color_in_region(
         frame: np.ndarray,
@@ -96,19 +103,18 @@ def check_color_in_region(
         upper_color: Tuple[int, int, int],
         region: Tuple[int, int, int, int],
         threshold=1
-):
+) -> GeneralResult__Threshold:
     """
     检查图像某区域是否存在指定范围的颜色
     """
     if frame.size == 0:
-        return False
+        return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
     x, y, w, h = map(int, region)
     roi = frame[y:y + h, x:x + w]
     if roi.size == 0:
-        return False
+        return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
     return check_color(roi, lower_color, upper_color, threshold)
 
-@logger.catch
 def check_status_detection(
         frame: np.ndarray,
         threshold=0.15,
@@ -117,7 +123,7 @@ def check_status_detection(
         background_upper_color: Optional[Tuple[int, int, int]] = None,
         background_lower_color: Optional[Tuple[int, int, int]] = None,
         black_background_threshold=0.3  # 黑色背景占比阈值
-) -> bool:
+) -> GeneralResult__Threshold:
     """
     选中状态检测：默认屏蔽白色背景，黑色背景占比大时屏蔽黑色背景，
     可选屏蔽指定背景颜色（HSV范围）。
@@ -131,7 +137,7 @@ def check_status_detection(
     :return:
     """
     if frame.size == 0:
-        return False
+        return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
 
     lower_color = np.array(lower_color)
     upper_color = np.array(upper_color)
@@ -167,9 +173,13 @@ def check_status_detection(
         combined_mask = cv2.bitwise_and(mask, non_black_mask)
         non_black_area = cv2.countNonZero(non_black_mask)
         if non_black_area == 0:
-            return False
+            return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
         orange_ratio = cv2.countNonZero(combined_mask) / non_black_area
-        return orange_ratio > threshold
+        return GeneralResult__Threshold(
+            status=orange_ratio > threshold,
+            threshold=threshold,
+            value=orange_ratio
+        )
     else:
         mask = cv2.inRange(hsv, lower_color, upper_color)
         non_white_mask = cv2.bitwise_not(white_mask)
@@ -181,9 +191,13 @@ def check_status_detection(
         combined_mask = cv2.bitwise_and(mask, non_white_mask)
         non_white_area = cv2.countNonZero(non_white_mask)
         if non_white_area == 0:
-            return False
+            return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
         orange_ratio = cv2.countNonZero(combined_mask) / non_white_area
-        return orange_ratio > threshold
+        return GeneralResult__Threshold(
+            status=orange_ratio > threshold,
+            threshold=threshold,
+            value=orange_ratio
+        )
 
 def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,int]=(114, 114, 114)):
     x, y = img.shape[:2]  # current shape [height, width]

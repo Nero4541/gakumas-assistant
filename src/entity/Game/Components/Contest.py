@@ -83,12 +83,13 @@ class ContestList:
     def _get_contest_items(self):
         self.contests = []
         hsv = cv2.cvtColor(self.contest_area, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, (90,10,120), (104,64,142))
+        mask = cv2.inRange(hsv, (90,0,120), (104,255,142))
         # 闭运算连接碎块
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         # 膨胀扩大连通区域
         mask = cv2.dilate(mask, kernel, iterations=1)
+        # cv2.imshow("mask", mask)
         # 查找轮廓
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         # result = self.contest_area.copy()
@@ -97,10 +98,12 @@ class ContestList:
             x, y, w, h = cv2.boundingRect(cnt)
 
             # 筛选条件 宽度必须大于帧宽度的一半
-            if w > self._width//2 and h > 30:
+            if w > self._width * 0.5 and h > 30:
                 roi = self.contest_area[y:y+h, x:x+w]
                 self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
                 # cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
+                continue
+        #     cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
         # cv2.imshow("Contours - Filtered", result)
         # cv2.waitKey(0)
 

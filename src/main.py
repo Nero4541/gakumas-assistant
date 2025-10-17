@@ -1,4 +1,5 @@
 import os
+import shutil
 import webbrowser
 
 import cv2
@@ -8,6 +9,7 @@ from typing import Union, Callable, List
 from fastapi import FastAPI
 from time import sleep
 
+from src.constants.path.debug_path import DebugPath
 from src.constants.device.device_type import DeviceType
 from src.core.device.Android.app import Android_App
 from src.core.inference.yolo_engine import YoloInferenceEngine
@@ -20,6 +22,7 @@ from src.core.services.game_utils import GameUtils
 from src.core.tasks.middlewares.middleware_register import register_middlewares
 from src.core.services.config_service import ConfigService
 from src.core.tasks.task_register import register_tasks
+from src.entity.BaseDevice import BaseDevice
 from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
@@ -33,7 +36,7 @@ class AppProcessor:
     # 配置服务
     config_service: ConfigService
     # 操作设备
-    device: Android_App | Windows_App
+    device: BaseDevice
     # 任务队列
     task_queue: "TaskQueue"
     # Yolo推理引擎
@@ -68,15 +71,23 @@ class AppProcessor:
         register_tasks(self)
         register_middlewares(self)
         self.ws_manager = WebSocketManager()
-        register_routes(app, self, self.ws_manager)
         logger.success("Application Initialized")
 
     def _init_environment(self):
+        """
+        初始化环境
+        """
         self.data_path = os.path.join(os.getcwd(), "data")
         os.makedirs(self.data_path, exist_ok=True)
+        if os.path.exists(DebugPath.BasePath()):
+            shutil.rmtree(DebugPath.BasePath())
+        os.makedirs(DebugPath.BasePath(), exist_ok=True)
 
     @staticmethod
     def _init_database():
+        """
+        初始化数据库
+        """
         from src.models.base import db
         from src.models import all_models
         if db.is_closed():
@@ -175,25 +186,24 @@ class AppProcessor:
         return flag
 
     def exec_task(self, task_name: str = None):
-        if isinstance(self.device, Windows_App):
-            self.device.bring_to_front()
-            sleep(0.5)
+        if not self.device.is_app_focused():
+            self.device.start_game()
+            if isinstance(self.device, Windows_App):
+                self.device.bring_to_front()
+                sleep(0.5)
         return self.task_queue.exec_task(task_name)
 
 
-app = FastAPI()
-processor = AppProcessor()
 
-
-@app.on_event("shutdown")
-def shutdown_event():
-    processor.yolo_engine.stop()
-
-@app.on_event("startup")
-def start_event():
-    processor.yolo_engine.start()
-    # processor.yolo_engine.pause()
-    url = f"http://{config.web_server_host}:{config.web_server_port}"
-    if config.auto_open_web_browser:
-        webbrowser.open(url)
-    logger.success(f"Server started at {url}")
+# @app.on_event("shutdown")
+# def shutdown_event():
+#     processor.yolo_engine.stop()
+#
+# @app.on_event("startup")
+# def start_event():
+#     processor.yolo_engine.start()
+#     # processor.yolo_engine.pause()
+#     url = f"http://{config.web_server_host}:{config.web_server_port}"
+#     if config.auto_open_web_browser:
+#         webbrowser.open(url)
+#     logger.success(f"Server started at {url}")

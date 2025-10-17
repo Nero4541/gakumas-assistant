@@ -12,11 +12,11 @@ from src.entity.Yolo import Yolo_Results
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
 from src.core.inference.ocr_engine import OCRService
-from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask
+from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask, check_color
+from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()
 
-@logger.catch
 def get_current_location(boxes: Yolo_Results) -> str | None:
     if boxes.exists_label(BaseUILabels.START_MENU_LOGO):
         return GamePageTypes.START_GAME
@@ -33,10 +33,10 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
         Location.MAIN_UI.Page.PRESENT: GamePageTypes.HOME_TAB.GIFT,
         Location.MAIN_UI.Page.DAILY_TASK: GamePageTypes.HOME_TAB.TASK,
         Location.MAIN_UI.Page.ACHIEVEMENT: GamePageTypes.HOME_TAB.ACHIEVEMENT,
-        Location.MAIN_UI.Page.ACHIEVEMENT_IDOL: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.IDOL,
-        Location.MAIN_UI.Page.ACHIEVEMENT_PRODUCER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.PRODUCER,
-        Location.MAIN_UI.Page.ACHIEVEMENT_OTHER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGR.OTHER,
-        Location.MAIN_UI.Page.PLAN: GamePageTypes.HOME_TAB.MISSION_PASS,
+        Location.MAIN_UI.Page.ACHIEVEMENT_IDOL: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGE.IDOL,
+        Location.MAIN_UI.Page.ACHIEVEMENT_PRODUCER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGE.PRODUCER,
+        Location.MAIN_UI.Page.ACHIEVEMENT_OTHER: GamePageTypes.HOME_TAB.ACHIEVEMENT_SUB_PAGE.OTHER,
+        Location.MAIN_UI.Page.PLAN: GamePageTypes.HOME_TAB.PASS_REWARD,
         Location.MAIN_UI.Page.DISPATCH_WORK: GamePageTypes.HOME_TAB.WORK,
         Location.MAIN_UI.Page.SHOP: GamePageTypes.HOME_TAB.SHOP,
         Location.MAIN_UI.Page.SHOP_GEM: GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.GEM,
@@ -77,9 +77,10 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
             logger.debug("Current location not text")
             return GamePageTypes.UNKNOWN
         location_text = "".join([ocr_item.text for ocr_item in ocr_result])
-        for label in TAB_LABEL_TO_PAGE.keys():
-            if label in location_text:
-                return TAB_LABEL_TO_PAGE.get(label)
+        match_result = string_match(location_text, list(TAB_LABEL_TO_PAGE.keys()), MatchConfig(fuzz_threshold=90))
+        if not match_result:
+            return GamePageTypes.UNKNOWN
+        return TAB_LABEL_TO_PAGE.get(match_result.result)
     return GamePageTypes.UNKNOWN
 
 def extract_skill_card_and_info(img):
@@ -121,35 +122,40 @@ def extract_skill_card_and_info(img):
                     return roi, skill_card, skill_card_info
     return None, None, None  # 如果没有找到符合条件的区域
 
-def modal_body_extract_item_info(img):
+def modal_body_extract_item_info(
+        img,
+        item_lower: tuple[int, int, int] = (80,5,96),
+        item_upper: tuple[int, int, int] = (113,30,156),
+        mark_lower: tuple[int, int, int] = (90,85,230),
+        mark_upper: tuple[int, int, int] = (98,145,250)
+):
     """
     在模态框中提取物品信息
-    :param img:
-    :return:
+    :param img: 图像
+    :param item_lower: 物品外框下值
+    :param item_upper: 物品外框上值
+    :param mark_lower: 锚点下值
+    :param mark_upper: 锚点上值
+    :return: bool
     """
-    item_lower = np.array([88,10,95])
-    item_upper = np.array([108,19,108])
-
-    mark_lower = np.array([96,75,231])
-    mark_upper = np.array([98,145,250])
-
+    # 取出物品
     item_marks = extract_roi_from_mask(img, item_lower, item_upper)
-
     if not item_marks:
         return None, None
-
     item_x,item_y,item_w,item_h = item_marks
 
     item = img[item_y:item_y+item_h, item_x:item_x+item_w]
-
     mark_y = 0
     contours = get_mask_contours(img[item_y+item_h:], mark_lower, mark_upper)
     for contour in contours:
         _x,_y,_w,_h = cv2.boundingRect(contour)
+        if mark_y == 0:
+            mark_y = _y
+            continue
         if _h > 5 and _w > 5:
             mark_y = min(_y, mark_y)
     mark_y = item_y+item_h+mark_y
-    if mark_y < item_y + item_h:
+    if mark_y < item_y + item_h and not check_color(img[item_y+item_h:item_y+item_h+20, item_x+item_w:], (0,0,45), (0,0,108), threshold=5):
         item_info = img[item_y-10:item_y+item_h, item_x+item_w:]
     else:
         item_info = img[item_y-10:mark_y, item_x+item_w:]
@@ -157,7 +163,6 @@ def modal_body_extract_item_info(img):
     return item, item_info
 
 
-@logger.catch
 def get_modal(yolo_result: Yolo_Results, no_body: bool = False) -> Modal | None:
     """
     获取模态框

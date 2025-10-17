@@ -29,6 +29,9 @@ const props = defineProps({
       />
     </v-list-item>
   </div>
+  <div v-else>
+    <base__adb_devices :data="props.data" :only_usb_device="true" />
+  </div>
   <v-list-item>
     <v-text-field
       label="游戏包名"

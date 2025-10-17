@@ -1,8 +1,12 @@
+from time import sleep
 from typing import TYPE_CHECKING
 
 from src.constants.text.button_text import ButtonText
+from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Page.Types.index import GamePageTypes
+from src.utils.game_tools import get_modal
+from src.utils.string_tools import MatchConfig, string_match
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -10,6 +14,7 @@ if TYPE_CHECKING:
 def _back_home(app: "AppProcessor"):
     if app.game_utils.update_current_location() != GamePageTypes.MAIN_MENU__HOME:
         app.game_utils.go_home()
+        app.game_utils.wait_loading()
         app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__HOME)
 
 def _goto_tab_contest(app: "AppProcessor"):
@@ -65,3 +70,26 @@ def goto__claim_task_rewards_page(app: "AppProcessor"):
         raise TimeoutError("Timeout waiting for [home:daily_task] to appear.")
     app.game_utils.click_on_label(BaseUILabels.HOME_DAILY_TASK)
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.TASK)
+
+def goto__claim_pass_rewards(app: "AppProcessor"):
+    """ 进入大月卡奖励领取页面 """
+    goto__claim_task_rewards_page(app)
+    app.game_utils.click_button(ButtonText.PAGE__TASK_REWARDS.PASS_REWARDS, match_config=MatchConfig(fuzz_threshold=90))
+    app.game_utils.wait_loading()
+    for i in range(3):
+        if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER) and app.latest_results.exists_all_labels([BaseUILabels.CURRENT_LOCATION, BaseUILabels.BUTTON]):
+            break
+        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+            modal = app.game_utils.wait_for_modal(ModalText.TITLE.INFO_FETCH_FAILED, timeout=5, no_body=True)
+            if not modal:
+                continue
+            app.device.click_element(modal.confirm_button)
+            app.game_utils.wait_loading()
+            if modal := app.game_utils.wait_for_label(BaseUILabels.MODAL_HEADER, timeout=5):
+                app.device.click_element(modal.cancel_button)
+            app.game_utils.wait_loading()
+    if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+        modal = get_modal(app.latest_results, True)
+        if modal:
+            app.device.click_element(modal.cancel_button)
+    app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.PASS_REWARD)

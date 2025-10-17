@@ -5,6 +5,7 @@ from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
+from src.utils.string_tools import string_match
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -20,28 +21,30 @@ def _handle__modal_boxes(app: "AppProcessor"):
     """处理模态框"""
     logger.debug("_handle__modal_boxes")
     modal = get_modal(app.latest_results)
-    logger.debug(modal)
-    if ModalText.TITLE.CONNECTION_ERROR in modal.modal_title:
+    if string_match(ModalText.TITLE.CONNECTION_ERROR, modal.modal_title):
         # Token失效
-        if ModalText.BODY.CONNECTION_ERROR_BODY.TOKEN_FAIL in modal.modal_body_text:
+        if string_match(ModalText.BODY.CONNECTION_ERROR_ID.TOKEN_FAIL, modal.modal_body_text):
             logger.warning("Network connection error: Token fail")
             app.device.click_element(modal.cancel_button)
             action__click_start_game(app)
         # 连接超时
-        elif ModalText.BODY.CONNECTION_ERROR_BODY.TIMEOUT in modal.modal_body_text:
+        elif string_match(ModalText.BODY.CONNECTION_ERROR_ID.TIMEOUT, modal.modal_body_text):
             logger.warning("Network connection error: Timeout")
             app.device.click_element(modal.confirm_button)
         else:
             logger.warning("Network connection error: Connection error")
             app.device.click_element(modal.confirm_button)
     # 下载新数据
-    elif ModalText.TITLE.DATA_DOWNLOAD in modal.modal_title:
+    elif string_match(ModalText.TITLE.DATA_DOWNLOAD, modal.modal_title):
         logger.warning("game requires downloading new data.")
         app.device.click_element(modal.confirm_button)
-    elif ModalText.TITLE.INIT_ERROR in modal.modal_title:
+    elif string_match(ModalText.TITLE.INIT_ERROR, modal.modal_title):
         logger.error("Game initialization failed.")
         app.device.click_element(modal.cancel_button)
         action__click_start_game(app)
+    # 游戏更新
+    elif string_match(ModalText.TITLE.GAME_UPDATE, modal.modal_title):
+        raise RuntimeWarning("Game requires an update from the App Store. Please update manually.")
     else:
         raise RuntimeError("Unknown modal box")
     sleep(1)

@@ -1,9 +1,10 @@
 # Gakumas Assistant
 **《学园偶像大师》小助手**  
+一个基于Yolo+OCR的学院偶像大师自动化工具
 
 ## WIP
 ![](./docs/WIP_webui.png)
-目前仅支持DMM平台，实现了部分任务
+目前仅支持PC(DMM)平台，Android下可能还有点小问题
 
 ### 目前已实现的功能：
  - 进入游戏
@@ -15,7 +16,6 @@
  - 自动竞技场
  - 自动领取任务奖励
 ### 待实现/待完善：
- - 动态修改脚本设置
  - 工具框架
  - 完善任务
  - 自动P卡
@@ -66,8 +66,11 @@ python3 -m pip install -r requirements.dev.txt
 git submodule init
 git submodule update
 ```
-**YOLO训练数据**  
-待开放，如有需要请联系**skyfsj@qq.com**
+**YOLO检测模型训练**  
+#### 训练：
+该项目使用了两个Yolo模型，分别用于主UI和训练时的UI，训练脚本存放于train/<model_name>/train.py
+#### 数据集：
+> 待开放，如有需要请联系**skyfsj@qq.com**
 
 ## 许可证
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.

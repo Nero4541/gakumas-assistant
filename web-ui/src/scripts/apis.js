@@ -5,7 +5,7 @@ import axiosplus from "@/scripts/utils/axios.js";
  * @return {Promise<AxiosResponse<any, any>>}
  */
 function start_task_queue() {
-  return axiosplus.get("/api/start");
+  return axiosplus.get("/api/task/start");
 }
 
 /**
@@ -13,7 +13,7 @@ function start_task_queue() {
  * @return {Promise<AxiosResponse<any, any>>}
  */
 function stop_task_queue() {
-  return axiosplus.get("/api/stop");
+  return axiosplus.get("/api/task/stop");
 }
 
 /**
@@ -22,7 +22,7 @@ function stop_task_queue() {
  * @return {Promise<axios.AxiosResponse<any>>}
  */
 function run_task(task_name) {
-  return axiosplus.get(`/api/run_task/${task_name}`);
+  return axiosplus.get(`/api/task/start/${task_name}`);
 }
 
 /**
@@ -38,7 +38,7 @@ function get_status() {
  * @return {Promise<AxiosResponse<any, any>>}
  */
 function get_registered_tasks() {
-  return axiosplus.get("/api/get_registered_tasks")
+  return axiosplus.get("/api/task/get_registered_tasks")
 }
 
 /**
@@ -47,7 +47,7 @@ function get_registered_tasks() {
  * @return {Promise<axios.AxiosResponse<any>>}
  */
 function disable_task(task_name) {
-  return axiosplus.post(`/api/disable_task/${task_name}`);
+  return axiosplus.post(`/api/task/disable/${task_name}`);
 }
 
 /**
@@ -56,7 +56,7 @@ function disable_task(task_name) {
  * @returns {Promise<axios.AxiosResponse<any>>}
  */
 function enable_task(task_name) {
-  return axiosplus.post(`/api/enable_task/${task_name}`);
+  return axiosplus.post(`/api/task/enable/${task_name}`);
 }
 
 /**
@@ -65,7 +65,7 @@ function enable_task(task_name) {
  * @returns {Promise<axios.AxiosResponse<any>>}
  */
 function switch_yolo_model(model_name) {
-  return axiosplus.get(`/api/switch_yolo_model/${model_name}`);
+  return axiosplus.get(`/api/debug/switch_yolo_model/${model_name}`);
 }
 /**
  * 获取配置
@@ -104,6 +104,17 @@ function save_task_config(task_name, data) {
 }
 
 /**
+ * 获取所有ADB设备列表
+ * @param only_usb_device 仅获取USB设备
+ */
+function get_all_adb_device(only_usb_device=false) {
+  if (!only_usb_device) {
+    return axiosplus.get("/api/adb/devices");
+  }
+  return axiosplus.get(`/api/adb/devices/usb`);
+}
+
+/**
  * 获取所有物品列表
  */
 function get_all_item() {
@@ -123,5 +134,6 @@ export default {
   save_config,
   get_task_config,
   save_task_config,
+  get_all_adb_device,
   get_all_item,
 }

@@ -59,6 +59,13 @@ class Windows_App(BaseDevice):
         client_height = client_rect[3]  # 客户区高度
         return client_left, client_top, client_width, client_height
 
+    def startGame(self):
+        """
+        启动游戏
+        :return:
+        """
+        pass
+
     @logger.catch
     def bring_to_front(self):
         """
@@ -141,8 +148,11 @@ class Windows_App(BaseDevice):
             return
         abs_x, abs_y = self._xy_abs_conversion(x, y)
         pyautogui.moveTo(abs_x, abs_y)
-        pyautogui.click(button='right', clicks=1, interval=0.3)
+        # pyautogui.click(button='right', clicks=1, interval=0.3)
         for _ in range(abs(scroll_delta)):
             win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0,120 if scroll_delta > 0 else -120)
             sleep(0.1)
         logger.debug(f"scroll delta: {scroll_delta} (x:{abs_x} y:{abs_y})")
+
+    def scrollX(self, x, y, scroll_delta):
+        pass

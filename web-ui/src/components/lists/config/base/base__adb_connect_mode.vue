@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<script setup>
 import app from "@/main.js";
 const props = defineProps({
   data: Object

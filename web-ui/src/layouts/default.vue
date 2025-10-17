@@ -1,5 +1,10 @@
 <template>
   <v-layout class="page_body rounded rounded-md">
+<!--    <v-system-bar window color="white">-->
+<!--      <v-icon>mdi-minus</v-icon>-->
+<!--      <v-icon class="ms-2">mdi-checkbox-blank-outline</v-icon>-->
+<!--      <v-icon class="ms-2">mdi-close</v-icon>-->
+<!--    </v-system-bar>-->
     <v-app-bar
       id="app-bar"
       height="80"
@@ -126,12 +131,12 @@
   }
 }
 .page_body {
-  width: 80vw;
-  height: 85vh;
-  margin: 5vh auto;
+  width: 100vw;
+  height: 100vh;
+  //margin: 5vh auto;
   display: flex;
   flex-direction: column;
-  border-radius: 30px !important;
+  //border-radius: 30px !important;
   overflow: hidden;
   box-shadow: 0 0 12px rgba(0, 0, 0, 0.15);
   .page_main {

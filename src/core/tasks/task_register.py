@@ -1,3 +1,4 @@
+from src.constants.text.button_text import ButtonText
 from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
@@ -7,15 +8,20 @@ from src.core.tasks.base_ui.claim_task_rewards import claim_task_rewards
 from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
 from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
 from src.core.tasks.base_ui.goto_pages import goto__get_expenditure, goto__work_dispatch_page, goto__gift_page, \
-    goto__shop_page, goto__contest_page, goto__claim_task_rewards_page
+    goto__shop_page, goto__contest_page, goto__claim_task_rewards_page, goto__claim_pass_rewards
 from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
     action__wait_enter_home
 )
 from time import sleep
+
+from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Page.Types.index import GamePageTypes
+from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
+
+from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -75,3 +81,33 @@ def register_tasks(processor: "AppProcessor"):
         goto__claim_task_rewards_page(app)
         claim_task_rewards(app)
 
+    @processor.register_task("claim_pass_rewards", "领取通行证奖励")
+    def _task__claim_pass_rewards(app: "AppProcessor"):
+        goto__claim_pass_rewards(app)
+        y, x = app.latest_results.frame.shape[:2]
+        while True:
+            buttons = ButtonList(app.latest_results)
+            flag = True
+            for button in buttons:
+                if not button.is_disabled() and string_match(button.text, ButtonText.COLLECT, MatchConfig(fuzz_threshold=90)):
+                    flag = False
+                    app.device.click_element(button)
+                    MAX_WAIT_TIME = 5
+                    for i in range(MAX_WAIT_TIME + 1):
+                        if MAX_WAIT_TIME < i:
+                            raise TimeoutError("Timeout waiting for modal to appear.")
+                        if app.latest_results.exists_all_labels([BaseUILabels.BUTTON, BaseUILabels.MODAL_HEADER]):
+                            modal = get_modal(app.latest_results, True)
+                            if string_match(modal.modal_title, ModalText.TITLE.RECEIPT_COMPLETED):
+                                app.device.click_element(modal.cancel_button)
+                                break
+                            elif string_match(modal.modal_title, ModalText.TITLE.CONNECTION_ERROR):
+                                app.device.click_element(modal.confirm_button)
+                            else:
+                                app.device.click_element(modal.cancel_button)
+                        sleep(1)
+                    app.game_utils.wait_for_label(BaseUILabels.CURRENT_LOCATION)
+                    sleep(1)
+            app.device.scrollY(x // 2, y // 2, -20)
+            if flag:
+                break

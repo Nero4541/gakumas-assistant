@@ -32,6 +32,13 @@ class MatchResult:
 
 # @timeit
 def string_match(source: List[str] | str, match: List[str] | str, config: MatchConfig = None) -> MatchResult:
+    """
+    匹配字符串
+    :param source: 源
+    :param match: 匹配列表
+    :param config: 匹配配置
+    :return:
+    """
     match_obj = match if isinstance(match, list) else [match]
     config = config if config is not None else MatchConfig()
     if isinstance(source, str):

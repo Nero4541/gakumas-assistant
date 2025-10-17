@@ -38,6 +38,10 @@ def register_middlewares(processor: "AppProcessor"):
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(BaseUILabels.START_MENU_LOGO)
                 app.exec_task("start_game")
+            elif string_match(modal.modal_title, [ModalText.TITLE.CONNECTION_ERROR]):
+                logger.warning("Network connection error...")
+                app.device.click_element(modal.confirm_button)
+                app.game_utils.wait_loading()
             last_modal = True
         else:
             last_modal = False

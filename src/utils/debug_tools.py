@@ -26,6 +26,15 @@ class DebugBox:
     thickness: int = 2
     created_at: float = field(default_factory=time)
 
+    def __post_init__(self):
+        for name, value in [("x", self.x), ("y", self.y), ("w", self.w), ("h", self.h)]:
+            if not isinstance(value, int):
+                raise TypeError(f"{name} must be int, got {type(value).__name__}")
+        if self.x >= self.w:
+            raise ValueError(f"Invalid box coordinates: x({self.x}) >= w({self.w})")
+        if self.y >= self.h:
+            raise ValueError(f"Invalid box coordinates: y({self.y}) >= h({self.h})")
+
     @property
     def expire_time(self) -> float:
         return self.created_at + self.duration

@@ -11,6 +11,7 @@ from time import time, sleep
 from pyautogui import FailSafeException
 
 from src.constants.task_status import TaskStatus
+from src.core.device.Windows.app import Windows_App
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
 from src.entity.WebSocketData import WebSocketData
@@ -121,6 +122,7 @@ class TaskQueue:
         self._run_lock.acquire()
         self._stop_event = False
         logger.debug("start exec task queue")
+        self._app.debug_tools.clear_all_boxes()
         if self._task_queue.not_empty:
             with self._task_queue.mutex:
                 self._task_queue.queue.clear()
@@ -212,7 +214,7 @@ class TaskQueue:
         if task.timeout and task.timeout != -1 and (int(time()) - task.get_start_time()) > task.timeout:
             raise TaskTimeout(task)
         # 不在焦点不执行
-        while not self._app.device.is_app_focused():
+        while isinstance(self._app.device, Windows_App) and not self._app.device.is_app_focused():
             sleep(0.2)
         # 判断是否执行中间件
         if task.disabled_middleware or not string_match(frame.f_code.co_filename, EXECUTE_MIDDLEWARE_WHITELIST, MatchConfig(use_fuzz=False, use_regex=False)):

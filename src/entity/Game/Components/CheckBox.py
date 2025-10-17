@@ -12,4 +12,4 @@ class CheckBox(Yolo_Box):
 
     def __init__(self, element: Yolo_Box):
         super().__init__(element.x, element.y, element.w, element.h, "CheckBox", element.frame)
-        self.checked = check_status_detection(element.frame)
+        self.checked = check_status_detection(element.frame).status

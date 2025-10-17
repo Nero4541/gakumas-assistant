@@ -5,13 +5,15 @@ pyautogui
 loguru
 numpy
 adbutils
+uiautomator2
 fastapi
 uvicorn[standard]
 starlette
 pywin32
 scikit-learn
 rapidfuzz
-rapidocr
+rapidocr==3.2.0
 peewee
 openai
 pyyaml
+pywebview

@@ -1,8 +1,6 @@
-import os
-
 from peewee import SqliteDatabase, Model
 
-from src.constants.data_path import DataPath
+from src.constants.path.data_path import DataPath
 
 db = SqliteDatabase(DataPath.DATABASE)
 
