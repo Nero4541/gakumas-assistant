@@ -76,7 +76,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                         if modal:
                             app.device.click_element(modal.confirm_button)
                             break
-                    sleep(0.5)
+                    app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER)
                 else:
                     logger.debug(f"{clip_result.name} is not on the shopping list, so skip the purchase.")
                 current_list.append(clip_result.name)
@@ -135,6 +135,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 else:
                     logger.debug(f"{item_name} is not on the shopping list, so skip the purchase.")
                     app.device.click_element(modal.cancel_button)
+                app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER)
                 app.debug_tools.show()
                 sleep(0.5)
         # sleep(5)

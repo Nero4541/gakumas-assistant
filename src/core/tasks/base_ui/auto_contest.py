@@ -10,6 +10,8 @@ from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
+from src.utils.string_tools import MatchConfig
+
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
@@ -89,7 +91,7 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     若勾选框未启用，自动勾选“跳过”。
     重复点击直到跳过按钮消失。
     """
-    app.game_utils.click_button(ButtonText.START_CHALLENGE)
+    app.game_utils.click_button(ButtonText.START_CHALLENGE, match_config=MatchConfig(fuzz_threshold=90))
     app.game_utils.wait_for_label(BaseUILabels.CHECKBOX)
     check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
     if not check_box.checked:
@@ -97,6 +99,7 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
     sleep(1)
     while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
+        app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
         app.device.click(width // 2, height // 2)
         sleep(1)
     app.device.click(width // 2, height // 2)

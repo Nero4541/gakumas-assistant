@@ -51,6 +51,28 @@ class GameUtils:
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' not found.")
         return False
 
+    def wait_label_exist(self, label, timeout=15, interval=1, continuous=1):
+        WAIT_TIME = 0
+        COUNT = 0
+        logger.debug(f"Waiting label exist: {label}")
+        while WAIT_TIME <= timeout:
+            if COUNT > continuous:
+                logger.debug(f"Label '{label}' appeared {continuous} times. Returning True.")
+                return True
+            if not self._app_processor.latest_results.filter_by_label(label):
+                COUNT += 1
+                logger.debug(f"Not found label '{label}' (count={COUNT})")
+                sleep(0.3)
+                continue
+            else:
+                COUNT = 0
+                logger.debug(f"Label '{label}' found. Resetting count.")
+            sleep(interval)
+            WAIT_TIME += interval
+            logger.debug(f"Waiting... {WAIT_TIME}/{timeout}s")
+        logger.warning(f"Timeout reached ({timeout}s): Label '{label}' found.")
+        return False
+
     def wait_for_modal(self, modal_title, timeout=10, interval=1, no_body: bool = False, match_config: MatchConfig = None) -> Optional[Modal]:
         """
         等待指定标题的模态框出现
@@ -138,7 +160,7 @@ class GameUtils:
                     sleep(0.3)
         raise TimeoutError("Waiting for a load timeout")
 
-    def click_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
+    def click_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=80)):
         """
         点击指定文本按钮
         :param match_config:
@@ -149,7 +171,7 @@ class GameUtils:
         logger.debug(f"waiting click button: {text}")
         self._app_processor.device.click_element(self.wait_button(text, timeout, match_config))
 
-    def wait_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=0.7)):
+    def wait_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=80)):
         """
         等待指定文本按钮
         :param match_config:
@@ -193,7 +215,7 @@ class GameUtils:
                 return
             elif modal_header := self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
                 modal_header = modal_header.first()
-                self._app_processor.device.click(modal_header.cx, max(modal_header.y - 20, 0))
+                self._app_processor.device.click(modal_header.cx, max(modal_header.y - 50, 0))
             sleep(1)
         raise RuntimeError("Going home failed")
 
