@@ -1,5 +1,7 @@
+import asyncio
 import os.path
 import threading
+from contextlib import asynccontextmanager
 from time import sleep
 
 import uvicorn
@@ -12,7 +14,12 @@ from src.main import AppProcessor
 
 
 def start_webapp(core_processor: AppProcessor):
-    webapp = FastAPI()
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        core_processor.ws_manager.set_fastapi_loop(asyncio.get_event_loop())
+        yield
+        pass
+    webapp = FastAPI(lifespan=lifespan)
     register_routes(webapp, core_processor, processor.ws_manager)
     uvicorn.run(
         webapp,
@@ -27,22 +34,24 @@ if __name__ == "__main__":
     webapp_thread = threading.Thread(target=start_webapp, args=(processor,), daemon=True)
     webapp_thread.start()
     processor.yolo_engine.start()
-    window = webview.create_window(
-        'Gakumas Assistant',
-        f'http://localhost:{config.web_server_port}',
-        width=1200,
-        height=800,
-        frameless=True,
-        shadow=True,
-        easy_drag=True,
-        text_select=True
-    )
-    webview.start(icon=os.path.join(os.getcwd(), "assets","images","gakumas_logo.png"))
-    processor.yolo_engine.stop()
-    exit(0)
-    # try:
-    #     while True:
-    #         sleep(0.1)
-    # except KeyboardInterrupt:
-    #     processor.yolo_engine.stop()
-    #     exit(0)
+    if config.use_webview:
+        window = webview.create_window(
+            'Gakumas Assistant',
+            f'http://localhost:{config.web_server_port}',
+            width=1200,
+            height=800,
+            frameless=True,
+            shadow=True,
+            easy_drag=True,
+            text_select=True
+        )
+        webview.start(icon=os.path.join(os.getcwd(), "assets","images","gakumas_logo.png"))
+        processor.yolo_engine.stop()
+        exit(0)
+    else:
+        try:
+            while True:
+                sleep(0.1)
+        except KeyboardInterrupt:
+            processor.yolo_engine.stop()
+            exit(0)

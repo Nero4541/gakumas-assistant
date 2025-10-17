@@ -29,6 +29,9 @@ class WebSocketManager:
         })
         self.broadcast_sync(data)
 
+    def set_fastapi_loop(self, loop: asyncio.AbstractEventLoop):
+        self._loop = loop
+
     async def connect(self, websocket: WebSocket):
         """接收新的 WebSocket 连接并接受消息"""
         await websocket.accept()
