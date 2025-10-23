@@ -46,8 +46,9 @@ jobs:
 
       - name: Compress
         run: |
-          cd out
-          Compress-Archive -Path * -DestinationPath "${{ github.workspace }}\release.zip"
+          $source = "${{ github.workspace }}\out\app.dist"
+          $zipFile = "${{ github.workspace }}\release.zip"
+          Compress-Archive -Path "$source\*" -DestinationPath "$zipFile" -Force
 
       - name: Create GitHub Release
         id: create_release
