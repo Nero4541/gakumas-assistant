@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送版本标签时触发，如 v1.0.0
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "version"
+        required: false
+      prerelease:
+        description: "prerelease"
+        required: false
+        default: "false"
+
+permissions:
+  contents: write  # 允许创建 release
+
+jobs:
+  build:
+    runs-on: windows-latest  # 因为你用的是 Windows 环境下的 nuitka
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true      # 拉取所有子模块
+          fetch-depth: 0        # 拉完整提交历史，防止子模块浅克隆失败
+        env:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install requirements
+        run: |
+          python -m pip install --upgrade pip
+          pip install nuitka
+          pip install -r requirements.dev.txt"
+
+      - name: Build app
+        run: |
+          python build_app.py
+
+      - name: Compress
+        run: |
+          cd out
+          Compress-Archive -Path * -DestinationPath "${{ github.workspace }}\release.zip"
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          files: release.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
