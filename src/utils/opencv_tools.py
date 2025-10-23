@@ -224,6 +224,27 @@ def center_crop(image: np.ndarray, size: int = 224) -> np.ndarray:
     assert cropped.shape[0] == size and cropped.shape[1] == size, f"Cropped shape error: {cropped.shape}"
     return cropped
 
+def intersection_area(a_x, a_y, a_w, a_h, b_x, b_y, b_w, b_h) -> float:
+    """
+    计算坐标交叉区域
+    :param a_x: abox x
+    :param a_y: abox y
+    :param a_w: abox w
+    :param a_h: abox h
+    :param b_x: bbox x
+    :param b_y: bbox y
+    :param b_w: bbox w
+    :param b_h: bbox h
+    :return:
+    """
+    x1 = max(a_x, b_x)
+    y1 = max(a_y, b_y)
+    x2 = min(a_x + a_w, b_x + b_w)
+    y2 = min(a_y + a_h, b_y + b_h)
+    iw = max(0.0, x2 - x1)
+    ih = max(0.0, y2 - y1)
+    return iw * ih
+
 def draw_text(
         image: np.ndarray,
         text: str, position,

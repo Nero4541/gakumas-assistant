@@ -4,7 +4,7 @@ from time import sleep
 from src.constants.text.button_text import ButtonText
 from src.constants.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
-from src.entity.Game.Components.Button import ButtonList
+from src.entity.Game.Components.Button import ButtonList, Button
 from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.logger import logger
@@ -68,7 +68,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
         sleep(1)
         if app.latest_results.exists_label(BaseUILabels.BLANK_SLOT):
             _auto_form_team(app)
-        _start_battle_and_skip(app, width, height)
+        _start_battle(app, width, height)
         _finish_battle(app)
 
 def _auto_form_team(app: "AppProcessor"):
@@ -85,14 +85,17 @@ def _auto_form_team(app: "AppProcessor"):
     app.game_utils.click_button(ButtonText.CLOSE)
     app.game_utils.back_next_page()
 
-def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
+def _start_battle(app: "AppProcessor", width: int, height: int):
     """
     发起挑战并跳过战斗过程。
     若勾选框未启用，自动勾选“跳过”。
     重复点击直到跳过按钮消失。
     """
-    app.game_utils.click_button(ButtonText.START_CHALLENGE, match_config=MatchConfig(fuzz_threshold=90))
-    app.game_utils.wait_for_label(BaseUILabels.CHECKBOX)
+    start_button = app.game_utils.wait_button(ButtonText.START_CHALLENGE, match_config=MatchConfig(fuzz_threshold=90))
+    app.device.click_element(start_button)
+    app.game_utils.wait_loading()
+    app.game_utils.check_image_change_at_yolobox(start_button)
+    app.game_utils.wait_for_label(BaseUILabels.CHECKBOX, interval=0.5, continuous=3, timeout=5)
     check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
     if not check_box.checked:
         app.device.click_element(check_box)
@@ -100,9 +103,9 @@ def _start_battle_and_skip(app: "AppProcessor", width: int, height: int):
     sleep(1)
     while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
         app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
-        app.device.click(width // 2, height // 2)
         sleep(1)
     app.device.click(width // 2, height // 2)
+
 
 def _finish_battle(app: "AppProcessor"):
     """

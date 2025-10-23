@@ -5,6 +5,8 @@ from typing import List, Tuple, Union, Optional, Any
 import numpy as np
 from src.core.inference.ONNX import ONNXYoloResult
 from src.utils.number import median
+from src.utils.opencv_tools import intersection_area
+
 
 @dataclass
 class Yolo_Box:
@@ -386,21 +388,12 @@ class Yolo_Results:
         if isinstance(include_labels, str):
             include_labels = [include_labels]
 
-        def intersection_area(a: Yolo_Box, b: Yolo_Box) -> float:
-            x1 = max(a.x, b.x)
-            y1 = max(a.y, b.y)
-            x2 = min(a.x + a.w, b.x + b.w)
-            y2 = min(a.y + a.h, b.y + b.h)
-            iw = max(0.0, x2 - x1)
-            ih = max(0.0, y2 - y1)
-            return iw * ih
-
-        def area(b: Yolo_Box) -> float:
-            return max(0.0, b.w * b.h)
-
         def contain_ratio(container: Yolo_Box, child: Yolo_Box) -> float:
-            inter = intersection_area(container, child)
-            child_area = area(child)
+            def _area(b: Yolo_Box) -> float:
+                return max(0.0, b.w * b.h)
+
+            inter = intersection_area(container.x, container.y, container.w, container.h, child.x, child.y, child.w, child.h)
+            child_area = _area(child)
             return inter / child_area if child_area > 0 else 0.0
 
         result_groups = []

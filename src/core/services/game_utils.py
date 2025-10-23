@@ -1,11 +1,17 @@
+from copy import copy
 from time import sleep
 from typing import TYPE_CHECKING, Optional
+
+import cv2
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
 
 from config import debug
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Page.Types.index import GamePageTypes
+from src.entity.Yolo import Yolo_Box
 from src.utils.debug_tools import DebugTools
 from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
@@ -159,6 +165,89 @@ class GameUtils:
                     COUNT += 1
                     sleep(0.3)
         raise TimeoutError("Waiting for a load timeout")
+
+    def check_label_exists_at_position(self, target_label, x: int, y: int, w: int, h: int, threshold: float = 0.8) -> bool:
+        """
+        检查目标标签是否存在于指定区域（支持部分重叠判断）
+        :param target_label: 标签名
+        :param x, y, w, h: 检查区域
+        :param threshold: IOU阈值
+        """
+        results = self._app_processor.latest_results
+        if not results.exists_label(target_label):
+            return False
+        select_labels = results.filter_by_label(target_label)
+        if not select_labels:
+            return False
+        # 当前检查区域
+        x1, y1, x2, y2 = x, y, x + w, y + h
+        for el in select_labels:
+            ex1, ey1, ex2, ey2 = el.x, el.y, el.x + el.w, el.y + el.h
+            # 计算交集
+            inter_w = max(0, min(x2, ex2) - max(x1, ex1))
+            inter_h = max(0, min(y2, ey2) - max(y1, ey1))
+            inter_area = inter_w * inter_h
+            # 计算并集
+            union_area = (w * h) + (el.w * el.h) - inter_area
+            iou = inter_area / union_area if union_area > 0 else 0
+            if iou >= threshold:
+                return True
+        return False
+
+
+    def check_image_change_at_position(self, x, y, w, h, original: Optional[np.ndarray] = None, timeout=10, threshold: float = 0.8) -> bool:
+        """
+        检查指定位置图像是否变化
+        :param x:
+        :param y:
+        :param w:
+        :param h:
+        :param original: 原图
+        :param timeout: 超时时间
+        :param threshold: 图像变化阈值
+        :return:
+        """
+        last_frame = original if original is not None and original.size > 0 else self._app_processor.latest_results.frame[y:h, x:w]
+        last_frame = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
+        wait_time = 0
+        count = 0
+        while True:
+            if wait_time > timeout:
+                return False
+            current_frame = self._app_processor.latest_results.frame[y:h, x:w]
+            current_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
+            if last_frame.shape == current_frame.shape:
+                wait_time += 0.1
+                sleep(0.1)
+                continue
+            score, diff = ssim(last_frame, current_frame, full=True)
+            if score > threshold:
+                count += 1
+                if count >= 3:
+                    return True
+            else:
+                wait_time += 1
+                sleep(1)
+        return False
+
+    def check_image_change_at_yolobox(self, target_yolobox: Yolo_Box, timeout=10, threshold: float = 0.8) -> bool:
+        """
+        检查目标YoloBox位置的图像是否变化
+        :param target_yolobox:
+        :param timeout:
+        :param threshold:
+        :return:
+        """
+        return self.check_image_change_at_position(
+            target_yolobox.x,
+            target_yolobox.y,
+            target_yolobox.w,
+            target_yolobox.h,
+            target_yolobox.frame,
+            timeout,
+            threshold
+        )
+
 
     def click_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=80)):
         """

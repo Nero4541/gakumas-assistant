@@ -11,6 +11,7 @@ uvicorn[standard]
 starlette
 pywin32
 scikit-learn
+scikit-image
 rapidfuzz
 rapidocr==3.2.0
 peewee
