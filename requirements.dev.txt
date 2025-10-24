@@ -7,3 +7,4 @@ git+https://github.com/openai/CLIP.git
 matplotlib
 imageio
 nuitka
+onnx
