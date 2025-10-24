@@ -12,6 +12,10 @@ import config
 from src.core.Web.routers import register_routes
 from src.main import AppProcessor
 
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 
 def start_webapp(core_processor: AppProcessor):
     @asynccontextmanager

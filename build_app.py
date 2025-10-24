@@ -4,6 +4,8 @@ import shutil
 import os
 import sys
 import sysconfig
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 WEBUI_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "web-ui")
 PROJECT_NAME = "Gakumas Assistant"
@@ -34,30 +36,30 @@ def build_webui():
     os.chdir("..")
 
 def build_project():
-    # build_webui()
-    # print("开始打包APP")
-    # nuitka_cmd = [
-    #     "--mingw64",
-    #     "--standalone",
-    #     "--show-memory",
-    #     "--show-progress",
-    #     "--nofollow-import-to=tkinter",
-    #     "--nofollow-import-to=pytouch",
-    #     "--enable-plugin=no-qt",
-    #     # "--include-data-dir=assets=assets",
-    #     # "--include-data-dir=bin=bin",
-    #     # "--include-data-dir=model=model",
-    #     # "--include-data-dir=dist=dist",
-    #     # '--company-name=Pigeon Server Team',
-    #     # f'--product-name={PROJECT_NAME}',
-    #     f'--output-filename={PROJECT_NAME}.exe',
-    #     f'--output-dir={NUITKA_OUTPUT_DIR}',
-    #     f'--linux-icon={LOGO}',
-    #     f'--windows-icon-from-ico={LOGO}',
-    #     "--windows-disable-console",
-    #     "app.py"
-    # ]
-    # subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd, shell=True, check=True)
+    build_webui()
+    print("开始打包APP")
+    nuitka_cmd = [
+        "--mingw64",
+        "--standalone",
+        "--show-memory",
+        "--show-progress",
+        "--nofollow-import-to=tkinter",
+        "--nofollow-import-to=pytouch",
+        "--enable-plugin=no-qt",
+        # "--include-data-dir=assets=assets",
+        # "--include-data-dir=bin=bin",
+        # "--include-data-dir=model=model",
+        # "--include-data-dir=dist=dist",
+        # '--company-name=Pigeon Server Team',
+        # f'--product-name={PROJECT_NAME}',
+        f'--output-filename={PROJECT_NAME}.exe',
+        f'--output-dir={NUITKA_OUTPUT_DIR}',
+        f'--linux-icon={LOGO}',
+        f'--windows-icon-from-ico={LOGO}',
+        "--windows-disable-console",
+        "app.py"
+    ]
+    subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd, shell=True, check=True)
     print("正在复制资源...")
     app_dist_path = os.path.join(NUITKA_OUTPUT_DIR, "app.dist")
     for key, value in COPY_ASSETS.items():
