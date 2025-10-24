@@ -1,9 +1,6 @@
 # Gakumas Assistant
-**《学园偶像大师》小助手**  
-一个基于Yolo+OCR的学院偶像大师自动化工具
-
-## WIP
-![](./docs/WIP_webui.png)
+**《学园偶像大师》小助手** 一个基于Yolo+OCR的学院偶像大师自动化工具
+![](./docs/webui.png)
 目前仅支持PC(DMM)平台，Android下可能还有点小问题
 
 ### 目前已实现的功能：
@@ -47,19 +44,15 @@
 **继续下载、安装或使用本项目，即表示您已完全阅读、理解并同意承担以上所有风险和条款。如果您不同意，请立即停止使用并删除本项目的所有相关文件。**
 
 ## 安装
-**拉取项目**
-```bash
-git clone https://github.com/Pigeon-Server/gakumas-assistant.git
-```
-**启动脚本**
-运行start_app.bat
-
+前往[Releases](https://github.com/Pigeon-Server/gakumas-assistant/releases)下载已打包的文件  
+运行Gakumas Assistant.exe  
 其他内容参见[【使用手册】](./docs/use_script.md)
 
 ## 开发
 **安装环境**
 ```bash
 python3 -m pip install -r requirements.dev.txt
+# 中国大陆网络可以使用 requirements.dev.cn.txt
 ```
 **拉取子模块**
 ```bash

@@ -1,4 +1,4 @@
-# Gakumas Assistant使用手册
+# Gakumas Assistant 使用指北
 
 ## 安装前的碎碎念
 ### 是否支持汉化版
@@ -27,27 +27,3 @@
 > DMM模式下Gakumas Assistant会自动申请管理员权限用于屏幕点击  
 
 此外，**必须关闭汉化插件**，当前版本仍未支持汉化版本。
-
-### 可能需要修改的脚本运行设置
-在开始使用Gakumas Assistant前，你可能需要更改部分静态设置项，这些设置项无法在脚本设置页面更改  
-这些设置项在**config.py**中
-```python
-from src.constants.yolo.model_type import YoloModelType
-
-# Web服务器监听地址
-web_server_host: str = "127.0.0.1"
-# Web服务器监听端口
-web_server_port: int = 8000
-# 是否自动打开浏览器
-auto_open_web_browser: bool = False
-# 是否自动重载服务器
-auto_reload_server: bool = False
-# 是否启用Debug模式
-debug: bool = True
-
-# 【勿动】定义Yolo模型路径
-model_config = {
-    YoloModelType.BASE_UI: "model/base_ui.onnx",
-    YoloModelType.PRODUCER: "model/producer.onnx"
-}
-```

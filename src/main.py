@@ -186,6 +186,14 @@ class AppProcessor:
         return flag
 
     def exec_task(self, task_name: str = None):
+        if not self.device:
+            self.device = self._create_device_instance()
+        if not self.yolo_engine.running:
+            self.yolo_engine.resume()
+        logger.debug("wait yolo result......")
+        while True:
+            if self.latest_results:
+                break
         if not self.device.is_app_focused():
             self.device.start_game()
             if isinstance(self.device, Windows_App):

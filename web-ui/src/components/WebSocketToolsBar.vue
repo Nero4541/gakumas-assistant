@@ -15,9 +15,6 @@ const props = defineProps({
     <v-btn color="red" @click="api.stop_task_queue().then(() => {message.showSuccess('任务正在停止')})" v-else>
       停止任务
     </v-btn>
-    <v-btn>
-      切换模型
-    </v-btn>
   </v-card>
 </template>
 
