@@ -37,21 +37,13 @@ def build_webui():
 
 def build_project():
     build_webui()
-    print("开始打包APP")
+    print("开始打包APP...")
     nuitka_cmd = [
-        "--mingw64",
+        # "--mingw64",
         "--standalone",
-        "--show-memory",
-        "--show-progress",
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=pytouch",
         "--enable-plugin=no-qt",
-        # "--include-data-dir=assets=assets",
-        # "--include-data-dir=bin=bin",
-        # "--include-data-dir=model=model",
-        # "--include-data-dir=dist=dist",
-        # '--company-name=Pigeon Server Team',
-        # f'--product-name={PROJECT_NAME}',
         f'--output-filename={PROJECT_NAME}.exe',
         f'--output-dir={NUITKA_OUTPUT_DIR}',
         f'--linux-icon={LOGO}',
