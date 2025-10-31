@@ -39,9 +39,7 @@ def build_project():
     build_webui()
     print("开始打包APP")
     nuitka_cmd = [
-        # "--onefile",
         "--standalone",
-        # "--show-memory",
         "--show-progress",
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=pytouch",
@@ -53,6 +51,9 @@ def build_project():
         f'--windows-icon-from-ico={LOGO}',
         "--windows-disable-console",
     ]
+
+    if os.getenv("GITHUB_ACTIONS", None) is not None:
+        nuitka_cmd.append("--show-memory")
 
     for item in COPY_SITE_PACKAGES_FILES:
         target = os.path.join(sysconfig.get_paths()['purelib'], item)
