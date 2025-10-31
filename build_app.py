@@ -37,21 +37,50 @@ def build_webui():
 
 def build_project():
     build_webui()
-    print("开始打包APP...")
+    print("开始打包APP")
     nuitka_cmd = [
         # "--mingw64",
-        "--standalone",
+        # "--standalone",
+        "--onefile",
+        # "--show-memory",
+        "--show-progress",
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=pytouch",
+        "--nofollow-import-to=touch",
         "--enable-plugin=no-qt",
+        # "--include-data-dir=assets=assets",
+        # "--include-data-dir=bin=bin",
+        # "--include-data-dir=model=model",
+        # "--include-data-dir=dist=dist",
+        # '--company-name=Pigeon Server Team',
+        # f'--product-name={PROJECT_NAME}',
         f'--output-filename={PROJECT_NAME}.exe',
         f'--output-dir={NUITKA_OUTPUT_DIR}',
         f'--linux-icon={LOGO}',
         f'--windows-icon-from-ico={LOGO}',
         "--windows-disable-console",
-        "app.py"
     ]
-    subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd, shell=True, check=True)
+
+    for item in COPY_SITE_PACKAGES_FILES:
+        target = os.path.join(sysconfig.get_paths()['purelib'], item)
+        if os.path.isdir(target):
+            nuitka_cmd += [f"--include-data-dir={target}={item}"]
+        elif os.path.isfile(target):
+            nuitka_cmd += [f"--include-data-files={target}={item}"]
+
+    system = platform.system().lower()
+    if system == "windows":
+        if shutil.which("clang-cl.exe"):
+            print("Use Clang (clang-cl.exe) for Nuitka build")
+            nuitka_cmd += ["--clang"]
+        else:
+            if shutil.which("cl.exe"):
+                print("Use Default Compile (MSVC cl.exe) for Nuitka build")
+            elif shutil.which("gcc.exe"):
+                print("Use MinGW (gcc.exe) for Nuitka build")
+                nuitka_cmd += ["--mingw64"]
+
+    subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd + ["app.py"], shell=True, check=True)
     print("正在复制资源...")
     app_dist_path = os.path.join(NUITKA_OUTPUT_DIR, "app.dist")
     for key, value in COPY_ASSETS.items():
@@ -60,22 +89,22 @@ def build_project():
             shutil.copytree(key, os.path.join(app_dist_path, value), dirs_exist_ok=True, ignore=ignore_unnecessary)
         else:
             shutil.copy(key, os.path.join(app_dist_path, value))
-    print("正在复制软件包附件...")
-    for item in COPY_SITE_PACKAGES_FILES:
-        target = os.path.join(app_dist_path, item)
-        print(f"{os.path.join(sysconfig.get_paths()['purelib'], item)} -> {target}")
-        if os.path.isdir(os.path.join(sysconfig.get_paths()['purelib'], item)):
-            shutil.copytree(
-                os.path.join(sysconfig.get_paths()["purelib"], item),
-                target,
-                dirs_exist_ok=True,
-                ignore=ignore_unnecessary
-            )
-        else:
-            shutil.copy(
-                os.path.join(sysconfig.get_paths()["purelib"], item),
-                target
-            )
+    # print("正在复制软件包附件...")
+    # for item in COPY_SITE_PACKAGES_FILES:
+    #     target = os.path.join(app_dist_path, item)
+    #     print(f"{os.path.join(sysconfig.get_paths()['purelib'], item)} -> {target}")
+    #     if os.path.isdir(os.path.join(sysconfig.get_paths()['purelib'], item)):
+    #         shutil.copytree(
+    #             os.path.join(sysconfig.get_paths()["purelib"], item),
+    #             target,
+    #             dirs_exist_ok=True,
+    #             ignore=ignore_unnecessary
+    #         )
+    #     else:
+    #         shutil.copy(
+    #             os.path.join(sysconfig.get_paths()["purelib"], item),
+    #             target
+    #         )
 
     print("✅ 打包完成！")
 

@@ -1,4 +1,5 @@
 import os.path
+from copy import copy
 
 import adbutils
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
@@ -9,6 +10,7 @@ from src.constants.path.data_path import DataPath
 from src.core.Web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
 
+from src.entity.Config import Config
 from src.utils.diff_tools import GakumasuDiffItemDataUtils
 from src.utils.i18n_tools import I18nJsonUtils
 
@@ -107,7 +109,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.put("/api/config")
     async def set_all_config(request: Request):
         data = await request.json()
-        config = processor.config_service()
+        config = copy(processor.config_service())
         status, errors = config.from_json_dict(data)
         if status:
             processor.config_service.save_config(config)
@@ -119,7 +121,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     async def set_task_config(request: Request, task_name: str):
         if task_name not in processor.task_queue.get_task_list().keys():
             return _api_return(False, "Invalid task name")
-        config = processor.config_service()
+        config = copy(processor.config_service())
         all_config = config.to_json_dict()
         task_name = f"task__{task_name}"
         if task_name not in all_config.keys():

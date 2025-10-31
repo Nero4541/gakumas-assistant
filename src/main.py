@@ -58,7 +58,7 @@ class AppProcessor:
         self._init_environment()
         self._init_database()
         self.config_service = ConfigService()
-        print(self.config_service())
+        logger.debug(self.config_service())
         self.device = self._create_device_instance()
         self.yolo_engine = YoloInferenceEngine(self.device)
         self.debug_tools = DebugTools()
@@ -71,6 +71,7 @@ class AppProcessor:
         register_tasks(self)
         register_middlewares(self)
         self.ws_manager = WebSocketManager()
+        self._init_config_listening()
         logger.success("Application Initialized")
 
     def _init_environment(self):
@@ -95,6 +96,27 @@ class AppProcessor:
         db.create_tables(all_models)
         db.close()
         logger.success("Database Initialized")
+
+    def _init_config_listening(self):
+
+        def update_device(key, old, new):
+            logger.warning("Switch device......")
+            self.task_queue.stop()
+            self.yolo_engine.stop()
+            self.device = self._create_device_instance()
+            
+
+        self.config_service.add_listener([
+            "base.run_mode",
+            "base.game_window_name",
+            "base.adb_connect_mode",
+            "base.adb_host",
+            "base.adb_port",
+            "base.adb_serial",
+            "base.android_screen_capture_service",
+            "base.android_touch_service",
+            "base.game_package_name"
+        ], update_device)
 
     @property
     def latest_frame(self):

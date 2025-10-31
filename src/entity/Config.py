@@ -1,7 +1,8 @@
+import copy
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Tuple
 
 from src.constants.device.adb import ADBOperation, ADBConnectMode
 
@@ -38,21 +39,28 @@ class ConfigVerifyError:
         return f"[{self.section}.{self.field}]: {self.message}"
 
 class _BaseConfigGroup:
+    def __init__(self):
+        # 遍历类定义的所有 ConfigItem
+        for name, attr in vars(type(self)).items():
+            if isinstance(attr, ConfigItem):
+                # 深拷贝，生成实例独立副本
+                setattr(self, name, copy.deepcopy(attr))
+            elif isinstance(attr, _BaseConfigGroup):
+                # 嵌套结构的情况（递归初始化）
+                setattr(self, name, attr.__class__())
+
     def __str__(self):
-        return self._to_str()
+            return self._to_str()
 
     def _to_str(self, indent=0):
         lines = []
         prefix = " " * indent
-        for name, attr in vars(type(self)).items():
+        for name, attr in vars(self).items():  # 只遍历实例属性
             if isinstance(attr, ConfigItem):
-                val = getattr(self, name).value
-                lines.append(f"{prefix}{name}: {val!r}")
-            else:
-                val = getattr(self, name)
-                if isinstance(val, _BaseConfigGroup):
-                    lines.append(f"{prefix}{name}:")
-                    lines.append(val._to_str(indent + 4))
+                lines.append(f"{prefix}{name}: {attr.value!r}")
+            elif isinstance(attr, _BaseConfigGroup):
+                lines.append(f"{prefix}{name}:")
+                lines.append(attr._to_str(indent + 4))
         return "\n".join(lines)
 
 class _Base(_BaseConfigGroup):
@@ -62,9 +70,9 @@ class _Base(_BaseConfigGroup):
     game_window_name = ConfigItem(default_value="gakumas", data_type=str)
     # adb连接模式
     adb_connect_mode = ConfigItem(
-        default_value="Network",
+        default_value=ADBConnectMode.NETWORK,
         data_type=str,
-        verify="|".join(k for k in ADBConnectMode.__dict__ if not k.startswith("__") and not callable(k)),
+        verify="|".join(v for k, v in ADBConnectMode.__dict__.items() if not k.startswith("__") and not callable(v)),
         use_verify=True
     )
     # adb地址
@@ -75,7 +83,7 @@ class _Base(_BaseConfigGroup):
     adb_serial = ConfigItem(default_value="", data_type=str)
     # Android截图服务
     android_screen_capture_service = ConfigItem(
-        default_value="ADB",
+        default_value=ADBOperation.ScreenCaptureService.ADB,
         data_type=str,
         verify="|".join(k for k in ADBOperation.ScreenCaptureService.__dict__ if not k.startswith("__") and not callable(k)),
         use_verify=True
@@ -118,92 +126,145 @@ class _Task:
 
 @dataclass
 class Config(_BaseConfigGroup):
-    base = _Base()
-    task__auto_purchase = _Task.AutoPurchase()
-    task__auto_contest = _Task.AutoContest()
-    task__dispatch_work = _Task.DispatchWork()
+    base: _Base = field(default_factory=_Base)
+    task__auto_purchase: _Task.AutoPurchase = field(default_factory=_Task.AutoPurchase)
+    task__auto_contest: _Task.AutoContest = field(default_factory=_Task.AutoContest)
+    task__dispatch_work: _Task.DispatchWork = field(default_factory=_Task.DispatchWork)
 
-    @classmethod
-    def to_json_dict(cls) -> dict:
-        config_dict = {}
-
-        for section_name in dir(cls):
-            if section_name.startswith("__"):
-                continue
-
-            section = getattr(cls, section_name)
-            if not hasattr(section, "__dict__"):
-                continue
-
-            section_dict = {}
-            for attr_name in dir(section):
-                if attr_name.startswith("__"):
-                    continue
-
-                item = getattr(section, attr_name)
-                if isinstance(item, ConfigItem):
-                    section_dict[attr_name] = {
-                        "value": item.value if item.value is not None else item.default_value,
-                        "default_value": item.default_value,
-                        "verify": item.verify,
-                        "use_verify": item.use_verify,
-                        "last_modified_time": item.last_modified_time.isoformat() if item.last_modified_time else None
+    def to_json_dict(self) -> dict:
+        def serialize_group(group):
+            result = {}
+            for name, attr in vars(group).items():  # 遍历实例属性
+                if isinstance(attr, ConfigItem):
+                    result[name] = {
+                        "value": attr.value if attr.value is not None else attr.default_value,
+                        "default_value": attr.default_value,
+                        "verify": attr.verify,
+                        "use_verify": attr.use_verify,
+                        "last_modified_time": attr.last_modified_time.isoformat() if attr.last_modified_time else None
                     }
+                elif isinstance(attr, _BaseConfigGroup):
+                    result[name] = serialize_group(attr)
+            return result
 
-            if section_dict:
-                config_dict[section_name] = section_dict
+        return serialize_group(self)
 
-        return config_dict
+    def from_json_dict(self, data: dict) -> Tuple[bool,List[ConfigVerifyError]]:
+        errors = []
 
-    @classmethod
-    def from_json_dict(cls, data: dict) -> tuple[bool, List[ConfigVerifyError]]:
-        """
-        从 dict 加载到 Config，并进行类型与正则校验
-        返回: (是否成功, 错误列表)
-        """
-        config_instance = cls()
-        errors: List[ConfigVerifyError] = []
-
-        for section_name, section_data in data.items():
-            if not hasattr(config_instance, section_name):
-                continue
-            section_obj = getattr(config_instance, section_name)
-            for attr_name, item_data in section_data.items():
-                if not hasattr(section_obj, attr_name):
+        def apply_group(group, group_data, group_name=""):
+            for attr_name, attr_value in group_data.items():
+                if not hasattr(group, attr_name):
                     continue
-                config_item: ConfigItem = getattr(section_obj, attr_name)
-                value = item_data.get("value", config_item.default_value)
-                # 类型校验
-                if value is not None and not isinstance(value, config_item.data_type):
-                    try:
-                        value = config_item.data_type(value)
-                    except Exception:
-                        errors.append(ConfigVerifyError(
-                            section_name,
-                            attr_name,
-                            f"类型错误，应为 {config_item.data_type.__name__}"
-                        ))
-                        continue  # 跳过赋值
-                # 正则校验
-                if config_item.use_verify and config_item.verify:
-                    if not re.fullmatch(config_item.verify, str(value)):
-                        errors.append(ConfigVerifyError(
-                            section_name,
-                            attr_name,
-                            f"值 '{value}' 不符合正则规则: {config_item.verify}"
-                        ))
-                        continue  # 跳过赋值
-                # 赋值
-                config_item.value = value
-                # 最后修改时间
-                if item_data.get("last_modified_time"):
-                    try:
-                        config_item.last_modified_time = datetime.fromisoformat(item_data["last_modified_time"])
-                    except Exception:
-                        errors.append(ConfigVerifyError(
-                            section_name,
-                            attr_name,
-                            f"last_modified_time 格式错误: {item_data['last_modified_time']}"
-                        ))
+                item = getattr(group, attr_name)
+                full_name = f"{group_name}.{attr_name}" if group_name else attr_name
 
-        return len(errors) == 0, errors
+                if isinstance(item, ConfigItem):
+                    value = attr_value.get("value", item.default_value)
+                    # # 类型校验
+                    # if value is not None and not isinstance(value, item.data_type):
+                    #     try:
+                    #         value = item.data_type(value)
+                    #     except Exception:
+                    #         errors.append(ConfigVerifyError(
+                    #             group_name, attr_name, f"类型错误，应为 {item.data_type.__name__}"
+                    #         ))
+                    #         continue
+                    #
+                    # # 正则校验
+                    # if item.use_verify and item.verify:
+                    #     import re
+                    #     if not re.fullmatch(item.verify, str(value)):
+                    #         errors.append(ConfigVerifyError(
+                    #             group_name, attr_name, f"值 '{value}' 不符合正则规则: {item.verify}"
+                    #         ))
+                    #         continue
+                    #
+                    # item.value = value
+                    #
+                    # # last_modified_time
+                    # if attr_value.get("last_modified_time"):
+                    #     try:
+                    #         item.last_modified_time = datetime.fromisoformat(attr_value["last_modified_time"])
+                    #     except Exception:
+                    #         errors.append(ConfigVerifyError(
+                    #             group_name, attr_name, f"last_modified_time 格式错误: {attr_value['last_modified_time']}"
+                    #         ))
+
+                    if value is None or item.value == value:
+                        continue
+                    if not isinstance(value, item.data_type):
+                        try:
+                            value = item.data_type(value)
+                        except Exception:
+                            errors.append(ConfigVerifyError(
+                                group_name,
+                                attr_name,
+                                f"类型错误，应为 {item.data_type.__name__}"
+                            ))
+                            continue  # 跳过赋值
+                    # 正则校验
+                    if item.use_verify and item.verify:
+                        if not re.fullmatch(item.verify, str(value)):
+                            errors.append(ConfigVerifyError(
+                                group_name,
+                                attr_name,
+                                f"值 '{value}' 不符合正则规则: {item.verify}"
+                            ))
+                            continue  # 跳过赋值
+                    # 赋值
+                    item.value = value
+                    item.last_modified_time = datetime.now()
+
+                elif isinstance(item, _BaseConfigGroup):
+                    # 递归处理嵌套
+                    apply_group(item, attr_value, full_name)
+
+        apply_group(self, data)
+        return not bool(errors), errors
+
+    # @classmethod
+    # def from_json_dict(cls, data: dict) -> tuple[bool, List[ConfigVerifyError]]:
+    #     """
+    #     从 dict 加载到 Config，并进行类型与正则校验
+    #     返回: (是否成功, 错误列表)
+    #     """
+    #     config_instance = cls()
+    #     errors: List[ConfigVerifyError] = []
+    #
+    #     for section_name, section_data in data.items():
+    #         if not hasattr(config_instance, section_name):
+    #             continue
+    #         section_obj = getattr(config_instance, section_name)
+    #         for attr_name, item_data in section_data.items():
+    #             if not hasattr(section_obj, attr_name):
+    #                 continue
+    #             config_item: ConfigItem = getattr(section_obj, attr_name)
+    #             value = item_data.get("value", config_item.default_value)
+    #             # 类型校验
+    #             if value is None or config_item.value == value:
+    #                 continue
+    #             if not isinstance(value, config_item.data_type):
+    #                 try:
+    #                     value = config_item.data_type(value)
+    #                 except Exception:
+    #                     errors.append(ConfigVerifyError(
+    #                         section_name,
+    #                         attr_name,
+    #                         f"类型错误，应为 {config_item.data_type.__name__}"
+    #                     ))
+    #                     continue  # 跳过赋值
+    #             # 正则校验
+    #             if config_item.use_verify and config_item.verify:
+    #                 if not re.fullmatch(config_item.verify, str(value)):
+    #                     errors.append(ConfigVerifyError(
+    #                         section_name,
+    #                         attr_name,
+    #                         f"值 '{value}' 不符合正则规则: {config_item.verify}"
+    #                     ))
+    #                     continue  # 跳过赋值
+    #             # 赋值
+    #             config_item.value = value
+    #             config_item.last_modified_time = datetime.now()
+    #
+    #     return len(errors) == 0, errors
