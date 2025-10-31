@@ -47,8 +47,15 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web-ui/package.json
 
-      - name: Set up MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Set up MinGW
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
+      - name: Use ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ github.job }}-${{ matrix.os }}
 
       - name: Install requirements
         run: |

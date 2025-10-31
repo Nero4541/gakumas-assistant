@@ -39,21 +39,14 @@ def build_project():
     build_webui()
     print("开始打包APP")
     nuitka_cmd = [
-        # "--mingw64",
-        # "--standalone",
-        "--onefile",
+        # "--onefile",
+        "--standalone",
         # "--show-memory",
         "--show-progress",
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=pytouch",
         "--nofollow-import-to=touch",
         "--enable-plugin=no-qt",
-        # "--include-data-dir=assets=assets",
-        # "--include-data-dir=bin=bin",
-        # "--include-data-dir=model=model",
-        # "--include-data-dir=dist=dist",
-        # '--company-name=Pigeon Server Team',
-        # f'--product-name={PROJECT_NAME}',
         f'--output-filename={PROJECT_NAME}.exe',
         f'--output-dir={NUITKA_OUTPUT_DIR}',
         f'--linux-icon={LOGO}',
@@ -67,18 +60,6 @@ def build_project():
             nuitka_cmd += [f"--include-data-dir={target}={item}"]
         elif os.path.isfile(target):
             nuitka_cmd += [f"--include-data-files={target}={item}"]
-
-    system = platform.system().lower()
-    if system == "windows":
-        if shutil.which("clang-cl.exe"):
-            print("Use Clang (clang-cl.exe) for Nuitka build")
-            nuitka_cmd += ["--clang"]
-        else:
-            if shutil.which("cl.exe"):
-                print("Use Default Compile (MSVC cl.exe) for Nuitka build")
-            elif shutil.which("gcc.exe"):
-                print("Use MinGW (gcc.exe) for Nuitka build")
-                nuitka_cmd += ["--mingw64"]
 
     subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd + ["app.py"], shell=True, check=True)
     print("正在复制资源...")
