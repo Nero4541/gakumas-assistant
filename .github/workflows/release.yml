@@ -47,10 +47,8 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web-ui/package.json
 
-      - name: Set up MinGW
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          platform: x64
+      - name: Add MinGW to PATH
+        run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
       - name: Use ccache
         uses: hendrikmuhs/ccache-action@v1.2
