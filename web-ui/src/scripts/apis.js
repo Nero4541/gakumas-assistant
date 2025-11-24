@@ -60,14 +60,6 @@ function enable_task(task_name) {
 }
 
 /**
- * 切换模型
- * @param model_name 模型名
- * @returns {Promise<axios.AxiosResponse<any>>}
- */
-function switch_yolo_model(model_name) {
-  return axiosplus.get(`/api/debug/switch_yolo_model/${model_name}`);
-}
-/**
  * 获取配置
  * @return {Promise<axios.AxiosResponse<any>>}
  */
@@ -121,6 +113,21 @@ function get_all_item() {
   return axiosplus.get("/api/item/list");
 }
 
+/**
+ * 刷新DMM Player启动参数
+ */
+function refresh_ddm_player_token() {
+  return axiosplus.get("/api/config/tools/refresh_ddm_token");
+}
+
+/**
+ * 重置所有配置项
+ */
+
+function reset_config() {
+  return axiosplus.get("/api/config/tools/reset_config");
+}
+
 export default {
   start_task_queue,
   stop_task_queue,
@@ -129,11 +136,12 @@ export default {
   get_registered_tasks,
   disable_task,
   enable_task,
-  switch_yolo_model,
   get_config,
   save_config,
   get_task_config,
   save_task_config,
   get_all_adb_device,
   get_all_item,
+  refresh_ddm_player_token,
+  reset_config,
 }

@@ -7,7 +7,17 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 
 class BaseDevice(abc.ABC):
 
+    def __bool__(self) -> bool:
+        pass
+
     def is_app_focused(self):
+        pass
+
+    def is_app_running(self):
+        """
+        判断游戏进程是否正在运行
+        :return:
+        """
         pass
 
     def start_game(self):

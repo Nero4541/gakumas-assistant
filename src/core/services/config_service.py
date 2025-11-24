@@ -60,14 +60,14 @@ class ConfigService(metaclass=SingletonMeta):
             # 保存到数据库
             self._loader.save(self._config)
             # 比较差异并通知监听器
-            self._notify_diff(old_config, self._config)
+        self._notify_diff(old_config, self._config)
 
     def reset_config(self):
         with self._lock:
             old_config = self._loader.last_save
             self._loader.reset()
             self._config = self._loader.load()
-            self._notify_diff(old_config, self._config)
+        self._notify_diff(old_config, self._config)
 
     def add_listener(self, keys: str | list[str], callback: Callable[[str, object, object], None]):
         """
@@ -111,12 +111,13 @@ class ConfigService(metaclass=SingletonMeta):
                 item_old = getattr(section_old, attr_name)
                 item_new = getattr(section_new, attr_name)
                 if hasattr(item_old, "value") and hasattr(item_new, "value"):
+                    old_value = ConfigModel.cast_to_type(item_old.value, item_old.data_type)
                     if item_old.data_type == list:
                         if set(item_old.value) != set(item_new.value):
                             key = f"{section_name}.{attr_name}"
                             diffs[key] = (item_old.value, item_new.value)
                         continue
-                    if item_old.value != item_new.value:
+                    if old_value != item_new.value:
                         key = f"{section_name}.{attr_name}"
                         diffs[key] = (item_old.value, item_new.value)
         return diffs

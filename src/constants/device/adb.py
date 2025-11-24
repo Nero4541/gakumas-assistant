@@ -16,8 +16,9 @@ class ADBOperation:
         """
         ADB = "ADB"
         uiautomator2 = "uiautomator2"
-        aScreenCap = "aScreenCap"
         DroidCast = "DroidCast"
+        class Bin:
+            DroidCast = "bin/DroidCast-debug-1.2.1.apk"
 
     class TouchService:
         """

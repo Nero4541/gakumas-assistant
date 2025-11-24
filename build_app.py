@@ -13,7 +13,7 @@ NUITKA_OUTPUT_DIR = "out"
 LOGO = "./assets/images/gakumas_logo.png"
 COPY_ASSETS = {
     "assets": "assets",
-    "bin": "bin",
+    # "bin": "bin",
     "model": "model",
     "dist": "dist"
 }
@@ -28,7 +28,6 @@ def ignore_unnecessary(dir, files):
     return [f for f in files if f in ignore_list]
 
 def build_webui():
-    print("开始构建前端...")
     npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
     os.chdir("web-ui")
     subprocess.run([npm_cmd, "install"], shell=True, check=True)
@@ -37,7 +36,6 @@ def build_webui():
 
 def build_project():
     build_webui()
-    print("开始打包APP")
     nuitka_cmd = [
         "--standalone",
         "--show-progress",
@@ -63,7 +61,6 @@ def build_project():
             nuitka_cmd += [f"--include-data-files={target}={item}"]
 
     subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd + ["app.py"], shell=True, check=True)
-    print("正在复制资源...")
     app_dist_path = os.path.join(NUITKA_OUTPUT_DIR, "app.dist")
     for key, value in COPY_ASSETS.items():
         print(f"{key}->{app_dist_path}/{value}")
@@ -71,24 +68,6 @@ def build_project():
             shutil.copytree(key, os.path.join(app_dist_path, value), dirs_exist_ok=True, ignore=ignore_unnecessary)
         else:
             shutil.copy(key, os.path.join(app_dist_path, value))
-    # print("正在复制软件包附件...")
-    # for item in COPY_SITE_PACKAGES_FILES:
-    #     target = os.path.join(app_dist_path, item)
-    #     print(f"{os.path.join(sysconfig.get_paths()['purelib'], item)} -> {target}")
-    #     if os.path.isdir(os.path.join(sysconfig.get_paths()['purelib'], item)):
-    #         shutil.copytree(
-    #             os.path.join(sysconfig.get_paths()["purelib"], item),
-    #             target,
-    #             dirs_exist_ok=True,
-    #             ignore=ignore_unnecessary
-    #         )
-    #     else:
-    #         shutil.copy(
-    #             os.path.join(sysconfig.get_paths()["purelib"], item),
-    #             target
-    #         )
-
-    print("✅ 打包完成！")
 
 if __name__ == "__main__":
     build_project()

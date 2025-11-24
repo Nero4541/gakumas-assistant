@@ -1,7 +1,9 @@
+import os.path
 import time
 from typing import Optional
 
 import adbutils
+import requests
 import uiautomator2 as u2
 import numpy as np
 import cv2
@@ -9,65 +11,98 @@ import cv2
 from src.constants.device.adb import ADBConnectMode, ADBOperation
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
+from src.utils.adb_tools import start_DroidCast, ADBShell
 from src.utils.logger import logger
 from src.utils.performance_tools import timeit
 
 
 class Android_App(BaseDevice):
-    _adb_host: str
-    _adb_port: int
-    _adb_device: adbutils.AdbDevice
-    _u2_device: Optional[u2.Device]
-    _package_name: str
-    _connect_mode: str
+    __config_service: ConfigService
+    __adb_host: str
+    __adb_port: int
+    __adb_device: adbutils.AdbDevice
+    __u2_device: Optional[u2.Device] = None
+    __package_name: str
+    __connect_mode: str
+    __screen_capture_service: str
+    __screen_touch_service: str
+    __droidcast_service_status: bool = False
+    __capture_service_shell: ADBShell = None
 
-    def __init__(self, connect_mode: str, package_name: str, adb_host: str, adb_port: int, serial: str) -> None:
-        """
-        :param connect_mode: 连接模式
-        :param package_name: App包名
-        :param adb_host: ADB 地址
-        :param adb_port: ADB tcpip端口
-        :param serial: ADB USB端口
-        """
-        self._package_name = package_name
-        self._connect_mode = connect_mode
-        if connect_mode == ADBConnectMode.USB:
-            if serial not in adbutils.adb.device_list():
-                raise ValueError(f"Invalid ADB serial: {serial}")
-            self._adb_device = adbutils.adb.device(serial=serial)
-        elif connect_mode == ADBConnectMode.NETWORK:
-            self._adb_host = adb_host
-            self._adb_port = adb_port
-            adbutils.adb.connect(f"{adb_host}:{adb_port}")
-            self._adb_device = adbutils.adb.device(f"{adb_host}:{adb_port}")
+    def __init__(self) -> None:
+        self.__config_service = ConfigService()
+        self.__package_name = self.__config_service().base.game_package_name.value
+        self.__connect_mode = self.__config_service().base.adb_connect_mode.value
+        self.__adb_serial = self.__config_service().base.adb_serial.value
+        self.__adb_host = self.__config_service().base.adb_host.value
+        self.__adb_port = self.__config_service().base.adb_port.value
+        self.__screen_capture_service = self.__config_service().base.android_screen_capture_service.value
+        self.__screen_touch_service = self.__config_service().base.android_touch_service.value
+        self.__connect_ADB()
+        self.__init_capture_service()
+        if (
+            self.__screen_capture_service == ADBOperation.ScreenCaptureService.uiautomator2
+            or self.__screen_touch_service ==  ADBOperation.TouchService.uiautomator2
+        ):
+            self.__connect_uiautomator2()
+
+    def __del__(self) -> None:
+        if self.__capture_service_shell is not None:
+            self.__capture_service_shell.close()
+
+
+    def __bool__(self) -> bool:
+        return bool(self.__adb_device)
+
+    def __connect_ADB(self) -> bool:
+        if self.__connect_mode == ADBConnectMode.USB:
+            if self.__adb_serial not in adbutils.adb.device_list():
+                logger.error(f"Invalid ADB serial: {self.__adb_serial}")
+                return False
+            logger.debug(f"Tray connect ADB(serial: {self.__adb_serial})")
+            try:
+                self.__adb_device = adbutils.adb.device(serial=self.__adb_serial)
+            except Exception as e:
+                logger.error(f"ADB Connect Error: {e}")
+                return False
+            return True
+        elif self.__connect_mode == ADBConnectMode.NETWORK:
+            self._adb_host = self.__config_service().base.adb_host.value
+            self._adb_port = self.__config_service().base.adb_port.value
+            logger.debug(f"Tray connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
+            adbutils.adb.connect(f"{self.__adb_host}:{self.__adb_port}")
+            try:
+                self.__adb_device = adbutils.adb.device(f"{self.__adb_host}:{self.__adb_port}")
+            except Exception as e:
+                logger.error(f"ADB Connect Error: {e}")
+                return False
+            return True
         else:
-            raise ValueError(f"Invalid connect mode: {connect_mode}")
+            logger.error(f"Invalid connect mode: {self.__connect_mode}")
+            return False
+
+    def __connect_uiautomator2(self):
+        logger.debug("Try connect to UIAutomator2...")
         try:
-            self._u2_device = u2.connect(self._adb_device.serial)
+            self.__u2_device = u2.connect(self.__adb_device.serial)
         except Exception as e:
             logger.warning(f"uiautomator2 Initial Error：\n{e}")
-            self._u2_device = None
+            self.__u2_device = None
 
-    # def connect(self) -> bool:
-    #     config_service = ConfigService()
-    #     match config_service().base.android_screen_capture_service.value:
-    #         case ADBOperation.ScreenCaptureService.ADB
-    #
-    # def __connect_ADB(self) -> bool:
-    #     if connect_mode == ADBConnectMode.USB:
-    #         if serial not in adbutils.adb.device_list():
-    #             raise ValueError(f"Invalid ADB serial: {serial}")
-    #         self._adb_device = adbutils.adb.device(serial=serial)
-    #         elif connect_mode == ADBConnectMode.NETWORK:
-    #         self._adb_host = adb_host
-    #         self._adb_port = adb_port
-    #         adbutils.adb.connect(f"{adb_host}:{adb_port}")
-    #         self._adb_device = adbutils.adb.device(f"{adb_host}:{adb_port}")
-
+    def __init_capture_service(self):
+        match self.__screen_capture_service:
+            case ADBOperation.ScreenCaptureService.ADB:
+                pass
+            case ADBOperation.ScreenCaptureService.uiautomator2:
+                pass
+            case ADBOperation.ScreenCaptureService.DroidCast:
+                self.__droidcast_service_status, self.__capture_service_shell = start_DroidCast(self.__adb_device)
+            case _:
+                logger.error(f"Not support capture service: {screen_capture_service}")
 
     def start_game(self):
         """启动游戏"""
-        self._adb_device.app_start(self._package_name)
+        self.__adb_device.app_start(self.__package_name)
         TIMEOUT = 30
         COUNT = 0
         while True:
@@ -82,13 +117,31 @@ class Android_App(BaseDevice):
     @timeit
     def is_app_focused(self) -> bool:
         """判断游戏是否在前台"""
-        return self._package_name in self._u2_device.info.get('currentPackageName')
+        if self.__u2_device is None:
+            return self.__package_name in self.__adb_device.shell("dumpsys window windows | grep mCurrentFocus")
+        return self.__package_name in self.__u2_device.info.get('currentPackageName')
+
+    @timeit
+    def is_app_running(self) -> bool:
+        """判断游戏是否在运行"""
+        if self.__u2_device is None:
+            return self.__adb_device.shell(f"pidof {self.__package_name}").strip() != ""
+        return self.__package_name in self.__u2_device.app_list_running()
 
     @timeit
     def get_window_size(self):
-        if not self._u2_device:
-            return self._adb_device.window_size()
-        return self._u2_device.window_size()
+        if not self.__u2_device:
+            return self.__adb_device.window_size()
+        return self.__u2_device.window_size()
+
+    def __get_touch_service(self):
+        match self.__screen_touch_service:
+            case ADBOperation.TouchService.uiautomator2:
+                if self.__u2_device is not None:
+                    return self.__u2_device
+                return self.__adb_device
+            case ADBOperation.TouchService.ADB:
+                return self.__adb_device
 
     def _scroll(self, x, y, direction, scroll_delta):
         """
@@ -103,47 +156,40 @@ class Android_App(BaseDevice):
         x = max(50, min(width - 50, x))
         y = max(50, min(height - 50, y))
 
-        swipe = (self._u2_device or self._adb_device).swipe
-
         scroll_distance = int(height * 0.05)  # 每次滚动距离
         scroll_sign = 1 if scroll_delta > 0 else -1
 
         for _ in range(abs(scroll_delta)):
             if direction == ADBOperation.ScrollDirection.HORIZONTAL:
-                swipe(x, y, x + scroll_sign * scroll_distance, y, 0.1)
+                self.__get_touch_service().swipe(x, y, x + scroll_sign * scroll_distance, y, 0.1)
             elif direction == ADBOperation.ScrollDirection.VERTICAL:
-                swipe(x, y, x, y + scroll_sign * scroll_distance, 0.1)
+                self.__get_touch_service().swipe(x, y, x, y + scroll_sign * scroll_distance, 0.1)
             else:
                 raise ValueError(f"Invalid direction: {direction}")
 
-
-
     def scrollY(self, x, y, scroll_delta):
         """纵向滚动（向上/向下滑动）"""
-        # scroll_delta > 0 表示向上滑动（手指向下划）
-        # if not self._u2_device:
-        #     self._adb_device.swipe(x, y, x, y - scroll_delta, 0.3)
-        #     return
-        # self._u2_device.swipe(x, y, x, y - scroll_delta, 0.3)
         self._scroll(x, y, ADBOperation.ScrollDirection.VERTICAL, scroll_delta)
 
     def scrollX(self, x, y, scroll_delta):
-        # if not self._u2_device:
-        #     self._adb_device.swipe(x, y, x - scroll_delta * 50, y, 0.3)
-        #     return
-        # self._u2_device.swipe(x, y, x - scroll_delta * 50, y, 0.3)
         self._scroll(x, y, ADBOperation.ScrollDirection.HORIZONTAL, scroll_delta)
 
     def click(self, x, y, el_label=""):
         """点击指定坐标"""
-        if not self._u2_device:
-            self._adb_device.click(x, y)
-            return
-        self._u2_device.click(x, y)
+        self.__get_touch_service().click(x, y)
 
     def capture(self) -> np.ndarray:
-        return cv2.cvtColor(np.asarray(self._adb_device.screenshot()),cv2.COLOR_RGB2BGR)
-
-        # if not self._u2_device:
-        #     return cv2.cvtColor(np.asarray(self._adb_device.screenshot()),cv2.COLOR_RGB2BGR)
-        # return self._u2_device.screenshot(format='opencv')
+        match self.__config_service().base.android_screen_capture_service.value:
+            case ADBOperation.ScreenCaptureService.ADB:
+                return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+            case ADBOperation.ScreenCaptureService.DroidCast:
+                if not self.__droidcast_service_status:
+                    return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+                response = requests.get("http://127.0.0.1:53516/screenshot")
+                response.raise_for_status()
+                image_array = np.frombuffer(response.content, dtype=np.uint8)
+                return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+            case ADBOperation.ScreenCaptureService.uiautomator2:
+                return self.__u2_device.screenshot(format='opencv')
+            case _:
+                raise RuntimeError(f"Can't capture screenshot")

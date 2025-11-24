@@ -22,8 +22,8 @@ const responseSuccess = result => {
     reject = Promise.reject(result)
     return reject
   }
-  result.data = result.data.data
-  result.message = result.data.message
+  result.data = result.data?.data
+  result.message = result.data?.message
   return result
 }
 

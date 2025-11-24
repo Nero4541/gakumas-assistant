@@ -98,8 +98,6 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                     continue
                 yolo_result_item = copy(item.frame)
                 # 截取物品和物品信息
-                modal_item_image: Optional[np.ndarray] = None
-                item_info: Optional[np.ndarray] = None
                 if isinstance(app, Android_App):
                     modal_item_image, item_info = modal_body_extract_item_info(
                         modal.modal_body,
@@ -144,7 +142,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
         if last_list_hash != hash(frozenset(current_list)):
             last_list_hash = hash(frozenset(current_list))
             app.device.scrollY(scroll_x, scroll_y, -5)
-            sleep(1)
+            app.game_utils.wait_frame_stable()
         else:
             break
 
@@ -159,12 +157,18 @@ def action__receive_weekly_gift(app: "AppProcessor"):
         buttons = ButtonList(app.latest_results)
         for button in buttons:
             if ButtonText.FREE in button.text and button.is_disabled() is False:
-                app.device.click_element(button)
-                sleep(0.5)
-                app.game_utils.click_button(ButtonText.CONFIRM, match_config=MatchConfig(fuzz_threshold=90))
-                sleep(0.5)
-                app.game_utils.click_button(ButtonText.CLOSE, match_config=MatchConfig(fuzz_threshold=90))
+                while True:
+                    if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+                        app.device.click_element(button)
+                    sleep(0.5)
+                    if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+                        continue
+                    app.game_utils.click_button(ButtonText.CONFIRM, match_config=MatchConfig(fuzz_threshold=90))
+                    sleep(0.5)
+                    app.game_utils.click_button(ButtonText.CLOSE, match_config=MatchConfig(fuzz_threshold=90))
+                    break
         app.device.scrollY(width // 2, height // 2, -20)
+        app.game_utils.wait_frame_stable()
     app.game_utils.back_next_page()
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)

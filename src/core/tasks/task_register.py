@@ -26,8 +26,53 @@ from src.utils.string_tools import string_match, MatchConfig
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
+GAME_RUNNING = False
+
 def register_tasks(processor: "AppProcessor"):
-    @processor.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
+
+    @processor.task_queue.register_pre_queue_start()
+    def _pre__start_game():
+        global GAME_RUNNING
+        GAME_RUNNING = False
+        TIMEOUT = 120
+        COUNT = 0
+        if not processor.config_service().base.auto_start_game.value:
+            return
+        logger.debug(f"Game running: {processor.device.is_app_running()}")
+        if processor.device.is_app_running():
+            GAME_RUNNING = True
+            return
+        processor.device.start_game()
+        while not processor.device.is_app_running():
+            if COUNT >= TIMEOUT:
+                return False
+            COUNT += 1
+            sleep(1)
+        return True
+
+    @processor.task_queue.register_pre_queue_start()
+    def _pre__resume_yolo_engine():
+        """恢复Yolo引擎"""
+        if processor.yolo_engine.running is False:
+            processor.yolo_engine.start()
+        processor.yolo_engine.resume()
+
+    @processor.task_queue.register_pre_queue_start()
+    def _pre__wait_game_start():
+        """等待游戏启动"""
+        TIMEOUT = 120
+        COUNT = 0
+        if GAME_RUNNING:
+            return
+        logger.debug("wait game start......")
+        while not processor.latest_results.exists_label(BaseUILabels.START_MENU_LOGO):
+            if COUNT >= TIMEOUT:
+                return False
+            COUNT += 1
+            sleep(1)
+        return True
+
+    @processor.task_queue.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):
         sleep(2)
         if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
@@ -37,7 +82,7 @@ def register_tasks(processor: "AppProcessor"):
         action__wait_enter_home(app)
         app.game_utils.update_current_location()
 
-    @processor.register_task("get_expenditure", "获取活动费", 30)
+    @processor.task_queue.register_task("get_expenditure", "获取活动费", 30)
     def _task__get_expenditure(app: "AppProcessor"):
         goto__get_expenditure(app)
         sleep(3)
@@ -50,38 +95,38 @@ def register_tasks(processor: "AppProcessor"):
             return True
         raise TimeoutError("Timeout waiting for modal to appear.")
 
-    @processor.register_task("dispatch_work", "派遣任务", 120)
+    @processor.task_queue.register_task("dispatch_work", "派遣任务", 120)
     def _task__work_dispatch(app: "AppProcessor"):
         goto__work_dispatch_page(app)
         handle__work_dispatch_results(app)
         action__dispatch_all_available_work(app)
 
-    @processor.register_task("get_gift", "获取礼物/邮箱")
+    @processor.task_queue.register_task("get_gift", "获取礼物/邮箱")
     def _task__get_gift(app: "AppProcessor"):
         goto__gift_page(app)
         if action__has_gift_items(app):
             action__collect_all_gifts(app)
 
-    @processor.register_task("auto_purchase", "自动每日交换")
+    @processor.task_queue.register_task("auto_purchase", "自动每日交换")
     def _task__automated_purchase(app: "AppProcessor"):
         goto__shop_page(app)
         if app.config_service().task__auto_purchase.weekly_gift.value:
             action__receive_weekly_gift(app)
         action__daily_exchange(app)
 
-    @processor.register_task("auto_contest", "自动每日竞技场")
+    @processor.task_queue.register_task("auto_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):
         goto__contest_page(app)
         sleep(3)
         action__check_and_collect_rewards(app)
         action__loop_challenge_contest(app)
 
-    @processor.register_task("claim_task_rewards", "领取任务奖励")
+    @processor.task_queue.register_task("claim_task_rewards", "领取任务奖励")
     def _task__claim_task_rewards(app: "AppProcessor"):
         goto__claim_task_rewards_page(app)
         claim_task_rewards(app)
 
-    @processor.register_task("claim_pass_rewards", "领取通行证奖励")
+    @processor.task_queue.register_task("claim_pass_rewards", "领取通行证奖励")
     def _task__claim_pass_rewards(app: "AppProcessor"):
         goto__claim_pass_rewards(app)
         y, x = app.latest_results.frame.shape[:2]

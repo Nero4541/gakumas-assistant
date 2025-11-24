@@ -9,14 +9,15 @@ from typing import Union, Callable, List
 from fastapi import FastAPI
 from time import sleep
 
+from src.constants.path.data_path import DataPath
 from src.constants.path.debug_path import DebugPath
 from src.constants.device.device_type import DeviceType
 from src.core.device.Android.app import Android_App
 from src.core.inference.yolo_engine import YoloInferenceEngine
 from src.core.services.task_service import TaskQueue
 from src.core.services.clip_services import CLIPServiceManager
-from src.core.Web.routers import register_routes
-from src.core.Web.websocket import WebSocketManager
+from src.core.web.routers import register_routes
+from src.core.web.websocket import WebSocketManager
 from src.core.device.Windows.app import Windows_App
 from src.core.services.game_utils import GameUtils
 from src.core.tasks.middlewares.middleware_register import register_middlewares
@@ -26,10 +27,8 @@ from src.entity.BaseDevice import BaseDevice
 from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
+from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.logger import logger
-
-# if TYPE_CHECKING:
-#     from src.core.services.task_service import TaskQueue
 
 class AppProcessor:
     data_path: str
@@ -38,7 +37,7 @@ class AppProcessor:
     # 操作设备
     device: BaseDevice
     # 任务队列
-    task_queue: "TaskQueue"
+    task_queue: TaskQueue
     # Yolo推理引擎
     yolo_engine: YoloInferenceEngine
     # 图像debug工具
@@ -61,17 +60,17 @@ class AppProcessor:
         logger.debug(self.config_service())
         self.device = self._create_device_instance()
         self.yolo_engine = YoloInferenceEngine(self.device)
+        self.clip_manager = CLIPServiceManager()
         self.debug_tools = DebugTools()
         self.yolo_engine.register_infer_callback(self._send_frame_to_clients)
         self._middleware_registry = []
         self.task_queue = TaskQueue(self)
         self.game_status_manager = GameStatusManager()
         self.game_utils = GameUtils(self)
-        self.clip_manager = CLIPServiceManager()
+        self.ws_manager = WebSocketManager()
         register_tasks(self)
         register_middlewares(self)
-        self.ws_manager = WebSocketManager()
-        self._init_config_listening()
+        self._register_config_listening()
         logger.success("Application Initialized")
 
     def _init_environment(self):
@@ -95,16 +94,20 @@ class AppProcessor:
             db.connect()
         db.create_tables(all_models)
         db.close()
+        from src.models.config import ConfigModel
+        ConfigModel.update_database()
         logger.success("Database Initialized")
 
-    def _init_config_listening(self):
+    def _register_config_listening(self):
 
         def update_device(key, old, new):
-            logger.warning("Switch device......")
+            logger.warning(f"Reinitialize device......")
             self.task_queue.stop()
+            status = self.yolo_engine.running
             self.yolo_engine.stop()
             self.device = self._create_device_instance()
-            
+            if status: self.yolo_engine.start()
+            return
 
         self.config_service.add_listener([
             "base.run_mode",
@@ -126,28 +129,6 @@ class AppProcessor:
     def latest_results(self):
         return self.yolo_engine.latest_results
 
-    def register_task(
-            self,
-            task_name: str,
-            description: str,
-            timeout: int | None = None,
-            disabled_middleware: bool = False,
-            manual_only: bool = False
-    ):
-        """
-        注册任务
-        :param task_name: 任务名（唯一）
-        :param description: 任务介绍
-        :param timeout: 超时时间
-        :param disabled_middleware: 禁用中间件
-        :param manual_only: 仅手动模式执行
-        :return:
-        """
-        logger.debug(f"register task: {task_name}")
-        def decorator(func: Callable):
-            self.task_queue.reg_task(task_name, description, func, disabled_middleware, manual_only, timeout)
-        return decorator
-
     def register_middleware(self):
         """
         注册中间件
@@ -164,19 +145,28 @@ class AppProcessor:
         """
         mode = self.config_service().base.run_mode.value.lower()
         if mode == DeviceType.PHONE:
-            logger.debug("Initializing Android mode")
-            return Android_App(
-                self.config_service().base.adb_connect_mode.value,
-                self.config_service().base.game_package_name.value,
-                self.config_service().base.adb_host.value,
-                self.config_service().base.adb_port.value,
-                self.config_service().base.adb_serial.value,
-            )
+            logger.debug("Initializing Android device")
+            return Android_App()
         if mode == DeviceType.PC:
-            logger.debug("Initializing Windows mode")
-            return Windows_App(
-                self.config_service().base.game_window_name.value
-            )
+            logger.debug("Initializing Windows device")
+            return Windows_App()
+            import win32gui
+            if not win32gui.FindWindow(None, self.config_service().base.game_window_name.value) and os.path.exists(DataPath.DMMPlayerDLL_Log):
+                ddm_cfg = self.config_service().dmm_player
+                try:
+                    result = extract_gakumas_launch_parameters()
+                    ddm_cfg.game_exe_path.value = result.exe_path
+                    ddm_cfg.viewer_id.value = result.viewer_id
+                    ddm_cfg.open_id.value = result.open_id
+                    ddm_cfg.pf_token.value = result.pf_token
+                    self.config_service.save_config()
+                except Exception as e:
+                    logger.warning("Failed to extract gakumas launch parameters: %s", e)
+                app: Windows_App = Windows_App()
+                if self.config_service().base.auto_start_game.value:
+                    app.startGame()
+                return app
+
         raise ValueError(f"Invalid device type: {mode}")
 
     def _send_frame_to_clients(self, latest_frame, latest_results):
@@ -211,8 +201,10 @@ class AppProcessor:
         if not self.device:
             self.device = self._create_device_instance()
         if not self.yolo_engine.running:
+            self.yolo_engine.start()
             self.yolo_engine.resume()
-        logger.debug("wait yolo result......")
+            logger.debug("wait yolo result......")
+        self.device.start_game()
         while True:
             if self.latest_results:
                 break
@@ -222,18 +214,3 @@ class AppProcessor:
                 self.device.bring_to_front()
                 sleep(0.5)
         return self.task_queue.exec_task(task_name)
-
-
-
-# @app.on_event("shutdown")
-# def shutdown_event():
-#     processor.yolo_engine.stop()
-#
-# @app.on_event("startup")
-# def start_event():
-#     processor.yolo_engine.start()
-#     # processor.yolo_engine.pause()
-#     url = f"http://{config.web_server_host}:{config.web_server_port}"
-#     if config.auto_open_web_browser:
-#         webbrowser.open(url)
-#     logger.success(f"Server started at {url}")

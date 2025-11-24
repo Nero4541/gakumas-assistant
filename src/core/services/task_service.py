@@ -30,10 +30,10 @@ EXECUTE_MIDDLEWARE_WHITELIST = [
 
 @dataclass
 class Task:
+    # 任务ID
+    id: str
     # 任务名
-    name: str
-    # 任务简介
-    description: str
+    task_name: str
     # 启用任务
     enable: bool
     # 禁用中间件
@@ -68,7 +68,7 @@ class Task:
         """更新任务状态"""
         old_status = self.status
         self.status = status
-        logger.debug(f"[TaskStatus] {self.name}: {old_status} -> {status}")
+        logger.debug(f"[TaskStatus] {self.id}: {old_status} -> {status}")
 
     def get_start_time(self):
         return self._start_time
@@ -78,6 +78,7 @@ class TaskQueue:
     _app: "AppProcessor" = None
     _task_queue = Queue()
     _task_list: List[Task] = []
+    _task_pre_function: list[Callable] = []
     _run_lock: Lock
     _worker_thread: Thread = None
     _stop_event: bool
@@ -87,32 +88,63 @@ class TaskQueue:
         self._run_lock = Lock()
         self._stop_event = False
 
-    def reg_task(
+    def register_task(
             self,
+            task_id: str,
             task_name: str,
-            task_description: str,
-            task_func: Callable,
+            timeout: int | None = None,
             disabled_middleware: bool = False,
             manual_only: bool = False,
-            timeout: int | None = None
     ):
         """
         注册任务
+        :param task_id: 任务ID
+        :param task_name: 任务名
+        :param timeout: 超时时间
+        :param disabled_middleware: 禁用中间件
+        :param manual_only: 仅手动模式
+        :return:
         """
-        if self._find_task(task_name):
-            raise RuntimeError(f"Duplicate task name: '{task_name}'")
-        enable = True
-        if task_name in config_service().base.disabled_tasks.value:
-            enable = False
-        self._task_list.append(Task(
-            name=task_name,
-            description=task_description,
-            enable=enable,
-            disabled_middleware=disabled_middleware,
-            manual_only=manual_only,
-            function=task_func,
-            timeout=timeout
-        ))
+        def __register(func):
+            if self._find_task(task_id):
+                raise RuntimeError(f"Duplicate task name: '{task_id}'")
+            enable = True
+            if task_id in config_service().base.disabled_tasks.value:
+                enable = False
+            self._task_list.append(Task(
+                id=task_id,
+                task_name=task_name,
+                enable=enable,
+                disabled_middleware=disabled_middleware,
+                manual_only=manual_only,
+                function=func,
+                timeout=timeout
+            ))
+        logger.debug(f"register task: {task_id}")
+        def decorator(func: Callable):
+            __register(func)
+        return decorator
+
+    def register_pre_queue_start(self):
+        """注册任务队列执行前预执行"""
+        def decorator(func: Callable):
+            logger.debug(f"register task pre function: {func.__name__}")
+            if func not in self._task_pre_function:
+                self._task_pre_function.append(func)
+        return decorator
+
+
+    def __run_task_queue_pre_functions(self):
+        """执行任务队列运行前初始化方法"""
+        for func in self._task_pre_function:
+            try:
+                logger.debug(f"run task pre function: {func.__name__}")
+                result = func()
+                if result is False:
+                    raise RuntimeError(f"Task pre function {func.__name__} error")
+            except Exception as e:
+                raise RuntimeError(f"Task pre function {func.__name__} failed: {e}")
+        return True
 
     def exec_task(self, task_name: str = None):
         """执行任务"""
@@ -155,21 +187,21 @@ class TaskQueue:
         获取所有任务名
         :return:
         """
-        return [task.name for task in self._task_list]
+        return [task.id for task in self._task_list]
 
     def _processor_task_queue(self):
         """任务队列处理器，确保任务按顺序执行"""
-        self._app.yolo_engine.resume()
+        self.__run_task_queue_pre_functions()
         while self._app.latest_results is None:
             sleep(0.1)
         try:
             while not self._task_queue.empty():
                 task = self._task_queue.get()
-                logger.info(f"Run task: {task.name}")
+                logger.info(f"Run task: {task.id}")
                 self._task_thread(task)
 
                 if task.status == TaskStatus.FAILED:
-                    logger.warning(f"Task '{task.name}' failed, terminating remaining tasks.")
+                    logger.warning(f"Task '{task.id}' failed, terminating remaining tasks.")
                     with self._task_queue.mutex:
                         self._task_queue.queue.clear()
                     break
@@ -245,19 +277,19 @@ class TaskQueue:
                 task.update_status(TaskStatus.SUCCESS)
         except (UserCancelTask, FailSafeException):
             task.update_status(TaskStatus.CANCELED)
-            logger.warning(f"Task '{task.description}({task.name})' cancelled")
+            logger.warning(f"Task '{task.task_name}({task.id})' cancelled")
         except Exception as e:
             task.update_status(TaskStatus.FAILED)
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
-            logger.error(f"Task '{task.description}({task.name})' failed:\n{tb_str}")
+            logger.error(f"Task '{task.task_name}({task.id})' failed:\n{tb_str}")
         finally:
             task.update_end_time()
             sys.settrace(None)
-            logger.info(f"Task '{task.description}({task.name})' status: {task.status}")
+            logger.info(f"Task '{task.task_name}({task.id})' status: {task.status}")
 
     def _find_task(self, task_name: str):
         """查找任务"""
-        return next((task for task in self._task_list if task.name == task_name), None)
+        return next((task for task in self._task_list if task.id == task_name), None)
 
     def _get_enable_tasks(self):
         """获取启用的任务"""
@@ -266,8 +298,8 @@ class TaskQueue:
     def get_task_list(self):
         """获取所有任务列表"""
         return {
-            task.name: {
-                "description": task.description,
+            task.id: {
+                "description": task.task_name,
                 "enable": task.enable,
                 "last_run_time": task.last_run_time,
                 "start_time": task.get_start_time(),

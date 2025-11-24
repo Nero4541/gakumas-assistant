@@ -8,8 +8,8 @@ import uvicorn
 import webview
 from fastapi import FastAPI
 
-import config
-from src.core.Web.routers import register_routes
+from src.core.web.routers import register_routes
+from src.utils.args import args
 from src.main import AppProcessor
 
 import sys
@@ -27,9 +27,9 @@ def start_webapp(core_processor: AppProcessor):
     register_routes(webapp, core_processor, processor.ws_manager)
     uvicorn.run(
         webapp,
-        host=config.web_server_host,
-        port=config.web_server_port,
-        log_level="warning",
+        host=args.host,
+        port=args.port,
+        log_level="info" if args.http_server_info else "warning",
         reload=False
     )
 
@@ -38,10 +38,10 @@ if __name__ == "__main__":
     webapp_thread = threading.Thread(target=start_webapp, args=(processor,), daemon=True)
     webapp_thread.start()
     processor.yolo_engine.start()
-    if config.use_webview:
+    if not args.not_use_webview:
         window = webview.create_window(
             'Gakumas Assistant',
-            f'http://localhost:{config.web_server_port}',
+            f'http://{args.host}:{args.port}',
             width=1200,
             height=800,
             frameless=True,
@@ -54,6 +54,8 @@ if __name__ == "__main__":
         exit(0)
     else:
         try:
+            from src.utils.logger import logger
+            logger.success(f"Server started at http://{args.host}:{args.port}")
             while True:
                 sleep(0.1)
         except KeyboardInterrupt:

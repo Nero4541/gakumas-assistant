@@ -289,3 +289,8 @@ def draw_text(
 
     # 转回 OpenCV BGR
     return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+
+def get_black_image(size: Tuple[int, int]) -> bytes:
+    img_black = np.zeros((size[0], size[1], 3), dtype=np.uint8)
+    _, encoded_image = cv2.imencode('.jpg', img_black)
+    return encoded_image.tobytes()

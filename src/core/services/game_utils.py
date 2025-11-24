@@ -1,12 +1,10 @@
 from copy import copy
-from time import sleep
+from time import sleep, time
 from typing import TYPE_CHECKING, Optional
 
 import cv2
 import numpy as np
 from skimage.metrics import structural_similarity as ssim
-
-from config import debug
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
@@ -15,6 +13,7 @@ from src.entity.Yolo import Yolo_Box
 from src.utils.debug_tools import DebugTools
 from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
+from src.utils.performance_tools import timeit
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
@@ -355,3 +354,46 @@ class GameUtils:
             else:
                 COUNT += 1
                 sleep(1)
+
+    def wait_frame_stable(self, threshold=0.98, stable_count=3, timeout=5):
+        """
+        等待画面稳定（SSIM）
+        threshold: 画面相似度阈值
+        stable_count: 连续多少帧满足才算稳定
+        timeout: 超时时间（秒）
+        """
+        start = time()
+        prev_frame = None
+        stable_times = 0
+
+        while True:
+            curr_frame = self._app_processor.latest_frame
+            if curr_frame is None:
+                sleep(0.05)
+                continue
+
+            # 第一帧，无对比，跳过
+            if prev_frame is None:
+                prev_frame = curr_frame.copy()
+                sleep(0.05)
+                continue
+            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
+            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
+
+            score, _ = ssim(prev_gray, curr_gray, full=True)
+            logger.info(f"SSIM: {score}")
+            if score >= threshold:
+                stable_times += 1
+            else:
+                stable_times = 0
+            # 判断是否连续稳定
+            if stable_times >= stable_count:
+                return True
+
+            if time() - start > timeout:
+                return False
+
+            prev_frame = curr_frame.copy()
+            sleep(0.05)
+
+

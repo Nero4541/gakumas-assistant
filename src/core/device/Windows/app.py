@@ -1,4 +1,6 @@
 import ctypes
+import os
+import subprocess
 import sys
 from time import sleep
 from typing import Tuple
@@ -12,20 +14,27 @@ import win32com.client
 import win32con
 import win32gui
 
+from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
 from src.utils.logger import logger
 
 class Windows_App(BaseDevice):
     __window_name: str
-    _cached_hwnd: int = None
+    __cached_hwnd: int = None
+    __config_service: ConfigService
 
-    def __init__(self, window_name: str):
+    def __init__(self):
         if not self._is_admin():
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             sys.exit()
         ctypes.windll.user32.SetProcessDPIAware()
-        self.__window_name = window_name
+
+        self.__config_service = ConfigService()
+        self.__window_name = self.__config_service().base.game_window_name.value
+
+    def __bool__(self) -> bool:
+        return bool(win32gui.FindWindow(None, self.__window_name))
 
     @staticmethod
     def _is_admin():
@@ -38,14 +47,13 @@ class Windows_App(BaseDevice):
         """
         获取窗口实例
         """
-        if self._cached_hwnd and win32gui.IsWindow(self._cached_hwnd):
-            return self._cached_hwnd
+        if self.__cached_hwnd and win32gui.IsWindow(self.__cached_hwnd):
+            return self.__cached_hwnd
         hwnd = win32gui.FindWindow(None, self.__window_name)
         if not hwnd:
-            raise Exception(f'窗口 "{self.__window_name}" 未找到')
-        self._cached_hwnd = hwnd
+            raise Exception(f'Window "{self.__window_name}" not found')
+        self.__cached_hwnd = hwnd
         return hwnd
-
 
     def __get_window_region(self):
         """
@@ -64,7 +72,29 @@ class Windows_App(BaseDevice):
         启动游戏
         :return:
         """
-        pass
+        dmm_play_config = self.__config_service().dmm_player
+        game_path = dmm_play_config.game_exe_path.value
+        try:
+            subprocess.Popen(
+                [
+                    game_path,
+                    f"/viewer_id={dmm_play_config.viewer_id.value}",
+                    f"/open_id={dmm_play_config.open_id.value}",
+                    f"/pf_access_token={dmm_play_config.pf_token.value}"
+                ],
+                cwd=os.path.dirname(game_path),
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+            )
+        except FileNotFoundError:
+            logger.warning(f"Game launch failed: target file not found: {game_path}")
+            return False
+        except PermissionError as e:
+            logger.warning(f"Game launch failed: permission error: {e}")
+            return False
+        except Exception as e:
+            logger.warning(f"Game launch failed: {e}")
+            return False
+        return True
 
     @logger.catch
     def bring_to_front(self):
@@ -87,8 +117,7 @@ class Windows_App(BaseDevice):
     @logger.catch
     def is_app_focused(self):
         """
-        判断当前窗口是否处于焦点（前台）
-        :return: True 如果窗口在前台，否则 False
+        判断游戏窗口是否处于焦点（前台）
         """
         try:
             hwnd = self.__find_window()
@@ -104,6 +133,12 @@ class Windows_App(BaseDevice):
             logger.error(f"检测窗口焦点失败: {e}")
             return False
 
+    def is_app_running(self) -> bool:
+        """
+        判断游戏进程是否正在运行
+        """
+        hwnd = win32gui.FindWindow(None, self.__window_name)
+        return hwnd != 0
 
     @logger.catch
     def capture(self):
@@ -148,7 +183,6 @@ class Windows_App(BaseDevice):
             return
         abs_x, abs_y = self._xy_abs_conversion(x, y)
         pyautogui.moveTo(abs_x, abs_y)
-        # pyautogui.click(button='right', clicks=1, interval=0.3)
         for _ in range(abs(scroll_delta)):
             win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0,120 if scroll_delta > 0 else -120)
             sleep(0.1)

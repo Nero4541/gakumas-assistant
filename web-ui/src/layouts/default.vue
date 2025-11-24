@@ -47,6 +47,7 @@
         <WebSocketToolsBar :status="status"/>
         <WebSocketView />
       </v-container>
+      <WebLogger/>
     </v-main>
     <AppFooter class="page_footer" />
   </v-layout>
@@ -148,6 +149,13 @@
       flex-direction: column;
       .v-alert {
         padding: 25px 15px;
+      }
+      .page_view {
+        height: 100%;
+        display: flex;
+        .web_view {
+          width: 100%;
+        }
       }
     }
   }

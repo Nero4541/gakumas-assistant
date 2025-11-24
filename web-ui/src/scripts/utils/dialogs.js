@@ -1,18 +1,7 @@
 import { createApp } from 'vue'
 import inputDialog from '@/components/dialogs/inputDialogV2.vue'
-import Vue from '@/main'
 import vuetify from '@/plugins/vuetify'
-
-function test () {
-  const ConfirmConstructor = Vue.extend(inputOTP)
-  const instance = new ConfirmConstructor().$mount()
-  document.body.append(instance.$el)
-
-  Vue.prototype.$showInputBox = options => {
-    Object.assign(instance, options)
-    instance.init()
-  }
-}
+import confirmDialog from "@/components/dialogs/confirmDialog.vue";
 
 async function init_Dialog (component, other_data = {}) {
   return new Promise((resolve, reject) => {
@@ -61,23 +50,19 @@ async function showInput_Dialog (title = '', label = '', hint = '', type = 'text
   })
 }
 
-function confirm (title, text, level = 'info', buttons = null, cardOptions = null, dialogOptions = null) {
-  return Vue.config.globalProperties.$dialog.create({
-    title,
-    text,
-    level,
-    buttons: buttons
-      ? buttons
-      : [
-          { title: '确认', key: true },
-          { title: '取消', key: false },
-        ],
-    cardOptions: cardOptions ?? {
-      // any v-card api options
-    },
-    dialogOptions: dialogOptions ?? {
-          maxWidth: '400px',
-        },
+async function confirm (
+  title,
+  text,
+  confirm_text="确认",
+  close_text="取消",
+  persistent=false
+) {
+  return init_Dialog(confirmDialog, {
+    title: title,
+    description: text,
+    persistent,
+    confirm_text,
+    close_text,
   })
 }
 

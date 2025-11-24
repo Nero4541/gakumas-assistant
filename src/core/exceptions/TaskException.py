@@ -8,11 +8,11 @@ class UserCancelTask(Exception):
         self.task = task
 
     def __str__(self):
-        return f"User cancel task {self.task.name}"
+        return f"User cancel task {self.task.id}"
 
 class TaskTimeout(Exception):
     def __init__(self, task: "Task"):
         self.task = task
 
     def __str__(self):
-        return f"Task '{self.task.name}' execution timed out."
+        return f"Task '{self.task.id}' execution timed out."
