@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Any
 
 import numpy as np
 
@@ -16,6 +16,12 @@ class SkillCardInfo:
 class SkillCardCLIP(CLIPTools):
     def __init__(self, session):
         super().__init__(session, "skill_card")
+
+    def _load_payload(self, payload_ref):
+        pass
+
+    def _save_payload(self, image: np.ndarray, features: np.ndarray, payload: Any):
+        pass
 
     def add_to_memory(self, image: np.ndarray, payload: SkillCardInfo, similarity_threshold=0.9, save_image=False):
         return super().add_to_memory(image, payload, similarity_threshold, save_image)

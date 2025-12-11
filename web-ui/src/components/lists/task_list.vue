@@ -16,6 +16,7 @@ const settingComponents = {
 const statusMap = {
   PENDING: {color: "orange", icon: "md:schedule", label: "等待中"},
   RUNNING: {color: "blue", icon: "md:cached", label: "运行中"},
+  SUSPENDED: {color: "yello", icon: "md:hourglass", label: "挂起中"},
   SUCCESS: {color: "green", icon: "md:task_alt", label: "已完成"},
   FAILED: {color: "red", icon: "md:error", label: "执行错误"},
   CANCELED: {color: "grey", icon: "md:cancel", label: "已取消"},

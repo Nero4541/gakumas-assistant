@@ -67,7 +67,7 @@ class Windows_App(BaseDevice):
         client_height = client_rect[3]  # 客户区高度
         return client_left, client_top, client_width, client_height
 
-    def startGame(self):
+    def start_game(self):
         """
         启动游戏
         :return:

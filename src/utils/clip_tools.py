@@ -14,7 +14,7 @@ from src.utils.logger import logger
 
 @dataclass
 class CLIPRetrieveData:
-    payload: any
+    payload: Any
     similarity: float
 
 class CLIPTools(abc.ABC):
@@ -28,7 +28,8 @@ class CLIPTools(abc.ABC):
         self._image_file_path = os.path.join(os.getcwd(), "data/CLIP", clip_name)
         os.makedirs(self._image_file_path, exist_ok=True)
 
-    def _cosine_similarity(self, a: np.ndarray, b: np.ndarray):
+    @ staticmethod
+    def _cosine_similarity(a: np.ndarray, b: np.ndarray):
         """计算向量相似度"""
         a = a.flatten()
         b = b.flatten()

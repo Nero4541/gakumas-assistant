@@ -157,8 +157,8 @@ class OCR_ResultList:
 
         return self._from(merged_results)
 
-
-    def calculate_confidence(self, current_line: List[OCR_Result]) -> float:
+    @staticmethod
+    def calculate_confidence(current_line: List[OCR_Result]) -> float:
         """
         计算平均信心值
         :param current_line: 当前行的OCR结果列表

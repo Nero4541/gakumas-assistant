@@ -168,8 +168,11 @@ class GameUtils:
     def check_label_exists_at_position(self, target_label, x: int, y: int, w: int, h: int, threshold: float = 0.8) -> bool:
         """
         检查目标标签是否存在于指定区域（支持部分重叠判断）
+        :param y:
+        :param x:
+        :param w:
+        :param h:
         :param target_label: 标签名
-        :param x, y, w, h: 检查区域
         :param threshold: IOU阈值
         """
         results = self._app_processor.latest_results

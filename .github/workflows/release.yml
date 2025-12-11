@@ -23,13 +23,13 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest  # 因为你用的是 Windows 环境下的 nuitka
+    runs-on: windows-latest
     steps:
       - name: checkout
         uses: actions/checkout@v4
         with:
-          submodules: true      # 拉取所有子模块
-          fetch-depth: 0        # 拉完整提交历史，防止子模块浅克隆失败
+          submodules: true
+          fetch-depth: 0
           lfs: true
         env:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -77,6 +77,8 @@ jobs:
       - name: Build app
         run: |
           python build_app.py
+        env:
+          GITHUB_ACTIONS: "True"
 
       - name: Compress Output
         run: |

@@ -294,3 +294,17 @@ def get_black_image(size: Tuple[int, int]) -> bytes:
     img_black = np.zeros((size[0], size[1], 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode('.jpg', img_black)
     return encoded_image.tobytes()
+
+def is_white_screen(image, brightness=250):
+    """
+    判断截图是否是白屏
+    :param image: 输入的屏幕截图（OpenCV格式）
+    :param brightness: 目标亮度
+    :return: 是否为白屏
+    """
+    # 转换为灰度图像
+    gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # 计算图像的平均亮度
+    avg_brightness = np.mean(gray_image)
+    # 如果平均亮度接近255，表示是白屏
+    return avg_brightness > brightness  # 你可以根据需要调整这个阈值

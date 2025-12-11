@@ -13,10 +13,12 @@ from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
 from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask, check_color
+from src.utils.performance_tools import timeit
 from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()
 
+@timeit
 def get_current_location(boxes: Yolo_Results) -> str | None:
     if boxes.exists_label(BaseUILabels.START_MENU_LOGO):
         return GamePageTypes.START_GAME
@@ -83,6 +85,7 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
         return TAB_LABEL_TO_PAGE.get(match_result.result)
     return GamePageTypes.UNKNOWN
 
+@timeit
 def extract_skill_card_and_info(img):
     """提取技能卡和技能卡信息，仅【P图鉴】页面可用"""
     img_w, img_h = img.shape[:2]
@@ -122,6 +125,7 @@ def extract_skill_card_and_info(img):
                     return roi, skill_card, skill_card_info
     return None, None, None  # 如果没有找到符合条件的区域
 
+@timeit
 def modal_body_extract_item_info(
         img,
         item_lower: tuple[int, int, int] = (80,5,96),
@@ -162,7 +166,7 @@ def modal_body_extract_item_info(
 
     return item, item_info
 
-
+@timeit
 def get_modal(yolo_result: Yolo_Results, no_body: bool = False) -> Modal | None:
     """
     获取模态框

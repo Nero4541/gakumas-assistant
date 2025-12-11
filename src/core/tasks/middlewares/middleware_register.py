@@ -1,5 +1,4 @@
-from src.constants.location import Location
-from src.constants.text.modal_text import ModalText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
@@ -8,21 +7,21 @@ from typing import TYPE_CHECKING
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
-    from src.main import AppProcessor
+    pass
 
 last_card_name = ""
 last_modal= False
 
 def register_middlewares(processor: "AppProcessor"):
-    @processor.register_middleware()
+
+    @processor.task_queue.register_task_middleware()
     @logger.catch
     def _init_location(app: "AppProcessor"):
         if app.game_status_manager.current_location is None and app.latest_results:
             app.game_utils.update_current_location()
         return True
 
-
-    @processor.register_middleware()
+    @processor.task_queue.register_task_middleware()
     @logger.catch
     def _handle_unexpected_modal(app: "AppProcessor"):
         global last_modal
@@ -37,7 +36,7 @@ def register_middlewares(processor: "AppProcessor"):
                 app.device.click_element(modal.cancel_button)
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(BaseUILabels.START_MENU_LOGO)
-                app.exec_task("start_game")
+                app.task_queue.insert_task_to_run_queue("start_game")
             elif string_match(modal.modal_title, [ModalText.TITLE.CONNECTION_ERROR, ModalText.TITLE.INFO_FETCH_FAILED]):
                 logger.warning("Network connection error...")
                 app.device.click_element(modal.confirm_button)

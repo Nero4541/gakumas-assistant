@@ -42,8 +42,6 @@ class AppProcessor:
     yolo_engine: YoloInferenceEngine
     # 图像debug工具
     debug_tools: DebugTools
-    # 中间件注册列表
-    _middleware_registry: List[Callable]
     # 游戏实用工具
     game_utils: GameUtils
     # 游戏状态管理器
@@ -58,12 +56,11 @@ class AppProcessor:
         self._init_database()
         self.config_service = ConfigService()
         logger.debug(self.config_service())
-        self.device = self._create_device_instance()
+        self.device = self.create_device_instance()
         self.yolo_engine = YoloInferenceEngine(self.device)
         self.clip_manager = CLIPServiceManager()
         self.debug_tools = DebugTools()
         self.yolo_engine.register_infer_callback(self._send_frame_to_clients)
-        self._middleware_registry = []
         self.task_queue = TaskQueue(self)
         self.game_status_manager = GameStatusManager()
         self.game_utils = GameUtils(self)
@@ -105,7 +102,7 @@ class AppProcessor:
             self.task_queue.stop()
             status = self.yolo_engine.running
             self.yolo_engine.stop()
-            self.device = self._create_device_instance()
+            self.device = self.create_device_instance()
             if status: self.yolo_engine.start()
             return
 
@@ -129,17 +126,7 @@ class AppProcessor:
     def latest_results(self):
         return self.yolo_engine.latest_results
 
-    def register_middleware(self):
-        """
-        注册中间件
-        :return:
-        """
-        def decorator(func: Callable):
-            logger.debug(f"register middleware: {func.__name__}")
-            self._middleware_registry.append(func)
-        return decorator
-
-    def _create_device_instance(self) -> Union[Android_App, Windows_App]:
+    def create_device_instance(self) -> Union[Android_App, Windows_App]:
         """
         创建设备操作实例
         """
@@ -150,23 +137,6 @@ class AppProcessor:
         if mode == DeviceType.PC:
             logger.debug("Initializing Windows device")
             return Windows_App()
-            import win32gui
-            if not win32gui.FindWindow(None, self.config_service().base.game_window_name.value) and os.path.exists(DataPath.DMMPlayerDLL_Log):
-                ddm_cfg = self.config_service().dmm_player
-                try:
-                    result = extract_gakumas_launch_parameters()
-                    ddm_cfg.game_exe_path.value = result.exe_path
-                    ddm_cfg.viewer_id.value = result.viewer_id
-                    ddm_cfg.open_id.value = result.open_id
-                    ddm_cfg.pf_token.value = result.pf_token
-                    self.config_service.save_config()
-                except Exception as e:
-                    logger.warning("Failed to extract gakumas launch parameters: %s", e)
-                app: Windows_App = Windows_App()
-                if self.config_service().base.auto_start_game.value:
-                    app.startGame()
-                return app
-
         raise ValueError(f"Invalid device type: {mode}")
 
     def _send_frame_to_clients(self, latest_frame, latest_results):
@@ -185,32 +155,14 @@ class AppProcessor:
         frame_bytes = encoded_frame.tobytes()
         self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 
-    def exec_middleware(self):
-        """
-        执行中间件
-        :return:
-        """
-        flag: bool = True
-        for func in self._middleware_registry:
-            if func(self) is False:
-                logger.debug(f"{func.__name__} return false")
-                flag = False
-        return flag
+
 
     def exec_task(self, task_name: str = None):
-        if not self.device:
-            self.device = self._create_device_instance()
-        if not self.yolo_engine.running:
-            self.yolo_engine.start()
-            self.yolo_engine.resume()
-            logger.debug("wait yolo result......")
-        self.device.start_game()
-        while True:
-            if self.latest_results:
-                break
-        if not self.device.is_app_focused():
-            self.device.start_game()
-            if isinstance(self.device, Windows_App):
-                self.device.bring_to_front()
-                sleep(0.5)
+        # if not self.device:
+        #     self.device = self.create_device_instance()
+        # if not self.device.is_app_focused():
+        #     self.device.start_game()
+        #     if isinstance(self.device, Windows_App):
+        #         self.device.bring_to_front()
+        #         sleep(0.5)
         return self.task_queue.exec_task(task_name)

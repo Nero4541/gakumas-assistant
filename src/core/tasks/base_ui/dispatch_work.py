@@ -1,8 +1,8 @@
 from time import sleep
 from typing import TYPE_CHECKING, Optional
 
-from src.constants.text.button_text import ButtonText
-from src.constants.text.modal_text import ModalText
+from src.constants.game.text.button_text import ButtonText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.entity.Game.Page.Types.index import GamePageTypes
@@ -162,7 +162,7 @@ def _dispatch_single_work(app: "AppProcessor"):
         avatars = Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])
         for avatar in avatars:
             # 跳过正在工作中的角色
-            working = check_color(avatar.frame, (72,5,80), (119,75,135),threshold=25)
+            working = check_color(avatar.frame, (0,5,75), (179,120,190), threshold=50)
             logger.debug(working)
             if working:
                 app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label=f"跳过，已派遣", color=(255,255,0))
@@ -178,11 +178,13 @@ def _dispatch_single_work(app: "AppProcessor"):
             )
             if _is_avatar_guaranteed_success(avatar):
                 app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="大成功确定", color=(0,255,0))
+                # continue
                 if not _assign_avatar_to_work(app, avatar):
                     continue
                 app.debug_tools.clear_all_boxes()
                 return True
             app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="非优选")
+        # sleep(10)
         app.debug_tools.clear_all_boxes()
         return False
     avatar_group_x, avatar_group_y = app.latest_results.filter_by_label(BaseUILabels.AVATAR).get_COL()

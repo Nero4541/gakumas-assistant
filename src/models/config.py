@@ -38,7 +38,6 @@ class ConfigModel(BaseModel):
             config_item: ConfigItem = getattr(section, item_name, None)
             if not isinstance(config_item, ConfigItem):
                 continue
-
             try:
                 cast_value = cls.cast_to_type(row.value, config_item.data_type)
             except Exception as e:

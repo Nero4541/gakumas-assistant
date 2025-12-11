@@ -7,6 +7,7 @@ import numpy as np
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.inference.ocr_engine import OCRService
+from src.utils.debug_tools import DebugTools
 from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()
@@ -24,43 +25,47 @@ class Button(Yolo_Box):
         img_hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
 
         # 颜色范围定义
-        color_ranges = {
+        color_rules = {
             'white': {
-                'upper': np.array([179, 25, 255]),
-                'lower': np.array([0, 0, 245]),
+                'upper': np.array([155, 30, 255]),
+                'lower': np.array([0, 0, 120]),
                 'disabled_upper': np.array([106, 24, 193]),
                 'disabled_lower': np.array([65, 0, 140])
             },
             'cyan': {
-                'upper': np.array([104, 255, 255]),
-                'lower': np.array([84, 196, 80]),
-                'disabled_upper': np.array([104,178,182]),
-                'disabled_lower': np.array([75,118,92])
+                'upper': np.array([98,255,255]),
+                'lower': np.array([86,61,0]),
+                'disabled_upper': np.array([97,169,191]),
+                'disabled_lower': np.array([86,109,101])
             },
             'orange': {
-                'upper': np.array([24, 255, 255]),
-                'lower': np.array([0, 113, 210]),
+                'upper': np.array([17, 255, 255]),
+                'lower': np.array([0, 113, 130]),
                 'disabled_upper': np.array([22, 178, 196]),
                 'disabled_lower': np.array([0, 138, 176])
+            },
+            'transparent-grey1': {
+                'upper': np.array([122, 120, 180]),
+                'lower': np.array([0, 0, 90]),
+                'disabled_upper': np.array([68,90,120]),
+                'disabled_lower': np.array([9,0,95])
             }
         }
 
-        def _check_color(color_range):
-            # 提取颜色范围并创建蒙版
-            mask = cv2.inRange(img_hsv, color_range['lower'], color_range['upper'])
-            mask_disabled = cv2.inRange(img_hsv, color_range['disabled_lower'], color_range['disabled_upper'])
-
-            # 如果颜色区域或禁用区域像素超过25%总像素
-            if cv2.countNonZero(mask) > total_pixels * 0.25 or cv2.countNonZero(mask_disabled) > total_pixels * 0.25:
-                # 判断禁用区域的像素是否超过50%
-                if cv2.countNonZero(mask_disabled) > total_pixels * 0.50:
-                    return True
-            return False
 
         # 按顺序检查每种颜色
-        for color in color_ranges.values():
-            if _check_color(color):
+        for rule in color_rules.values():
+            button_mask = cv2.inRange(img_hsv, rule['lower'], rule['upper'])
+
+            # 小于 60% 判定不是这个颜色规则所属范围
+            if cv2.countNonZero(button_mask) < total_pixels * 0.50:
+                continue
+
+            mask_disabled = cv2.inRange(img_hsv, rule['disabled_lower'], rule['disabled_upper'])
+
+            if cv2.countNonZero(mask_disabled) > cv2.countNonZero(button_mask) * 0.50:
                 return True
+            return False
 
         return False
 
@@ -70,6 +75,17 @@ class ButtonList:
 
     def __init__(self, yolo_results: Yolo_Results):
         self.buttons = [Button(el) for el in yolo_results.filter_by_label(BaseUILabels.BUTTON)]
+        if self.buttons:
+            for btn in self.buttons:
+                DebugTools().add_box(
+                    btn.x,
+                    btn.y,
+                    btn.w,
+                    btn.h,
+                    (255,0,0) if btn.is_disabled() else (0,255,0),
+                    label=btn.text,
+                    duration=3
+                )
 
     def __bool__(self):
         return bool(self.buttons)

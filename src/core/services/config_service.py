@@ -94,7 +94,8 @@ class ConfigService(metaclass=SingletonMeta):
         for key, (old_val, new_val) in diff_items.items():
             self._dispatch_event(key, old_val, new_val)
 
-    def _find_diff_items(self, old: Config, new: Config) -> Dict[str, tuple]:
+    @staticmethod
+    def _find_diff_items(old: Config, new: Config) -> Dict[str, tuple]:
         """比较两个配置对象的差异"""
         diffs = {}
         for section_name in dir(old):

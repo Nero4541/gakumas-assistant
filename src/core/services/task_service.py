@@ -1,8 +1,11 @@
+import inspect
 import os
 import sys
+import threading
 import traceback
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 from queue import Queue
 from typing import Callable, Optional, TYPE_CHECKING, List
 from threading import Thread, Lock
@@ -24,8 +27,8 @@ if TYPE_CHECKING:
 config_service = ConfigService()
 
 EXECUTE_MIDDLEWARE_WHITELIST = [
-    "src/core/tasks",
-    "src/core/services/game_utils.py"
+    Path("src/core/tasks").as_posix(),
+    Path("src/core/services/game_utils.py").as_posix(),
 ]
 
 @dataclass
@@ -79,13 +82,23 @@ class TaskQueue:
     _task_queue = Queue()
     _task_list: List[Task] = []
     _task_pre_function: list[Callable] = []
+    _task_middleware_function: list[Callable] = []
+    _insert_task: Optional[Task]
     _run_lock: Lock
     _worker_thread: Thread = None
+    _suspend_current_task: bool
     _stop_event: bool
 
     def __init__(self, app):
+        # app实例
         self._app = app
+        # 运行锁
         self._run_lock = Lock()
+        # 插入任务
+        self._insert_task: Optional[Task] = None
+        # flag：挂起当前任务
+        self._suspend_current_task = False
+        # flag：停止任务队列
         self._stop_event = False
 
     def register_task(
@@ -128,9 +141,20 @@ class TaskQueue:
     def register_pre_queue_start(self):
         """注册任务队列执行前预执行"""
         def decorator(func: Callable):
-            logger.debug(f"register task pre function: {func.__name__}")
             if func not in self._task_pre_function:
+                logger.debug(f"register task pre function: {func.__name__}")
                 self._task_pre_function.append(func)
+        return decorator
+
+    def register_task_middleware(self):
+        """
+        注册任务中间件
+        :return:
+        """
+        def decorator(func: Callable):
+            if func not in self._task_middleware_function:
+                logger.debug(f"register middleware: {func.__name__}")
+                self._task_middleware_function.append(func)
         return decorator
 
 
@@ -146,7 +170,7 @@ class TaskQueue:
                 raise RuntimeError(f"Task pre function {func.__name__} failed: {e}")
         return True
 
-    def exec_task(self, task_name: str = None):
+    def exec_task(self, task_id: str = None):
         """执行任务"""
         if self._run_lock.locked():
             return False  # 已在运行中
@@ -158,11 +182,11 @@ class TaskQueue:
         if self._task_queue.not_empty:
             with self._task_queue.mutex:
                 self._task_queue.queue.clear()
-        if task_name:
-            if task_name not in self._get_task_names():
-                logger.warning(f"Task '{task_name}' does not exist.")
+        if task_id:
+            if task_id not in self._get_task_names():
+                logger.warning(f"Task '{task_id}' does not exist.")
                 return False
-            task = self._find_task(task_name)
+            task = self._find_task(task_id)
             task.status = TaskStatus.PENDING
             self._task_queue.put(task)
         else:
@@ -182,6 +206,34 @@ class TaskQueue:
             return False
         return True
 
+    def insert_task_to_run_queue(self, task_id):
+        """
+        插入任务到当前队列并挂起任务
+        :param task_id: 任务id
+        :return:
+        """
+        if self._suspend_current_task:
+            logger.warning(f"Task '{task_id}' is suspended.")
+            return False
+        if task_id not in self._get_task_names():
+            logger.warning(f"Task '{task_id}' does not exist.")
+            return False
+        self._insert_task = self._find_task(task_id)
+        logger.debug(f"Insert task: {self._insert_task.task_name}(id: {self._insert_task.id})")
+        self._suspend_current_task = True
+        suspend_task = next(task for task in self._task_list if task.status == TaskStatus.RUNNING)
+        suspend_task.update_status(TaskStatus.SUSPENDED)
+        def _insert_task_thread():
+            logger.debug("Start insert task thread")
+            self._task_thread(self._insert_task)
+            logger.debug("Resume suspended tasks thread")
+            self._suspend_current_task = False
+            self._insert_task = None
+            suspend_task.update_status(TaskStatus.RUNNING)
+        thread = Thread(target=_insert_task_thread, daemon=True, args=())
+        thread.start()
+        return True
+
     def _get_task_names(self):
         """
         获取所有任务名
@@ -191,7 +243,13 @@ class TaskQueue:
 
     def _processor_task_queue(self):
         """任务队列处理器，确保任务按顺序执行"""
-        self.__run_task_queue_pre_functions()
+        try:
+            self.__run_task_queue_pre_functions()
+        except Exception as e:
+            logger.error(e)
+            self._app.yolo_engine.pause()
+            return False
+
         while self._app.latest_results is None:
             sleep(0.1)
         try:
@@ -233,28 +291,68 @@ class TaskQueue:
             f = f.f_back
         return False
 
+    def _exec_task_middleware(self):
+        """
+        执行中间件
+        :return:
+        """
+        flag: bool = True
+        for func in self._task_middleware_function:
+            if func(self._app) is False:
+                logger.debug(f"{func.__name__} return false")
+                flag = False
+        return flag
+
     def _trace_calls(self, frame, event, arg, task: Task):
+
+        def wait_and_extend(condition, step=0.1):
+            """
+            通用等待逻辑：
+            - 当 condition() 为 True 时阻塞
+            - 期间累计延迟时间
+            - 自动延长 task.timeout
+            """
+            if task.timeout in (None, -1):
+                # 不处理无限或无超时
+                while condition():
+                    sleep(step)
+                return
+
+            added = 0.0
+            while condition():
+                sleep(step)
+                added += step
+
+            if added > 0:
+                task.timeout += added
+
         if not self.is_called_by(frame, task.function.__code__):
             return partial(self._trace_calls, task=task)
-        # 任务停止
+
         if self._stop_event:
             raise UserCancelTask(task)
-        # 拦截由库文件触发的
+
         if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
             return partial(self._trace_calls, task=task)
-        # 超时抛出
-        if task.timeout and task.timeout != -1 and (int(time()) - task.get_start_time()) > task.timeout:
-            raise TaskTimeout(task)
-        # 不在焦点不执行
-        while isinstance(self._app.device, Windows_App) and not self._app.device.is_app_focused():
-            sleep(0.2)
-        # 判断是否执行中间件
-        if task.disabled_middleware or not string_match(frame.f_code.co_filename, EXECUTE_MIDDLEWARE_WHITELIST, MatchConfig(use_fuzz=False, use_regex=False)):
-            return partial(self._trace_calls, task=task)
-        while not self._app.exec_middleware():
-            sleep(0.2)
-        # if "src" in frame.f_code.co_filename:
-        #     print(f"执行文件: {frame.f_code.co_filename}, 当前行: {frame.f_lineno}")
+
+        if self._suspend_current_task and self._insert_task.id != task.id:
+            wait_and_extend(lambda: self._suspend_current_task)
+
+        if task.timeout not in (None, -1):
+            if (time() - task.get_start_time()) > task.timeout:
+                raise TaskTimeout(task)
+
+        if isinstance(self._app.device, Windows_App):
+            wait_and_extend(lambda: not self._app.device.is_app_focused())
+
+        # logger.debug(f"{Path(frame.f_code.co_filename).as_posix()}, {string_match(frame.f_code.co_filename, EXECUTE_MIDDLEWARE_WHITELIST, MatchConfig(use_fuzz=False, use_regex=False))}")
+        if (
+            # 不禁用中间件并在中间件白名单中
+            not task.disabled_middleware and
+            string_match(Path(frame.f_code.co_filename).as_posix(), EXECUTE_MIDDLEWARE_WHITELIST, MatchConfig(use_fuzz=False, use_regex=False))
+        ):
+            wait_and_extend(lambda: not self._exec_task_middleware(), step=0.2)
+
         return partial(self._trace_calls, task=task)
 
     def _task_thread(self, task: Task):
@@ -268,7 +366,13 @@ class TaskQueue:
             task.update_start_time()
             # 启动任务跟踪
             sys.settrace(partial(self._trace_calls, task=task))
-            task_result = task.function(self._app)
+            func = task.function
+            sig = inspect.signature(func)
+            # 判断是否需要参数
+            if len(sig.parameters) == 0:
+                task_result = func()
+            else:
+                task_result = func(self._app)
             if task_result in TaskStatus.__dict__.keys():
                 task.update_status(task_result)
             elif task_result is False:
@@ -287,9 +391,9 @@ class TaskQueue:
             sys.settrace(None)
             logger.info(f"Task '{task.task_name}({task.id})' status: {task.status}")
 
-    def _find_task(self, task_name: str):
+    def _find_task(self, task_id: str):
         """查找任务"""
-        return next((task for task in self._task_list if task.id == task_name), None)
+        return next((task for task in self._task_list if task.id == task_id), None)
 
     def _get_enable_tasks(self):
         """获取启用的任务"""
@@ -308,16 +412,16 @@ class TaskQueue:
             for task in self._task_list
         }
 
-    def disable_task(self, task_name: str):
+    def disable_task(self, task_id: str):
         """禁用任务"""
-        if task := self._find_task(task_name):
+        if task := self._find_task(task_id):
             task.enable = False
             return True
         return False
 
-    def enable_task(self, task_name: str):
+    def enable_task(self, task_id: str):
         """启用任务"""
-        if task := self._find_task(task_name):
+        if task := self._find_task(task_id):
             task.enable = True
             return True
         return False

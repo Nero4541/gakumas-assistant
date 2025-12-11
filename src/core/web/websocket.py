@@ -41,7 +41,8 @@ class WebSocketManager:
         """移除 WebSocket 连接"""
         self.active_connections.remove(websocket)
 
-    async def send_message(self, data: WebSocketData, websocket: WebSocket):
+    @staticmethod
+    async def send_message(data: WebSocketData, websocket: WebSocket):
         """向特定 WebSocket 发送消息"""
         if msg := data.message:
             await websocket.send_text(msg)

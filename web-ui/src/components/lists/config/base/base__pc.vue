@@ -60,7 +60,7 @@ const props = defineProps({
       @click="async ()=> {
         await apis.refresh_ddm_player_token()
         props.data = (await apis.get_config()).data
-        message.showSuccess('启动参数刷新成功')
+        await message.showSuccess('启动参数刷新成功')
       }">
       刷新启动参数
     </v-btn>

@@ -8,8 +8,8 @@ import numpy as np
 
 from src.constants.path.data_path import DataPath
 from src.constants.path.debug_path import DebugPath
-from src.constants.text.button_text import ButtonText
-from src.constants.text.modal_text import ModalText
+from src.constants.game.text.button_text import ButtonText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.core.services.clip.item import Item
@@ -18,7 +18,7 @@ from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Components.TabBar import TabBar
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.models import CLIPMemory
-from src.utils.diff_tools import GakumasuDiffItemDataUtils
+from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
 from src.utils.game_tools import modal_body_extract_item_info
 from src.core.inference.ocr_engine import OCRService, OCR_ResultList
 from src.utils.opencv_tools import check_color
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from src.main import AppProcessor
 
 ocr_service = OCRService()
-item_db = GakumasuDiffItemDataUtils(DataPath.GakumasuDiffData.ITEM)
+item_db = GakumasDatabase_ItemDataUtils()
 
 def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
     logger.info(f"Shopping list: {commodity_target}")
@@ -116,9 +116,8 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 item_name = ocr_results.get_y_min()
                 status, result = item_db.search(item_name.text)
                 if status:
-                    _item = Item(result.id, result.name, result.description)
-                    app.clip_manager.item_clip.add_to_memory(modal_item_image, _item, 0.99)
-                    app.clip_manager.item_clip.add_to_memory(yolo_result_item, _item, 0.99)
+                    app.clip_manager.item_clip.add_to_memory(modal_item_image, result, 0.99)
+                    app.clip_manager.item_clip.add_to_memory(yolo_result_item, result, 0.99)
                 else:
                     os.makedirs(DebugPath.UnknownItem, exist_ok=True)
                     cv2.imwrite(os.path.join(DebugPath.UnknownItem, f"item_info_{index}.png"), item_info)
@@ -192,3 +191,5 @@ def action__daily_exchange(app: "AppProcessor"):
         app.device.click_element(tab_item)
         sleep(2)
         _exchange_items(app, commodity_target)
+
+    return True

@@ -1,6 +1,12 @@
-from src.constants.text.button_text import ButtonText
-from src.constants.text.modal_text import ModalText
+import time
+
+import cv2
+
+from src.constants.game.text.button_text import ButtonText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
+from src.core.device.Android.app import Android_App
+from src.core.device.Windows.app import Windows_App
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
 from src.core.tasks.base_ui.auto_purchase import action__receive_weekly_gift, action__daily_exchange
@@ -21,6 +27,7 @@ from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
+from src.utils.opencv_tools import is_white_screen
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
@@ -31,17 +38,67 @@ GAME_RUNNING = False
 def register_tasks(processor: "AppProcessor"):
 
     @processor.task_queue.register_pre_queue_start()
+    def _pre__check_adb_connect():
+        """
+        检查ADB连接并尝试重连
+        :return:
+        """
+        def _check():
+            try:
+                logger.debug(f"device bool: {bool(processor.device)}, try capture size={processor.device.capture().size}")
+                # if processor.device.capture().size != 0:
+                #     cv2.imshow("try capture", processor.device.capture())
+                #     cv2.waitKey(1)
+                return bool(processor.device) and processor.device.capture().size != 0
+            except:
+                return False
+        if isinstance(processor.device, Android_App):
+            MAX_TRY = 3
+            TRY_COUNT = 0
+            while TRY_COUNT < MAX_TRY:
+                if not _check():
+                    logger.warning(f"[{TRY_COUNT}]Adb connect disconnect, Try reconnect")
+                    processor.create_device_instance()
+                else:
+                    return True
+                if _check():
+                    logger.success(f"Adb reconnection was successful")
+                    return True
+                sleep(1)
+                TRY_COUNT += 1
+            logger.error(f"The maximum number of adb reconnections has been reached")
+            return False
+        return True
+
+    @processor.task_queue.register_pre_queue_start()
     def _pre__start_game():
         global GAME_RUNNING
         GAME_RUNNING = False
         TIMEOUT = 120
         COUNT = 0
         if not processor.config_service().base.auto_start_game.value:
-            return
+            return True
         logger.debug(f"Game running: {processor.device.is_app_running()}")
         if processor.device.is_app_running():
             GAME_RUNNING = True
-            return
+            # 将游戏切换到前台
+            if not processor.device.is_app_focused():
+                logger.debug(f"Game switch to front......")
+                if isinstance(processor.device, Windows_App):
+                    processor.device.bring_to_front()
+                else:
+                    processor.device.start_game()
+
+                    # 检测白屏
+                    start_time = time.time()
+                    while time.time() - start_time < 3:
+                        screenshot = processor.device.capture()  # 截取屏幕
+                        if is_white_screen(screenshot):
+                            logger.debug("White screen detected, setting GAME_RUNNING to False.")
+                            GAME_RUNNING = False
+                            return True
+            sleep(1)  # 每秒检查一次
+            return True
         processor.device.start_game()
         while not processor.device.is_app_running():
             if COUNT >= TIMEOUT:
@@ -63,7 +120,7 @@ def register_tasks(processor: "AppProcessor"):
         TIMEOUT = 120
         COUNT = 0
         if GAME_RUNNING:
-            return
+            return True
         logger.debug("wait game start......")
         while not processor.latest_results.exists_label(BaseUILabels.START_MENU_LOGO):
             if COUNT >= TIMEOUT:
@@ -71,6 +128,12 @@ def register_tasks(processor: "AppProcessor"):
             COUNT += 1
             sleep(1)
         return True
+
+    # @processor.task_queue.register_task("suspend_test", "挂起测试", -1, True, True)
+    # def _task__suspend_test(app: "AppProcessor"):
+    #     logger.debug("[start]suspend test")
+    #     sleep(10)
+    #     logger.debug("[end]suspend test")
 
     @processor.task_queue.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):

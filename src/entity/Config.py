@@ -65,6 +65,8 @@ class _BaseConfigGroup:
         return "\n".join(lines)
 
 class _Base(_BaseConfigGroup):
+    """脚本基本配置"""
+
     # 脚本运行模式
     run_mode = ConfigItem(default_value="PC", data_type=str, verify=r"Phone|PC", use_verify=True)
     # 游戏窗口名
@@ -108,6 +110,7 @@ class _Base(_BaseConfigGroup):
     auto_startup_time = ConfigItem(default_value="12:00", data_type=str)
 
 class _Task:
+    """任务配置"""
 
     class DispatchWork(_BaseConfigGroup):
         # 每次重新配置工作时间
@@ -120,6 +123,10 @@ class _Task:
         weekly_gift = ConfigItem(default_value=True, data_type=bool)
         # 每日购买的物品
         daily_buy_list = ConfigItem(default_value=[], data_type=list)
+        # 自动刷新可购买列表（免费）
+        refresh_shop = ConfigItem(default_value=True, data_type=bool)
+        # 使用石头刷新列表
+        use_gem_refresh = ConfigItem(default_value=False, data_type=bool)
 
     class AutoContest(_BaseConfigGroup):
         # 挑战前自动重新配置队伍
@@ -128,6 +135,7 @@ class _Task:
         challenge_order = ConfigItem(default_value="random", data_type=str, verify=r"random|highest_power|lowest_power|balanced_power", use_verify=True)
 
 class _DMMPlayerConfig(_BaseConfigGroup):
+    """DMMPlayer启动器配置"""
     game_exe_path = ConfigItem(default_value="", data_type=str)
     viewer_id = ConfigItem(default_value="", data_type=str)
     open_id = ConfigItem(default_value="", data_type=str)

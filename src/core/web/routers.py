@@ -11,9 +11,9 @@ from src.core.web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
 
 from src.entity.Config import Config
-from src.utils.diff_tools import GakumasuDiffItemDataUtils
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
-from src.utils.i18n_tools import I18nJsonUtils
+from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
+# from src.utils.i18n_tools import I18nJsonUtils
 from src.utils.opencv_tools import get_black_image
 
 if TYPE_CHECKING:
@@ -27,8 +27,8 @@ def _api_return(status: bool, message: str = '', data: dict | list = None):
     }
 
 def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
-    item_db = GakumasuDiffItemDataUtils(DataPath.GakumasuDiffData.ITEM)
-    item_translation = I18nJsonUtils(DataPath.GakumasTranslationData.ITEM)
+    item_db = GakumasDatabase_ItemDataUtils(DataPath.GakumasuDiffData.ITEM)
+    # item_translation = I18nJsonUtils(DataPath.GakumasTranslationData.ITEM)
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
@@ -225,17 +225,16 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         items = item_db.get_all_item()
         all_items = []
         for item in items:
-            translation = item_translation.get_by_id(item.id)
             all_items.append({
                 "id": item.id,
                 "name": item.name,
                 "description": item.description,
                 "acquisitionRouteDescription": item.acquisitionRouteDescription,
                 "translation": {
-                    "name": translation.name,
-                    "description": translation.description,
-                    "acquisitionRouteDescription": translation.acquisitionRouteDescription,
-                } if translation else {},
+                    "name": item.localization.name,
+                    "description": item.localization.description,
+                    "acquisitionRouteDescription": item.localization.acquisitionRouteDescription,
+                } if item.localization else {},
                 "image": os.path.exists(os.path.join(processor.data_path, f"CLIP/items/{item.id}.png")),
             })
         return _api_return(True, "OK", all_items)

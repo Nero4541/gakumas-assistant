@@ -1,15 +1,14 @@
 import random
 from time import sleep
+from typing import TYPE_CHECKING
 
-from src.constants.text.button_text import ButtonText
-from src.constants.text.modal_text import ModalText
+from src.constants.game.text.button_text import ButtonText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
-from src.entity.Game.Components.Button import ButtonList, Button
+from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.logger import logger
-from typing import TYPE_CHECKING
-
 from src.utils.string_tools import MatchConfig
 
 if TYPE_CHECKING:

@@ -197,7 +197,8 @@ class CLIPModelFromONNX:
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 
-    def _preprocess(self, image: np.ndarray) -> np.ndarray:
+    @staticmethod
+    def _preprocess(image: np.ndarray) -> np.ndarray:
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image, _, (_, _) = letterbox(image, (224, 224))
         image = center_crop(image)
@@ -208,7 +209,7 @@ class CLIPModelFromONNX:
         image = np.transpose(image, (2, 0, 1))  # [HWC] -> [CHW]
         return image[np.newaxis, :].astype(np.float32)
 
-    def forward(self, image: np.ndarray) -> np.ndarray | None:
+    def forward(self, image: np.ndarray) -> Optional[np.ndarray]:
         input_tensor = self._preprocess(image)
         with self._lock:
             output = None

@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from time import sleep
 
-from src.constants.text.modal_text import ModalText
+from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger

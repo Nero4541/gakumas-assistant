@@ -16,7 +16,10 @@ class _BaseCLIPPayload(BaseModel):
         MODEL_REGISTRY[cls.__name__] = cls   # 自动注册模型类
 
 class CLIPayload_Item(_BaseCLIPPayload):
-    item_id = CharField(unique=True)
+    id = CharField(unique=True)
+
+class CLIPayload_SkillCard(_BaseCLIPPayload):
+    id = CharField(unique=True)
 
 class CLIPMemory(BaseModel):
     uuid = UUIDField(default=uuid4, unique=True, primary_key=True)
