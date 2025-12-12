@@ -27,6 +27,9 @@ def ignore_unnecessary(dir, files):
     ignore_list = ['.git', '.gitignore', '__pycache__', '.DS_Store']
     return [f for f in files if f in ignore_list]
 
+def update_game_database():
+    subprocess.run(["git", "submodule", "update"], shell=True, check=True)
+
 def build_webui():
     npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
     os.chdir("web-ui")
@@ -35,10 +38,11 @@ def build_webui():
     os.chdir("..")
 
 def build_project():
+    if os.getenv("GITHUB_ACTIONS"):
+        update_game_database()
     build_webui()
     nuitka_cmd = [
         "--standalone",
-        "--show-progress",
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=pytouch",
         "--nofollow-import-to=touch",
@@ -47,11 +51,12 @@ def build_project():
         f'--output-dir={NUITKA_OUTPUT_DIR}',
         f'--linux-icon={LOGO}',
         f'--windows-icon-from-ico={LOGO}',
-        "--windows-disable-console",
+        "--windows-console-mode=attach",
+        "--no-deployment-flag=self-execution",
     ]
 
-    if os.getenv("GITHUB_ACTIONS", None) is not None:
-        nuitka_cmd.append("--low-memory")
+    if not os.getenv("GITHUB_ACTIONS"):
+        nuitka_cmd.append("--show-progress")
 
     for item in COPY_SITE_PACKAGES_FILES:
         target = os.path.join(sysconfig.get_paths()['purelib'], item)
@@ -63,7 +68,7 @@ def build_project():
     subprocess.run([sys.executable, "-m", "nuitka"] + nuitka_cmd + ["app.py"], shell=True, check=True)
     app_dist_path = os.path.join(NUITKA_OUTPUT_DIR, "app.dist")
     for key, value in COPY_ASSETS.items():
-        print(f"{key}->{app_dist_path}/{value}")
+        print(f"[copy]{key}->{app_dist_path}/{value}")
         if os.path.isdir(key):
             shutil.copytree(key, os.path.join(app_dist_path, value), dirs_exist_ok=True, ignore=ignore_unnecessary)
         else:

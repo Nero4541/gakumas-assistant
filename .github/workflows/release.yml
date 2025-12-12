@@ -78,6 +78,7 @@ jobs:
         run: |
           python build_app.py
         env:
+          CFLAGS: "/Zm200"
           GITHUB_ACTIONS: "True"
 
       - name: Compress Output

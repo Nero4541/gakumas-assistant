@@ -17,6 +17,8 @@ import win32gui
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
 from src.utils.logger import logger
+from src.utils.system_tools import is_compiled
+
 
 class Windows_App(BaseDevice):
     __window_name: str
@@ -26,7 +28,11 @@ class Windows_App(BaseDevice):
     def __init__(self):
         if not self._is_admin():
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
-            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            if is_compiled():
+                args = " ".join(sys.argv[1:])
+            else:
+                args = " ".join(sys.argv)
+            ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, args, None, 1)
             sys.exit()
         ctypes.windll.user32.SetProcessDPIAware()
 
