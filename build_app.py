@@ -13,7 +13,7 @@ NUITKA_OUTPUT_DIR = "out"
 LOGO = "./assets/images/gakumas_logo.png"
 COPY_ASSETS = {
     "assets": "assets",
-    # "bin": "bin",
+    "bin": "bin",
     "model": "model",
     "dist": "dist"
 }
@@ -33,7 +33,7 @@ def update_game_database():
 def build_webui():
     npm_cmd = "npm.cmd" if platform.system() == "Windows" else "npm"
     os.chdir("web-ui")
-    subprocess.run([npm_cmd, "install"], shell=True, check=True)
+    subprocess.run([npm_cmd, "install", "--force"], shell=True, check=True)
     subprocess.run([npm_cmd, "run", "build"], shell=True, check=True)
     os.chdir("..")
 
