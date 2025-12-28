@@ -52,6 +52,8 @@ def _handle__modal_boxes(app: "AppProcessor"):
 
 def action__wait_enter_home(app: "AppProcessor"):
     """动作：检查主界面标识是否存在"""
+    COUNT:int = 0
+    REQUIRED_COUNT:int = 3
     while True:
         if close_btn := app.latest_results.filter_by_label(BaseUILabels.CLOSE_BUTTON):
             app.device.click_element(close_btn.first())
@@ -62,7 +64,15 @@ def action__wait_enter_home(app: "AppProcessor"):
         elif app.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
             _handle__modal_boxes(app)
         elif app.latest_results.filter_by_label(BaseUILabels.TAB_HOME):
-            return True
+            for i in range(REQUIRED_COUNT):
+                sleep(1)
+                if app.latest_results.filter_by_label(BaseUILabels.TAB_HOME):
+                    COUNT += 1
+                    continue
+                COUNT = 0
+                break
+            if COUNT >= REQUIRED_COUNT:
+                return True
         else:
             height, width = app.latest_frame.shape[:2]
             app.device.click(width // 3, height // 2)

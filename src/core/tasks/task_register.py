@@ -82,6 +82,9 @@ def register_tasks(processor: "AppProcessor"):
         while True:
             if time.time() - START_TIME > TIMEOUT:
                 raise TimeoutError()
+            if processor.yolo_engine.latest_frame is None:
+                sleep(0.25)
+                continue
             if processor.yolo_engine.latest_frame.size != 0:
                 break
 
@@ -143,12 +146,6 @@ def register_tasks(processor: "AppProcessor"):
             COUNT += 1
             sleep(1)
         return True
-
-    # @processor.task_queue.register_task("suspend_test", "挂起测试", -1, True, True)
-    # def _task__suspend_test(app: "AppProcessor"):
-    #     logger.debug("[start]suspend test")
-    #     sleep(10)
-    #     logger.debug("[end]suspend test")
 
     @processor.task_queue.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
     def _task__start_game(app: "AppProcessor"):

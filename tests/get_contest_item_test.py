@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 # 加载图像
-img = cv2.imread("contest_list.png")
+img = cv2.imread(r"E:\Projects\gkmas-auto\logs\debug\images\NotEnoughContests\contest_area__0.png")
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
 # HSV颜色范围（你提供的）

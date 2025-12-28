@@ -4,11 +4,14 @@ from typing import List
 
 import cv2
 import numpy as np
+from copy import copy
 
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.inference.ocr_engine import OCRService, OCR_Result
 from src.utils.opencv_tools import gen_color_mask, filter_by_rectangle_shape
+from src.utils.string_tools import string_match, MatchConfig
+from src.utils.logger import logger
 
 ocr_service = OCRService()
 
@@ -54,16 +57,23 @@ class ContestList:
     _end_y: float
 
     def __init__(self, results: Yolo_Results, frame: np.ndarray):
-        _, width, _ = self.contest_area.shape
+        _, width, _ = frame.shape
         if not results.filter_by_label(BaseUILabels.BUTTON):
+            logger.debug("Not find button")
             return
         self._start_y = results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first().h
         self._end_y = results.filter_by_label(BaseUILabels.BACK_BTN).first().y
+        logger.debug(f"start_y={self._start_y}, end_y={self._end_y}")
         self.contest_area = frame[self._start_y:self._end_y, 0:width]
-        if self.contest_area.size == 0:
+        if self.contest_area is None or self.contest_area.size == 0:
+            logger.debug("No contest area")
             return
-        if not [res for res in ocr_service.ocr(self.contest_area) if "消費しました" in res.text]:
-            self._get_contest_items()
+        contest_area_ocr = "".join([res.text for res in ocr_service.ocr(self.contest_area)])
+        if string_match(contest_area_ocr, "消費しました", MatchConfig(fuzz_threshold=70)):
+            logger.debug("Today's challenge opportunities have all been used up")
+            return
+        self.contests = []
+        self._get_contest_items()
 
     def __str__(self):
         return str(self.contests)
@@ -81,7 +91,6 @@ class ContestList:
         self.contests.append(ContestItem(x, y, w, h, f"contest_{len(self.contests) + 1}",frame))
 
     def _get_contest_items(self):
-        self.contests = []
         height, width, _ = self.contest_area.shape
         total_pixels = height * width  # 总像素数
 
@@ -100,9 +109,10 @@ class ContestList:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.dilate(mask, kernel, iterations=2)
-
+        # cv2.imshow("Contests - mask", mask)
+        # result = copy(self.contest_area)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = filter_by_rectangle_shape(contours, total_pixels // 4)
+        # contours = filter_by_rectangle_shape(contours, total_pixels // 4)
         # 依次提取每个区域
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
@@ -115,7 +125,7 @@ class ContestList:
                 continue
         #     cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
         # cv2.imshow("Contours - Filtered", result)
-        # cv2.waitKey(0)
+        # cv2.waitKey(1)
 
     def _get_valid_contests(self) -> List[ContestItem]:
         return [r for r in self.contests if r.combat_power is not None]

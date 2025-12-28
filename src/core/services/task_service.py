@@ -180,7 +180,8 @@ class TaskQueue:
                 if result is False:
                     raise RuntimeError(f"Task pre function {func.__name__} error")
             except Exception as e:
-                raise RuntimeError(f"Task pre function {func.__name__} failed: {e}")
+                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
+                raise RuntimeError(f"Task pre function {func.__name__} failed: \n{tb_str}")
         return True
 
     def exec_task(self, task_id: str = None):

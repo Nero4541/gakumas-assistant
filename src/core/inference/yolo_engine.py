@@ -124,11 +124,19 @@ class YoloInferenceEngine:
 
     @property
     def latest_frame(self):
-        return self._latest_results.frame
+        try:
+            return self._latest_results.frame
+        except Exception as e:
+            logger.warning(f"Get latest frame error: {e}")
+            return None
 
     @property
     def latest_results(self):
-        return self._latest_results
+        try:
+            return self._latest_results
+        except Exception as e:
+            logger.warning(f"Get latest results error: {e}")
+            return None
 
     @property
     def model_type(self):

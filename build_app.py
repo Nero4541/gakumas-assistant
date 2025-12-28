@@ -20,7 +20,9 @@ COPY_ASSETS = {
 COPY_SITE_PACKAGES_FILES = [
     "rapidocr/models",
     "rapidocr/default_models.yaml",
-    "rapidocr/config.yaml"
+    "rapidocr/config.yaml",
+    "LICENSE",
+    "README.md",
 ]
 
 def ignore_unnecessary(dir, files):

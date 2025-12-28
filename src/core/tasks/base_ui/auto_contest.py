@@ -1,5 +1,6 @@
 import os
 import random
+import traceback
 from time import sleep
 from typing import TYPE_CHECKING
 
@@ -48,7 +49,9 @@ def action__loop_challenge_contest(app: "AppProcessor"):
             try:
                 contest = ContestList(app.latest_results, app.latest_frame)
             except Exception as e:
-                logger.error(e)
+                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
+                logger.error(tb_str)
+                sleep(1)
                 continue
             logger.debug(contest)
             if contest and len(contest) == 3:
@@ -56,7 +59,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
             os.makedirs(DebugPath.NotEnoughContests, exist_ok=True)
             cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_area__{i}.png"), contest.contest_area)
             for index, item in enumerate(contest.contests):
-                cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}"), item.frame)
+                cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}.png"), item.frame)
             sleep(1)
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")
@@ -140,4 +143,6 @@ def _finish_battle(app: "AppProcessor"):
             return
         if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
             modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
+            if modal is None:
+                continue
             app.device.click_element(modal.cancel_button)

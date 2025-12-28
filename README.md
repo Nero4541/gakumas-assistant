@@ -122,3 +122,5 @@ Unless required by applicable law or agreed to in writing, software distributed 
 游戏数据
 - **[GakumasTranslationData](https://github.com/chinosk6/GakumasTranslationData.git)**  
 游戏文本翻译
+- **[Gakumas_Launcher](https://github.com/a4nqi3n/Gakumas_Launcher)**
+脱离DMMPlayer启动游戏

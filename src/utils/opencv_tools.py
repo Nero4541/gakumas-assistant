@@ -50,7 +50,7 @@ def get_mark_y_position(img, lower_color, upper_color, roi_y, roi_h):
             mark_y = min(_y, mark_y)
     return mark_y
 
-def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04):
+def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04, threshold=0.8):
     """根据面积和矩形程度筛选轮廓"""
     rect_contours = []
 
@@ -72,7 +72,7 @@ def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04):
             bounding_rect_area = w * h
 
             # 形状相似度检查：比值接近 1.0 代表轮廓和它的外接矩形非常接近
-            if area / bounding_rect_area > 0.8:
+            if area / bounding_rect_area > threshold:
                 rect_contours.append(contour)
 
     return rect_contours
