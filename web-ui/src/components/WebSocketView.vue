@@ -6,13 +6,12 @@
 
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import { wsService } from '@/scripts/utils/websocket.ts'
 
 const canvasRef = ref(null)
 const containerRef = ref(null)
 let lastBuffer = null
 let resizeObserver = null
-let socket = null
-let reconnectTimer = null
 let currentImgUrl = null
 
 function parseBinaryData (buffer) {
@@ -112,41 +111,12 @@ function drawPlaceholder (text) {
   ctx.fillText(text, rect.width / 2, rect.height / 2)
 }
 
-function connectWebSocket () {
-  if (socket) {
-    socket.close()
-    socket = null
-  }
-  drawPlaceholder('连接中......')
 
-  socket = new WebSocket(`ws://${location.host}/ws`)
-  socket.binaryType = 'arraybuffer'
-
-  socket.onmessage = event => {
-    if (event.data instanceof ArrayBuffer) {
-      renderToCanvas(event.data)
-    }
-  }
-
-  socket.onopen = () => {
-    if (reconnectTimer) {
-      clearTimeout(reconnectTimer)
-      reconnectTimer = null
-    }
-  }
-
-  socket.onerror = () => {
-    socket.close()
-  }
-
-  socket.onclose = () => {
-    drawPlaceholder('正在重建连接......')
-    reconnectTimer = setTimeout(connectWebSocket, 1000)
-  }
-}
 
 onMounted(() => {
-  connectWebSocket()
+  wsService.onBinary(data => {
+    renderToCanvas(data)
+  })
 
   const container = containerRef.value
   if (!container) return
@@ -165,14 +135,6 @@ onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
-  }
-  if (socket) {
-    socket.close()
-    socket = null
-  }
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer)
-    reconnectTimer = null
   }
   if (currentImgUrl) {
     URL.revokeObjectURL(currentImgUrl)

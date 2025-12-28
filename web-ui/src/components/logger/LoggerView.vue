@@ -21,6 +21,9 @@
 </template>
 
 <script setup>
+import {wsService} from "@/scripts/utils/websocket.js";
+import {WS_ACTION} from "@/scripts/constants.ts";
+
 const props = defineProps({
   auto_scroll: {
     type: Boolean,
@@ -28,13 +31,7 @@ const props = defineProps({
   }
 })
 
-const logs = ref([
-  "[INFO] 系统启动完成",
-  "[DEBUG] 数据库初始化成功",
-  "[WARN] 网络连接不稳定",
-  "[ERROR] 无法连接服务器",
-  "[INFO] 后台任务已启动",
-]);
+const logs = ref([]);
 
 const logClass = (line) => {
   if (line.includes("ERROR")) return "log-error";
@@ -67,11 +64,9 @@ watch([() => logs.value.length, () => props.auto_scroll], async () => {
 //   if (el) el.scrollTop = el.scrollHeight;
 // });
 
-// 模拟日志流入
-setInterval(() => {
-  logs.value.push(`[${new Date().toLocaleTimeString()}] 日志行 ${logs.value.length + 1}`);
-  // if (logs.value.length > 200) logs.value.shift(); // 保持有限长度
-}, 100);
+wsService.on(WS_ACTION.BroadcastLog, data => {
+  logs.value.push(data.message);
+})
 </script>
 
 <style scoped>

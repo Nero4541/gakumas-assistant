@@ -15,7 +15,7 @@ let load_status = ref(false)
 function load_device_list() {
   load_status.value = false
   apis.get_all_adb_device(props.only_usb_device).then((res) => {
-    device = res.data.device;
+    device = res.data.devices;
     load_status.value = true
   })
 }
@@ -25,7 +25,6 @@ load_device_list()
 
 <template>
   <v-list-item>
-<!--    <v-skeleton-loader v-if="!load_status" type="list-item-two-line"/>-->
     <v-select
       :items="device"
       :loading="!load_status"

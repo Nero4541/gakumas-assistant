@@ -8,6 +8,7 @@ import numpy as np
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.inference.ocr_engine import OCRService, OCR_Result
+from src.utils.opencv_tools import gen_color_mask, filter_by_rectangle_shape
 
 ocr_service = OCRService()
 
@@ -51,15 +52,14 @@ class ContestList:
     contest_area: np.ndarray
     _start_y: float
     _end_y: float
-    _width: float
 
     def __init__(self, results: Yolo_Results, frame: np.ndarray):
-        _, self._width = frame.shape[:2]
+        _, width, _ = self.contest_area.shape
         if not results.filter_by_label(BaseUILabels.BUTTON):
             return
         self._start_y = results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first().h
         self._end_y = results.filter_by_label(BaseUILabels.BACK_BTN).first().y
-        self.contest_area = frame[self._start_y:self._end_y, 0:self._width]
+        self.contest_area = frame[self._start_y:self._end_y, 0:width]
         if self.contest_area.size == 0:
             return
         if not [res for res in ocr_service.ocr(self.contest_area) if "消費しました" in res.text]:
@@ -82,23 +82,33 @@ class ContestList:
 
     def _get_contest_items(self):
         self.contests = []
-        hsv = cv2.cvtColor(self.contest_area, cv2.COLOR_BGR2HSV)
-        mask = cv2.inRange(hsv, (90,0,120), (104,255,142))
-        # 闭运算连接碎块
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 3))
+        height, width, _ = self.contest_area.shape
+        total_pixels = height * width  # 总像素数
+
+        # 灰色
+        lower1 = (0,0,75)
+        upper1 = (179,75,140)
+        # 白色
+        lower2 = (0,0,235)
+        upper2 = (179,15,255)
+
+        mask1 = gen_color_mask(self.contest_area, lower1, upper1)
+        mask2 = gen_color_mask(self.contest_area, lower2, upper2)
+        mask = cv2.bitwise_or(mask1, mask2)
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
-        # 膨胀扩大连通区域
-        mask = cv2.dilate(mask, kernel, iterations=1)
-        # cv2.imshow("mask", mask)
-        # 查找轮廓
+        # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.dilate(mask, kernel, iterations=2)
+
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # result = self.contest_area.copy()
+        contours = filter_by_rectangle_shape(contours, total_pixels // 4)
         # 依次提取每个区域
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
 
             # 筛选条件 宽度必须大于帧宽度的一半
-            if w > self._width * 0.5 and h > 30:
+            if w > width * 0.5 and h > height // 4:
                 roi = self.contest_area[y:y+h, x:x+w]
                 self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
                 # cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)

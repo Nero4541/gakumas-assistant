@@ -10,3 +10,4 @@ class DebugPath:
         return cls.__base
 
     UnknownItem = os.path.join(__base_image, "UnknownItem")
+    NotEnoughContests = os.path.join(__base_image, "NotEnoughContests")

@@ -1,20 +1,23 @@
+import json
 import os.path
 from copy import copy
 
 import adbutils
+import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.constants.path.data_path import DataPath
+from src.constants.websocket_actions import WebsocketActions
 from src.core.web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
 
 from src.entity.Config import Config
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
-# from src.utils.i18n_tools import I18nJsonUtils
 from src.utils.opencv_tools import get_black_image
+from src.utils.logger import logger
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -28,15 +31,20 @@ def _api_return(status: bool, message: str = '', data: dict | list = None):
 
 def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
     item_db = GakumasDatabase_ItemDataUtils(DataPath.GakumasuDiffData.ITEM)
-    # item_translation = I18nJsonUtils(DataPath.GakumasTranslationData.ITEM)
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
-        if not processor.yolo_engine.running:
-            await websocket.send_bytes(f"{640},{640}".encode('utf-8') + b"," + get_black_image((640, 640)))
+        await asyncio.sleep(1)
         try:
+            await websocket.send_bytes(f"{640},{640}".encode('utf-8') + b"," + get_black_image((640, 640)))
             while True:
-                await websocket.receive_text()
+                data = await websocket.receive_json()
+                if not data.get("action"):
+                    continue
+                action = data.get("action")
+                data = data.get("data")
+                if action == WebsocketActions.BaseActionFlag + ":" + WebsocketActions.WebsocketHeartBeat.Ping:
+                    await ws_manager.send_action(websocket, WebsocketActions.WebsocketHeartBeat.Pong)
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
 

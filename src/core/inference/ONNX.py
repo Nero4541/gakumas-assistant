@@ -68,6 +68,8 @@ class YoloModelFromONNX:
         初始化ONNX模型
         :param model_path: 模型地址
         """
+        if not os.path.exists(model_path) or not os.path.isfile(model_path):
+            raise FileNotFoundError(model_path)
         self._model_dir, self._model_file = os.path.split(model_path)
         self._model_name = os.path.splitext(self._model_file)[0]
         self._load_model_meta()
@@ -193,7 +195,7 @@ class CLIPModelFromONNX:
     def __init__(self, model_path: str=None):
         if not model_path or not os.path.exists(model_path):
             model_path = os.path.join(os.getcwd(), "model", "clip_visual.onnx")
-        self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(model_path, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 

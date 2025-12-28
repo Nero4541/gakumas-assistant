@@ -3,9 +3,9 @@ import apis from "@/scripts/apis.js";
 import auto_purchase_setting from "@/components/lists/config/task_settings/auto_purchase_setting.vue"
 import auto_contest_setting from "@/components/lists/config/task_settings/auto_contest_setting.vue";
 import dispatch_work_setting from "@/components/lists/config/task_settings/dispatch_work_setting.vue";
-const props = defineProps({
-  data: Object
-})
+import { useAppStore } from "@/stores/app.js";
+
+const app_store = useAppStore();
 
 const settingComponents = {
   auto_purchase: auto_purchase_setting,
@@ -67,7 +67,7 @@ function formatRelativeTime(ts) {
 
     <v-expansion-panels variant="accordion">
       <v-expansion-panel
-        v-for="(task, task_name) in props.data"
+        v-for="(task, task_name) in app_store.task_list"
         :key="task_name"
         elevation="1"
       >

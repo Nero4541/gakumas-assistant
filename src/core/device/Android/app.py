@@ -20,7 +20,7 @@ class Android_App(BaseDevice):
     __config_service: ConfigService
     __adb_host: str
     __adb_port: int
-    __adb_device: adbutils.AdbDevice
+    __adb_device: adbutils.AdbDevice = None
     __u2_device: Optional[u2.Device] = None
     __package_name: str
     __connect_mode: str
@@ -38,7 +38,8 @@ class Android_App(BaseDevice):
         self.__adb_port = self.__config_service().base.adb_port.value
         self.__screen_capture_service = self.__config_service().base.android_screen_capture_service.value
         self.__screen_touch_service = self.__config_service().base.android_touch_service.value
-        self.__connect_ADB()
+        if not self.__connect_ADB():
+            return
         self.__init_capture_service()
         if (
             self.__screen_capture_service == ADBOperation.ScreenCaptureService.uiautomator2
@@ -50,16 +51,15 @@ class Android_App(BaseDevice):
         if self.__capture_service_shell is not None:
             self.__capture_service_shell.close()
 
-
     def __bool__(self) -> bool:
         return bool(self.__adb_device)
 
     def __connect_ADB(self) -> bool:
         if self.__connect_mode == ADBConnectMode.USB:
-            if self.__adb_serial not in adbutils.adb.device_list():
+            if self.__adb_serial not in [dev.serial for dev in adbutils.adb.device_list()]:
                 logger.error(f"Invalid ADB serial: {self.__adb_serial}")
                 return False
-            logger.debug(f"Tray connect ADB(serial: {self.__adb_serial})")
+            logger.debug(f"Try connect ADB(serial: {self.__adb_serial})")
             try:
                 self.__adb_device = adbutils.adb.device(serial=self.__adb_serial)
             except Exception as e:
@@ -69,7 +69,7 @@ class Android_App(BaseDevice):
         elif self.__connect_mode == ADBConnectMode.NETWORK:
             self._adb_host = self.__config_service().base.adb_host.value
             self._adb_port = self.__config_service().base.adb_port.value
-            logger.debug(f"Tray connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
+            logger.debug(f"Try connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
             adbutils.adb.connect(f"{self.__adb_host}:{self.__adb_port}")
             try:
                 self.__adb_device = adbutils.adb.device(f"{self.__adb_host}:{self.__adb_port}")
@@ -98,7 +98,10 @@ class Android_App(BaseDevice):
             case ADBOperation.ScreenCaptureService.DroidCast:
                 self.__droidcast_service_status, self.__capture_service_shell = start_DroidCast(self.__adb_device)
             case _:
-                logger.error(f"Not support capture service: {screen_capture_service}")
+                self.__screen_capture_service = ADBOperation.ScreenCaptureService.ADB
+                self.__config_service().base.android_screen_capture_service.value = ADBOperation.ScreenCaptureService.ADB
+                self.__config_service.save_config()
+                logger.warning(f"Not support capture service: '{self.__screen_capture_service}', reverted to ADB")
 
     def start_game(self):
         """启动游戏"""
@@ -141,6 +144,12 @@ class Android_App(BaseDevice):
                     return self.__u2_device
                 return self.__adb_device
             case ADBOperation.TouchService.ADB:
+                return self.__adb_device
+            case _:
+                self.__screen_touch_service = ADBOperation.TouchService.ADB
+                self.__config_service().base.android_touch_service.value = ADBOperation.TouchService.ADB
+                self.__config_service.save_config()
+                logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 return self.__adb_device
 
     def _scroll(self, x, y, direction, scroll_delta):
@@ -197,7 +206,9 @@ class Android_App(BaseDevice):
         """点击指定坐标"""
         self.__get_touch_service().click(x, y)
 
-    def capture(self) -> np.ndarray:
+    def capture(self) -> Optional[np.ndarray]:
+        if not self.__bool__():
+            return None
         match self.__config_service().base.android_screen_capture_service.value:
             case ADBOperation.ScreenCaptureService.ADB:
                 return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
@@ -211,4 +222,5 @@ class Android_App(BaseDevice):
             case ADBOperation.ScreenCaptureService.uiautomator2:
                 return self.__u2_device.screenshot(format='opencv')
             case _:
-                raise RuntimeError(f"Can't capture screenshot")
+                logger.warning(f"Undefined screenshot service {self.__config_service().base.android_screen_capture_service.value}, reverted to ADB")
+                return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)

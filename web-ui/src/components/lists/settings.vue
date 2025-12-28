@@ -1,26 +1,14 @@
 <script setup>
-import apis from "@/scripts/apis.js";
-import message from "@/scripts/utils/message.js";
 import Base__disabled_task_list from "@/components/lists/config/base/base__disabled_task_list.vue";
 import app from "@/main.js";
 import dialogs from "@/scripts/utils/dialogs.js";
+import {useAppStore} from "@/stores/app.ts";
 
-const props = defineProps({
-  data: Object
-})
+const appStore = useAppStore();
 
-function save() {
-  apis.save_config(props.data).then((response) => {
-    props.data = response.data
-    message.showSuccess("设置保存成功，部分设置可能需要重启生效")
-  })
-}
 function reset() {
   dialogs.confirm("是否要重置所有设置项", "请谨慎操作，该操作回导致所有设置项恢复默认（包括任务设置）").then(() => {
-    apis.reset_config().then(response => {
-      props.data = response.data
-      message.showSuccess("设置重置完成，部分设置可能需要重启生效")
-    })
+    appStore.reset_config();
   }).catch((err) => {
     console.log("用户取消")
   })
@@ -33,18 +21,18 @@ function reset() {
     <v-divider/>
     <v-list nav>
       <v-list-item subtitle="基础设置"/>
-      <base__run_mode :data="props.data"/>
+      <base__run_mode :data="appStore.config"/>
       <v-list-item>
         <v-switch
-          v-model="props.data.base.auto_start_game.value"
+          v-model="appStore.config.base.auto_start_game.value"
           label="自动启动游戏"
           hint="当游戏未启动时是否自动启动游戏"
           persistent-hint
         />
       </v-list-item>
-      <base__pc :data="props.data" v-if="props.data.base.run_mode.value === 'PC'"/>
-      <base__phone :data="props.data" v-if="props.data.base.run_mode.value === 'Phone'"/>
-      <base__disabled_task_list :data="props.data"/>
+      <base__pc :data="appStore.config" v-if="appStore.config.base.run_mode.value === 'PC'"/>
+      <base__phone :data="appStore.config" v-if="appStore.config.base.run_mode.value === 'Phone'"/>
+      <base__disabled_task_list/>
       <v-divider/>
       <v-list-item>
         <v-switch
@@ -52,12 +40,12 @@ function reset() {
           hint="未实现"
           :color="app.config.globalProperties.$theme.color"
           persistent-hint
-          v-model="props.data.base.enabled_auto_startup.value"
+          v-model="appStore.config.base.enabled_auto_startup.value"
         />
       </v-list-item>
       <v-list-item>
         <v-text-field
-          v-model="props.data.base.auto_startup_time.value"
+          v-model="appStore.config.base.auto_startup_time.value"
           label="自动运行触发时间"
           readonly
         >
@@ -66,7 +54,7 @@ function reset() {
             activator="parent"
             min-width="0"
           >
-            <v-time-picker v-model="props.data.base.auto_startup_time.value" format="24hr"></v-time-picker>
+            <v-time-picker v-model="appStore.config.base.auto_startup_time.value" format="24hr"></v-time-picker>
           </v-menu>
         </v-text-field>
       </v-list-item>
@@ -75,7 +63,7 @@ function reset() {
       <div class="pa-2 mb-2 mt-2">
         <v-btn
           class="mr-2"
-          @click="save()"
+          @click="appStore.save_config()"
           color="green"
           append-icon="md:save"
         >

@@ -12,7 +12,8 @@ from src.entity.Yolo import Yolo_Results
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
 from src.core.inference.ocr_engine import OCRService
-from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask, check_color
+from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask, check_color, \
+    filter_by_rectangle_shape, get_max_contour
 from src.utils.performance_tools import timeit
 from src.utils.string_tools import string_match, MatchConfig
 
@@ -128,8 +129,8 @@ def extract_skill_card_and_info(img):
 @timeit
 def modal_body_extract_item_info(
         img,
-        item_lower: tuple[int, int, int] = (80,5,96),
-        item_upper: tuple[int, int, int] = (113,30,156),
+        item_lower: tuple[int, int, int] = (0,0,0),
+        item_upper: tuple[int, int, int] = (179,90,120),
         mark_lower: tuple[int, int, int] = (90,85,230),
         mark_upper: tuple[int, int, int] = (98,145,250)
 ):
@@ -143,12 +144,13 @@ def modal_body_extract_item_info(
     :return: bool
     """
     # 取出物品
-    item_marks = extract_roi_from_mask(img, item_lower, item_upper)
-    if not item_marks:
+    item_contours = get_mask_contours(img, item_lower, item_upper, iterations=2)
+    item_contours = filter_by_rectangle_shape(item_contours, 50)
+    if item_contours is None:
         return None, None
-    item_x,item_y,item_w,item_h = item_marks
-
+    item_x,item_y,item_w,item_h = cv2.boundingRect(get_max_contour(item_contours))
     item = img[item_y:item_y+item_h, item_x:item_x+item_w]
+    # 取出物品信息锚点
     mark_y = 0
     contours = get_mask_contours(img[item_y+item_h:], mark_lower, mark_upper)
     for contour in contours:
@@ -219,4 +221,10 @@ def get_modal(yolo_result: Yolo_Results, no_body: bool = False) -> Modal | None:
         modal_body_y = confirm_button.y if confirm_button else cancel_button.y
     modal_body_frame = yolo_result.frame[modal_header.h:modal_body_y, modal_header.x:modal_header.w]
     modal_body_text = None if no_body else " ".join([item.text for item in ocr_service.ocr(modal_body_frame)])
-    return Modal(modal_header_text, modal_body_frame, modal_body_text, confirm_button, cancel_button)
+    return Modal(
+        modal_header_text,
+        modal_body_frame,
+        modal_body_text,
+        confirm_button,
+        cancel_button
+    )

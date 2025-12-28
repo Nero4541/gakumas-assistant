@@ -54,7 +54,7 @@ class ConfigModel(BaseModel):
     @classmethod
     def save_config(cls, config_entity: ConfigEntity = ConfigEntity):
         for section_name in dir(config_entity):
-            if section_name.startswith("__"):
+            if section_name.startswith("_"):
                 continue
 
             section = getattr(config_entity, section_name)

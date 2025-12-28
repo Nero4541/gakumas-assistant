@@ -99,11 +99,14 @@ class AppProcessor:
 
         def update_device(key, old, new):
             logger.warning(f"Reinitialize device......")
-            self.task_queue.stop()
+            suspend_task = None
+            if self.task_queue.queue_status():
+                suspend_task = self.task_queue.suspend_running_task()
             status = self.yolo_engine.running
             self.yolo_engine.stop()
             self.device = self.create_device_instance()
             if status: self.yolo_engine.start()
+            if suspend_task is not None: self.task_queue.resume_suspended_task()
             return
 
         self.config_service.add_listener([
@@ -155,14 +158,5 @@ class AppProcessor:
         frame_bytes = encoded_frame.tobytes()
         self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 
-
-
     def exec_task(self, task_name: str = None):
-        # if not self.device:
-        #     self.device = self.create_device_instance()
-        # if not self.device.is_app_focused():
-        #     self.device.start_game()
-        #     if isinstance(self.device, Windows_App):
-        #         self.device.bring_to_front()
-        #         sleep(0.5)
         return self.task_queue.exec_task(task_name)

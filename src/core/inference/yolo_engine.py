@@ -1,4 +1,5 @@
 import threading
+import traceback
 from threading import Thread
 from time import sleep
 
@@ -157,7 +158,14 @@ class YoloInferenceEngine:
             if self.__flag_pause:
                 sleep(0.1)
                 continue
-            frame = self._device.capture()
+            try:
+                frame = self._device.capture()
+            except Exception as e:
+                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
+                logger.error(f"Inference loop failed: \n{tb_str}")
+                self.__flag_pause = False
+                self.__flag_loop = False
+                return
             if frame is None or frame.size <= 0:
                 sleep(0.1)
                 continue

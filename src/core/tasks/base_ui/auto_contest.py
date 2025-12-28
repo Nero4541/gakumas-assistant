@@ -1,9 +1,13 @@
+import os
 import random
 from time import sleep
 from typing import TYPE_CHECKING
 
+import cv2
+
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.modal_text import ModalText
+from src.constants.path.debug_path import DebugPath
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.CheckBox import CheckBox
@@ -41,10 +45,18 @@ def action__loop_challenge_contest(app: "AppProcessor"):
     while True:
         contest: ContestList | None = None
         for i in range(3):
-            contest = ContestList(app.latest_results, app.latest_frame)
+            try:
+                contest = ContestList(app.latest_results, app.latest_frame)
+            except Exception as e:
+                logger.error(e)
+                continue
             logger.debug(contest)
             if contest and len(contest) == 3:
                 break
+            os.makedirs(DebugPath.NotEnoughContests, exist_ok=True)
+            cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_area__{i}.png"), contest.contest_area)
+            for index, item in enumerate(contest.contests):
+                cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}"), item.frame)
             sleep(1)
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")

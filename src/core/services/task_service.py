@@ -14,9 +14,11 @@ from time import time, sleep
 from pyautogui import FailSafeException
 
 from src.constants.task_status import TaskStatus
+from src.constants.websocket_actions import WebsocketActions
 from src.core.device.Windows.app import Windows_App
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
+from src.core.web.websocket import WebSocketManager
 from src.entity.WebSocketData import WebSocketData
 from src.utils.logger import logger
 from src.utils.string_tools import string_match, MatchConfig
@@ -60,7 +62,7 @@ class Task:
         self._start_time = int(time())
         self.last_run_time = self._start_time
         self._end_time = None
-        self.status = TaskStatus.RUNNING
+        self.update_status(TaskStatus.RUNNING)
         return self._start_time
 
     def update_end_time(self):
@@ -69,13 +71,23 @@ class Task:
 
     def update_status(self, status: str):
         """更新任务状态"""
+        if status == self.status:
+            return
         old_status = self.status
         self.status = status
+        websocket_manager.broadcast_action_sync(
+            WebsocketActions.TaskService.TaskStatusUpdate,
+            WebSocketData(message={
+                "id": self.id,
+                "target_status": status,
+            })
+        )
         logger.debug(f"[TaskStatus] {self.id}: {old_status} -> {status}")
 
     def get_start_time(self):
         return self._start_time
 
+websocket_manager = WebSocketManager()
 
 class TaskQueue:
     _app: "AppProcessor" = None
@@ -86,7 +98,8 @@ class TaskQueue:
     _insert_task: Optional[Task]
     _run_lock: Lock
     _worker_thread: Thread = None
-    _suspend_current_task: bool
+    _suspend_current_task: bool = False
+    _suspend_target_task: Optional[Task] = None
     _stop_event: bool
 
     def __init__(self, app):
@@ -187,17 +200,14 @@ class TaskQueue:
                 logger.warning(f"Task '{task_id}' does not exist.")
                 return False
             task = self._find_task(task_id)
-            task.status = TaskStatus.PENDING
+            task.update_status(TaskStatus.PENDING)
             self._task_queue.put(task)
         else:
             for task in self._get_enable_tasks():
                 if task.manual_only:
                     continue
-                task.status = TaskStatus.PENDING
+                task.update_status(TaskStatus.PENDING)
                 self._task_queue.put(task)
-        self._app.ws_manager.broadcast_sync(WebSocketData(message={
-            "action": "task_queue:start"
-        }))
         if self._worker_thread is None or not self._worker_thread.is_alive():
             self._worker_thread = Thread(target=self._processor_task_queue, daemon=True)
             self._worker_thread.start()
@@ -206,32 +216,74 @@ class TaskQueue:
             return False
         return True
 
-    def insert_task_to_run_queue(self, task_id):
+    def suspend_running_task(self) -> Task:
         """
-        插入任务到当前队列并挂起任务
-        :param task_id: 任务id
-        :return:
+        挂起当前正在运行的任务
+        :return: 被挂起的 Task
+        """
+        if self._suspend_current_task or self._suspend_target_task:
+            raise RuntimeError("Task already suspended")
+
+        suspend_task = next(
+            (task for task in self._task_list if task.status == TaskStatus.RUNNING),
+            None
+        )
+        if not suspend_task:
+            raise RuntimeError("No running task to suspend")
+
+        self._suspend_current_task = True
+        self._suspend_target_task = suspend_task
+        suspend_task.update_status(TaskStatus.SUSPENDED)
+        logger.debug(f"Suspend task: {suspend_task.task_name}({suspend_task.id})")
+
+        return suspend_task
+
+
+    def resume_suspended_task(self):
+        """
+        恢复被挂起的任务
+        """
+        if self._suspend_current_task is False or self._suspend_target_task is None:
+            raise RuntimeError("Current not task suspended")
+        self._suspend_current_task = False
+        task = self._suspend_target_task
+        task.update_status(TaskStatus.RUNNING)
+        logger.debug(f"Resume task: {task.task_name}({task.id})")
+        self._suspend_target_task = None
+
+    def insert_task_to_run_queue(self, task_id: str):
+        """
+        插入任务到当前队列并挂起当前任务
         """
         if self._suspend_current_task:
             logger.warning(f"Task '{task_id}' is suspended.")
             return False
+
         if task_id not in self._get_task_names():
             logger.warning(f"Task '{task_id}' does not exist.")
             return False
-        self._insert_task = self._find_task(task_id)
-        logger.debug(f"Insert task: {self._insert_task.task_name}(id: {self._insert_task.id})")
-        self._suspend_current_task = True
-        suspend_task = next(task for task in self._task_list if task.status == TaskStatus.RUNNING)
-        suspend_task.update_status(TaskStatus.SUSPENDED)
+
+        insert_task = self._find_task(task_id)
+        logger.debug(f"Insert task: {insert_task.task_name}(id: {insert_task.id})")
+
+        try:
+            self.suspend_running_task()
+        except RuntimeError as e:
+            logger.warning(e)
+            return False
+
+        self._insert_task = insert_task
+
         def _insert_task_thread():
             logger.debug("Start insert task thread")
-            self._task_thread(self._insert_task)
-            logger.debug("Resume suspended tasks thread")
-            self._suspend_current_task = False
-            self._insert_task = None
-            suspend_task.update_status(TaskStatus.RUNNING)
-        thread = Thread(target=_insert_task_thread, daemon=True, args=())
-        thread.start()
+            try:
+                self._task_thread(insert_task)
+            finally:
+                logger.debug("Resume suspended task")
+                self._insert_task = None
+                self.resume_suspended_task()
+
+        Thread(target=_insert_task_thread, daemon=True).start()
         return True
 
     def _get_task_names(self):
@@ -249,9 +301,7 @@ class TaskQueue:
             logger.error(e)
             self._app.yolo_engine.pause()
             return False
-
-        while self._app.latest_results is None:
-            sleep(0.1)
+        websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueStart)
         try:
             while not self._task_queue.empty():
                 task = self._task_queue.get()
@@ -263,9 +313,7 @@ class TaskQueue:
                     with self._task_queue.mutex:
                         self._task_queue.queue.clear()
                     break
-            self._app.ws_manager.broadcast_sync(WebSocketData(message={
-                "action": "task_queue:end"
-            }))
+            websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueStop)
             logger.debug("[Exit]Task queue is empty or stopped")
         finally:
             if self._run_lock.locked():
@@ -304,6 +352,7 @@ class TaskQueue:
         return flag
 
     def _trace_calls(self, frame, event, arg, task: Task):
+        """任务方法注入器"""
 
         def wait_and_extend(condition, step=0.1):
             """
@@ -335,7 +384,7 @@ class TaskQueue:
         if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
             return partial(self._trace_calls, task=task)
 
-        if self._suspend_current_task and self._insert_task.id != task.id:
+        if self._suspend_current_task:
             wait_and_extend(lambda: self._suspend_current_task)
 
         if task.timeout not in (None, -1):
@@ -357,12 +406,12 @@ class TaskQueue:
 
     def _task_thread(self, task: Task):
         """
-        执行任务
+        执行任务线程
         :param task: 任务实例
         :return:
         """
         try:
-            task.status = TaskStatus.RUNNING
+            task.update_status(TaskStatus.RUNNING)
             task.update_start_time()
             # 启动任务跟踪
             sys.settrace(partial(self._trace_calls, task=task))
@@ -436,8 +485,6 @@ class TaskQueue:
         self._stop_event = True
         with self._task_queue.mutex:
             for task in [t for t in self._task_list if t.status == TaskStatus.PENDING]:
-                task.status = TaskStatus.CANCELED
+                task.update_status(TaskStatus.CANCELED)
             self._task_queue.queue.clear()
-        if self._run_lock.locked():
-            self._run_lock.release()
         return True

@@ -1,10 +1,33 @@
+import sys
 import time
 from loguru import logger
 
+logger.remove()
+
+LOG_FORMAT = (
+    "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+    "<level>{level:<8}</level> | "
+    "<cyan>{thread.name}</cyan> | "
+    "<cyan>{name}:{function}:{line}</cyan> <red>-</red> "
+    "<level>{message}</level>"
+)
+
+# 控制台
 logger.add(
-    f"logs/{time.strftime('%Y-%m-%d', time.localtime())}.log",
-    rotation="00:00",  # 每天午夜轮换日志文件
-    retention="30 days",  # 只保留最近 30 天的日志文件
-    level="INFO",  # 只记录 INFO 及以上级别的日志
-    filter=lambda record: record["level"].name != "DEBUG"  # 不记录 DEBUG 级别的日志
+    sys.stdout,
+    level="DEBUG",
+    format=LOG_FORMAT,
+    enqueue=True,
+    backtrace=True,
+)
+
+# 文件
+logger.add(
+    f"logs/{time.strftime('%Y-%m-%d')}.log",
+    rotation="00:00",
+    retention="7 days",
+    level="DEBUG",
+    format=LOG_FORMAT,
+    enqueue=True,
+    backtrace=True,
 )

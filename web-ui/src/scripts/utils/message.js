@@ -1,9 +1,5 @@
-// import Vue from 'vue'
-
-// import { useToast } from 'vue-toastification'
 import dialog_utils from '@/scripts/utils/dialogs.js'
 import message_component from '@/components/dialogs/message.vue'
-// const toast = useToast()
 
 function showApiErrorMsg (message, status = null, close_delay = 3000) {
   /**

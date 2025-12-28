@@ -16,7 +16,7 @@ from src.utils.logger import logger
 
 adb_host = "127.0.0.1"
 adb_port = 16384
-# logger.debug(f"Tray connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
+# logger.debug(f"Try connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
 adbutils.adb.connect(f"{adb_host}:{adb_port}")
 adb_device = adbutils.adb.device(f"{adb_host}:{adb_port}")
 adb_shell = ADBShell(adb_device)

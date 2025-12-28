@@ -1,15 +1,15 @@
 <script setup>
 import message from "@/scripts/utils/message.js";
 import api from "@/scripts/apis.js"
+import {useAppStore} from "@/stores/app.js";
 
-const props = defineProps({
-  status: Object,
-})
+const store = useAppStore();
+
 </script>
 
 <template>
   <v-card>
-    <v-btn @click="api.start_task_queue().then(message.showSuccess('任务正在运行'))" color="green" v-if="!props.status.task">
+    <v-btn @click="api.start_task_queue().then(message.showSuccess('任务正在运行'))" color="green" v-if="!store.status.task">
       开始执行
     </v-btn>
     <v-btn color="red" @click="api.stop_task_queue().then(() => {message.showSuccess('任务正在停止')})" v-else>

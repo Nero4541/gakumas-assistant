@@ -1,10 +1,5 @@
 <template>
   <v-layout class="page_body rounded rounded-md">
-<!--    <v-system-bar window color="white">-->
-<!--      <v-icon>mdi-minus</v-icon>-->
-<!--      <v-icon class="ms-2">mdi-checkbox-blank-outline</v-icon>-->
-<!--      <v-icon class="ms-2">mdi-close</v-icon>-->
-<!--    </v-system-bar>-->
     <v-app-bar
       id="app-bar"
       height="80"
@@ -29,13 +24,13 @@
         />
       </v-list>
     </v-navigation-drawer>
-    <task_list v-if="tabbar_model[0] === 'tasks'" :data="task_list"/>
-    <settings v-else-if="tabbar_model[0] === 'settings'" :data="config_data"/>
+    <task_list v-if="tabbar_model[0] === 'tasks'"/>
+    <settings v-else-if="tabbar_model[0] === 'settings'"/>
 
     <v-main class="page_main d-flex align-center justify-center">
       <v-container class="page_container">
         <v-alert
-          v-if="!status.task"
+          v-if="!store.status.task"
           title="等待操作"
           color="warning"
         />
@@ -44,7 +39,7 @@
           title="脚本执行中......"
           color="success"
         />
-        <WebSocketToolsBar :status="status"/>
+        <WebSocketToolsBar/>
         <WebSocketView />
       </v-container>
       <WebLogger/>
@@ -59,68 +54,10 @@
   import WebSocketView from "@/components/WebSocketView.vue";
   import WebSocketToolsBar from "@/components/WebSocketToolsBar.vue";
   import Settings from "@/components/lists/settings.vue";
+  import {useAppStore} from "@/stores/app.js";
   import app from "@/main.js";
-  let status = ref({})
-  let task_list = ref({})
-  let config_data = ref({})
+  const store = useAppStore();
   let tabbar_model = ref(["tasks"])
-  async function get_data() {
-    try {
-      const [statusRes, taskRes] = await Promise.all([
-        api.get_status(),
-        api.get_registered_tasks()
-      ])
-      status.value = statusRes.data
-      task_list.value = taskRes.data
-    } catch (err) {
-      console.error("请求出错:", err)
-    } finally {
-      setTimeout(get_data, 1000)
-    }
-  }
-  get_data()
-  api.get_config().then(res => {
-    config_data.value = res.data
-  })
-
-  let WebSocketManager = {
-    socket: null,
-    status: false,
-  }
-
-  function connectWebSocket () {
-    if (WebSocketManager.status) {
-      WebSocketManager.socket.close()
-      WebSocketManager.socket = null
-      WebSocketManager.status = false
-    }
-    // drawPlaceholder('连接中......')
-
-    WebSocketManager.socket = new WebSocket(`ws://${location.host}/ws`)
-    WebSocketManager.socket.binaryType = 'arraybuffer'
-
-    socket.onmessage = event => {
-      if (event.data instanceof ArrayBuffer) {
-        renderToCanvas(event.data)
-      }
-    }
-
-    socket.onopen = () => {
-      if (reconnectTimer) {
-        clearTimeout(reconnectTimer)
-        reconnectTimer = null
-      }
-    }
-
-    socket.onerror = () => {
-      socket.close()
-    }
-
-    socket.onclose = () => {
-      drawPlaceholder('正在重建连接......')
-      reconnectTimer = setTimeout(connectWebSocket, 1000)
-    }
-  }
 </script>
 
 <style scoped lang="scss">

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, List, Optional
 import cv2
 import numpy as np
 
+from src.constants.device.adb import ADBOperation
 from src.constants.path.data_path import DataPath
 from src.constants.path.debug_path import DebugPath
 from src.constants.game.text.button_text import ButtonText
@@ -98,14 +99,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                     continue
                 yolo_result_item = copy(item.frame)
                 # 截取物品和物品信息
-                if isinstance(app, Android_App):
-                    modal_item_image, item_info = modal_body_extract_item_info(
-                        modal.modal_body,
-                        (80, 5, 90),
-                        (110, 40, 140)
-                    )
-                else:
-                    modal_item_image, item_info = modal_body_extract_item_info(modal.modal_body)
+                modal_item_image, item_info = modal_body_extract_item_info(modal.modal_body)
                 ocr_results = ocr_service.ocr(item_info)
                 ocr_results = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
                 if not ocr_results:
@@ -118,12 +112,13 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 if status:
                     app.clip_manager.item_clip.add_to_memory(modal_item_image, result, 0.99)
                     app.clip_manager.item_clip.add_to_memory(yolo_result_item, result, 0.99)
+                    item_name = result.name
                 else:
+                    logger.warning(f"Item '{item_name}' not found in database after OCR recognition.")
                     os.makedirs(DebugPath.UnknownItem, exist_ok=True)
                     cv2.imwrite(os.path.join(DebugPath.UnknownItem, f"item_info_{index}.png"), item_info)
                     cv2.imwrite(os.path.join(DebugPath.UnknownItem, f"modal_item_image_{index}.png"), modal_item_image)
                     cv2.imwrite(os.path.join(DebugPath.UnknownItem, f"modal_body_image_{index}.png"), modal.modal_body)
-                item_name = result.name
                 current_list.append(item_name)
                 # 在购买列表的情况下购买
                 if string_match(item_name, commodity_target, MatchConfig(fuzz_threshold=80)):

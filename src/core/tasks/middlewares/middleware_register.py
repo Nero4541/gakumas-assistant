@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
-    pass
+    from src.main import AppProcessor
 
 last_card_name = ""
 last_modal= False

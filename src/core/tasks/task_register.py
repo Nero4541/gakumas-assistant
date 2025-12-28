@@ -46,9 +46,6 @@ def register_tasks(processor: "AppProcessor"):
         def _check():
             try:
                 logger.debug(f"device bool: {bool(processor.device)}, try capture size={processor.device.capture().size}")
-                # if processor.device.capture().size != 0:
-                #     cv2.imshow("try capture", processor.device.capture())
-                #     cv2.waitKey(1)
                 return bool(processor.device) and processor.device.capture().size != 0
             except:
                 return False
@@ -69,6 +66,24 @@ def register_tasks(processor: "AppProcessor"):
             logger.error(f"The maximum number of adb reconnections has been reached")
             return False
         return True
+
+    @processor.task_queue.register_pre_queue_start()
+    def _pre__resume_yolo_inference():
+        if processor.yolo_engine.running:
+            return True
+        processor.yolo_engine.start()
+        processor.yolo_engine.resume()
+        return True
+
+    @processor.task_queue.register_pre_queue_start()
+    def _pre__wait_frame():
+        TIMEOUT = 30
+        START_TIME = time.time()
+        while True:
+            if time.time() - START_TIME > TIMEOUT:
+                raise TimeoutError()
+            if processor.yolo_engine.latest_frame.size != 0:
+                break
 
     @processor.task_queue.register_pre_queue_start()
     def _pre__start_game():

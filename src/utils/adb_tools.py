@@ -61,7 +61,8 @@ class ADBShell:
     def close(self):
         """关闭shell"""
         self.__close_flag = True
-        del self.__message_thread
+        if self.__message_thread is not None:
+            del self.__message_thread
         self.__shell.close()
         del self
 

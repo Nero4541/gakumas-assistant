@@ -193,7 +193,7 @@ def _dispatch_single_work(app: "AppProcessor"):
         if __try_dispatch_work__():
             return
         if isinstance(app.device, Android_App):
-            app.device.scrollX(avatar_group_x, avatar_group_y, 50)
+            app.device.scrollX(avatar_group_x, avatar_group_y, -5)
         else:
             app.device.scrollY(avatar_group_x, avatar_group_y, -10)
         sleep(0.5)

@@ -1,25 +1,16 @@
 <script setup>
-import apis from "@/scripts/apis.js";
 import app from "@/main.js";
+import {useAppStore} from "@/stores/app.ts";
 
-const props = defineProps({
-  data: Object
-})
-let taskList = ref([])
 
-apis.get_registered_tasks().then((res) => {
-  for (const [k, v] of Object.entries(res.data)) {
-    taskList.value.push({id:k, title:v.description})
-  }
-})
-console.log(taskList)
+const store = useAppStore();
 </script>
 
 <template>
   <v-list-item>
     <v-autocomplete
-      v-model="props.data.base.disabled_tasks.value"
-      :items="taskList"
+      v-model="store.config.base.disabled_tasks.value"
+      :items="Object.entries(store.task_list).map(([k, v]) => ({ id: k, title: v.description }))"
       item-title="title"
       item-value="id"
       :item-color="app.config.globalProperties.$theme.color"

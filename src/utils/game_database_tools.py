@@ -26,7 +26,6 @@ class _SingletonByFileMeta(type):
         if data_file is None:
             # 取类本身的默认值，而不是强迫用户传
             data_file = cls.__init__.__defaults__[0]
-        print(data_file)
         key = (cls, os.path.abspath(data_file))  # 用绝对路径作为 key
         if key not in cls._instances:
             with cls._lock:
@@ -170,53 +169,6 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
 
     def get_by_id(self, id):
         return self._map.get(id)
-
-# class GakumasDatabaseItemDataUtils(metaclass=SingletonByFileMeta):
-#     _diff_file: str
-#     _data: list[dict[str, Any]]
-#     _names:list[str] = []
-#
-#     @dataclass
-#     class Result:
-#         id: str | None
-#         name: str
-#         description: str | None
-#         acquisitionRouteDescription: str | None
-#
-#     def __init__(self, data_file = DataPath.GakumasuDiffData.ITEM):
-#         self._diff_file = data_file
-#         if not os.path.exists(data_file):
-#             FileNotFoundError(data_file)
-#         self._load_database()
-#
-#     def _load_database(self):
-#         with open(self._diff_file, "r", encoding="utf-8") as f:
-#             self._data = yaml.safe_load(f)
-#         logger.info(f"[{self.__class__.__name__}] {len(self._data)} records have been loaded from the {self._diff_file} file")
-#         for row in self._data:
-#             self._names.append(row["name"])
-#
-#     def search(self, ocr_result, match_config: MatchConfig = None):
-#         result = string_match(ocr_result, self._names, match_config)
-#         if not result:
-#             return False, self.Result(None, ocr_result, None, None)
-#         data = self._data[self._names.index(result.result)]
-#         return True, self.Result(data["id"], result.result, data["description"], data["acquisitionRouteDescription"])
-#
-#     def get_by_id(self, id: str) -> "Result":
-#         for index, row in enumerate(self._data):
-#             if row["id"] == id:
-#                 return self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"])
-#         return False
-#
-#     def get_by_name(self, name: str) -> "Result":
-#         for index, row in enumerate(self._data):
-#             if row["name"] == name:
-#                 return self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"])
-#         return False
-#
-#     def get_all_item(self):
-#         return [self.Result(row["id"], row["name"], row["description"], row["acquisitionRouteDescription"]) for row in self._data]
 
 class GakumasDatabase_ItemDataUtils(_BaseYamlDatabase):
     data_cls = Item

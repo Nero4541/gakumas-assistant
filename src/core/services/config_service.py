@@ -107,7 +107,7 @@ class ConfigService(metaclass=SingletonMeta):
                 logger.debug(f"{'New' if section_new is None else 'Old'} Config obj Section {section_name} not found")
                 continue
             for attr_name in dir(section_old):
-                if attr_name.startswith("__"):
+                if attr_name.startswith("_"):
                     continue
                 item_old = getattr(section_old, attr_name)
                 item_new = getattr(section_new, attr_name)

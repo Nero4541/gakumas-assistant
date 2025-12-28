@@ -19,6 +19,7 @@ def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3
     """从图像中提取指定颜色范围的轮廓"""
     mask = gen_color_mask(img, lower_color, upper_color)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize)
+    # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.dilate(mask, kernel, iterations=iterations)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -26,18 +27,11 @@ def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3
 
 def get_max_contour(contours):
     """返回最大轮廓和其边界框"""
-    max_area = 0
-    max_contour = None
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if area > max_area:
-            max_area = area
-            max_contour = contour
-    return max_contour
+    return max(contours, key=cv2.contourArea)
 
-def extract_roi_from_mask(img, lower_color, upper_color):
+def extract_roi_from_mask(img, lower_color, upper_color, ksize: Tuple[int, int]=(15,15), iterations=1):
     """提取最大轮廓的ROI"""
-    contours = get_mask_contours(img, lower_color, upper_color, ksize=(15, 15))
+    contours = get_mask_contours(img, lower_color, upper_color, ksize=ksize, iterations=iterations)
     max_contour = get_max_contour(contours)
 
     if max_contour is not None:
@@ -55,6 +49,33 @@ def get_mark_y_position(img, lower_color, upper_color, roi_y, roi_h):
         if _h > 5 and _w > 5:
             mark_y = min(_y, mark_y)
     return mark_y
+
+def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04):
+    """根据面积和矩形程度筛选轮廓"""
+    rect_contours = []
+
+    for contour in contours:
+        # 面积筛选（初步去噪点）
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
+
+        # 形状近似
+        perimeter = cv2.arcLength(contour, True)
+        epsilon = epsilon_factor * perimeter
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+
+        # 顶点数量检查（矩形特征）
+        if len(approx) == 4:
+            # 规整度检查：轮廓面积与外接矩形面积的比值
+            x, y, w, h = cv2.boundingRect(contour)
+            bounding_rect_area = w * h
+
+            # 形状相似度检查：比值接近 1.0 代表轮廓和它的外接矩形非常接近
+            if area / bounding_rect_area > 0.8:
+                rect_contours.append(contour)
+
+    return rect_contours
 
 def hsv_range_to_image_cv(lower, upper, height=50, width=300):
     """
@@ -76,7 +97,6 @@ def hsv_range_to_image_cv(lower, upper, height=50, width=300):
         img[:, i, 2] = int(r * 255)
 
     cv2.imshow(f"HSV Range {upper} - {lower}", img)
-    # cv2.waitKey(0)
 
 def check_color(
         frame: np.ndarray,
@@ -292,7 +312,7 @@ def draw_text(
 
 def get_black_image(size: Tuple[int, int]) -> bytes:
     img_black = np.zeros((size[0], size[1], 3), dtype=np.uint8)
-    _, encoded_image = cv2.imencode('.jpg', img_black)
+    _, encoded_image = cv2.imencode('.png', img_black)
     return encoded_image.tobytes()
 
 def is_white_screen(image, brightness=250):
