@@ -50,14 +50,20 @@ jobs:
       - name: Add MinGW to PATH
         run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
-      - name: Expand Virtual Memory
-        shell: pwsh
+      - name: Configure Virtual Memory
+        shell: powershell
         run: |
-          Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile=$False}
-          $pagefile = Get-CimInstance Win32_PageFileSetting
-          if ($pagefile) { $pagefile | Remove-CimInstance }
-          New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name="C:\pagefile.sys"; InitialSize=8192; MaximumSize=16384}
-          Get-CimInstance Win32_PageFileSetting | Select-Object Name, InitialSize, MaximumSize 
+          Write-Host "Current pagefile settings:"
+          wmic pagefile list /format:list
+
+          # 关闭系统自动管理
+          wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False
+
+          # 设置 C 盘分页文件（单位：MB）
+          wmic pagefileset where name="C:\\pagefile.sys" set InitialSize=16384,MaximumSize=16384
+
+          Write-Host "Updated pagefile settings:"
+          wmic pagefile list /format:list
 
       - name: Use ccache
         uses: hendrikmuhs/ccache-action@v1.2
