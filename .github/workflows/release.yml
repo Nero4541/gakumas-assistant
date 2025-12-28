@@ -50,36 +50,6 @@ jobs:
       - name: Add MinGW to PATH
         run: echo "C:\msys64\mingw64\bin" >> $env:GITHUB_PATH
 
-      - name: Check virtual memory
-        shell: powershell
-        run: |
-          systeminfo | findstr /C:"Virtual Memory"
-
-      - name: Configure Virtual Memory
-        shell: powershell
-        run: |
-          Write-Host "Current pagefile settings:"
-          Get-CimInstance Win32_PageFileSetting | Format-List
-      
-          # 关闭系统自动管理分页文件
-          $cs = Get-CimInstance Win32_ComputerSystem
-          if ($cs.AutomaticManagedPagefile) {
-            Set-CimInstance -InputObject $cs -Property @{ AutomaticManagedPagefile = $false }
-          }
-      
-          # 删除已有的 pagefile 配置（避免冲突）
-          Get-CimInstance Win32_PageFileSetting | Remove-CimInstance -ErrorAction SilentlyContinue
-      
-          # 新建 pagefile（单位 MB）
-          New-CimInstance -ClassName Win32_PageFileSetting -Property @{
-            Name = "C:\pagefile.sys"
-            InitialSize = 16384
-            MaximumSize = 16384
-          }
-      
-          Write-Host "Updated pagefile settings:"
-          Get-CimInstance Win32_PageFileSetting | Format-List
-
       - name: Install requirements
         run: |
           python -m pip install --upgrade pip
@@ -108,7 +78,7 @@ jobs:
 
       - name: Compress Output
         run: |
-          $source = "${{ github.workspace }}\out\app.dist"
+          $source = "${{ github.workspace }}\out"
           $zipFile = "${{ github.workspace }}\release.zip"
           Compress-Archive -Path "$source\*" -DestinationPath "$zipFile" -Force
 
