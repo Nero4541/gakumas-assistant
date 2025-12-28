@@ -59,6 +59,8 @@ def build_project():
 
     if not os.getenv("GITHUB_ACTIONS"):
         nuitka_cmd.append("--show-progress")
+    else:
+        nuitka_cmd.append("--low-memory")
 
     for item in COPY_SITE_PACKAGES_FILES:
         target = os.path.join(sysconfig.get_paths()['purelib'], item)
