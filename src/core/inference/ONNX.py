@@ -10,6 +10,7 @@ import cv2
 import onnxruntime as ort
 import seaborn as sns
 
+from src.utils.dml_manager import DMLManager
 from src.utils.logger import logger
 from src.utils.opencv_tools import letterbox, center_crop
 
@@ -73,10 +74,7 @@ class YoloModelFromONNX:
         self._model_dir, self._model_file = os.path.split(model_path)
         self._model_name = os.path.splitext(self._model_file)[0]
         self._load_model_meta()
-        self._engine = ort.InferenceSession(
-            model_path,
-            providers=['DmlExecutionProvider', 'CPUExecutionProvider']
-        )
+        self._engine = DMLManager.create_dml_session(model_path)
         self._model_input_name = self._engine.get_inputs()[0].name
 
     def _load_model_meta(self):
@@ -184,7 +182,10 @@ class YoloModelFromONNX:
 
     def __call__(self, img: np.ndarray, conf_threshold: float = 0.5, iou_threshold: float = 0.5) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)
-        outputs = self._engine.run(None, {self._model_input_name: input_tensor})
+        outputs = DMLManager.run(
+            self._engine,
+            {self._model_input_name: input_tensor}
+        )
         return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh)
 
 class CLIPModelFromONNX:
@@ -195,7 +196,7 @@ class CLIPModelFromONNX:
     def __init__(self, model_path: str=None):
         if not model_path or not os.path.exists(model_path):
             model_path = os.path.join(os.getcwd(), "model", "clip_visual.onnx")
-        self.session = ort.InferenceSession(model_path, providers=["DmlExecutionProvider", "CPUExecutionProvider"])
+        self.session = DMLManager.create_dml_session(model_path)
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()
 
@@ -213,12 +214,12 @@ class CLIPModelFromONNX:
 
     def forward(self, image: np.ndarray) -> Optional[np.ndarray]:
         input_tensor = self._preprocess(image)
-        with self._lock:
-            output = None
-            try:
-                output = self.session.run(None, {self._input_name: input_tensor})
-            except Exception as e:
-                logger.error(e)
-            if output:
-                return output[0]
-        return None
+        try:
+            output = DMLManager.run(
+                self.session,
+                {self._input_name: input_tensor}
+            )
+            return output[0]
+        except Exception as e:
+            logger.error(e)
+            return None
