@@ -60,7 +60,6 @@ def build_project():
     if not os.getenv("GITHUB_ACTIONS"):
         nuitka_cmd.append("--show-progress")
     else:
-        nuitka_cmd.append("--low-memory")
         nuitka_cmd.append("--mingw64")
         nuitka_cmd.append("--assume-yes-for-downloads")
 
