@@ -70,22 +70,40 @@ jobs:
         run: |
           python build_app.py
         env:
-          CFLAGS: "/Zm200"
           GITHUB_ACTIONS: "True"
 
       - name: Compress Output
+        shell: pwsh
         run: |
-          $source = "${{ github.workspace }}\out"
-          $zipFile = "${{ github.workspace }}\release.zip"
-          Compress-Archive -Path "$source\*" -DestinationPath "$zipFile" -Force
+          $OutDir = "${{ github.workspace }}\out"
+      
+          $Version = if ("${{ github.event.inputs.version }}" -ne "") {
+            "${{ github.event.inputs.version }}"
+          } else {
+            "${{ github.ref_name }}"
+          }
+      
+          $Date = Get-Date -Format "yyyyMMdd"
+          $Commit = "${{ github.sha }}".Substring(0, 8)
+      
+          $ZipName = "gakumas-assistant_${Version}_Windows_amd64_${Date}_${Commit}.zip"
+          $ZipPath = "${{ github.workspace }}\$ZipName"
+      
+          & "C:\Program Files\7-Zip\7z.exe" a `
+            -tzip `
+            -mx=9 `
+            "$ZipPath" `
+            "$OutDir\*"
+      
+          echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
 
       - name: Create GitHub Release
-        id: create_release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
           name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
-          files: release.zip
+          files: ${{ env.ZIP_NAME }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
