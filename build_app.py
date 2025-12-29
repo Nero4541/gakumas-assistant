@@ -62,6 +62,7 @@ def build_project():
     else:
         nuitka_cmd.append("--low-memory")
         nuitka_cmd.append("--mingw64")
+        nuitka_cmd.append("--assume-yes-for-downloads")
 
     for item in COPY_SITE_PACKAGES_FILES:
         target = os.path.join(sysconfig.get_paths()['purelib'], item)
