@@ -11,7 +11,6 @@
 
 <p align="center">
   <img alt="Python" src="https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=white">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux">
   <img alt="Yolo" src="https://img.shields.io/badge/Yolo-v11-blue">
   <br>
   <img alt="license" src="https://img.shields.io/github/license/Pigeon-Server/gakumas-assistant">
@@ -92,7 +91,7 @@ python3 -m pip install -r requirements.dev.txt
 **拉取子模块**
 ```bash
 git submodule init
-git submodule update
+git submodule update --init
 ```
 **YOLO检测模型训练**  
 #### 训练：

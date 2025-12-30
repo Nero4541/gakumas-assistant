@@ -152,48 +152,61 @@ class Android_App(BaseDevice):
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 return self.__adb_device
 
-    def _scroll(self, x, y, direction, scroll_delta):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8):
         """
-        通用滚动方法，模拟人类滑动
-        :param x: 起始X坐标
-        :param y: 起始Y坐标
-        :param direction: ADBOperation.ScrollDirection.HORIZONTAL / VERTICAL
-        :param scroll_delta: 正负代表方向，绝对值代表滚动次数
+        基础滑动方法：执行带安全检查和随机偏移的单次滑动
+        :param start_x: 起始X
+        :param start_y: 起始Y
+        :param end_x: 结束X
+        :param end_y: 结束Y
+        :param duration: 滑动总时长，默认0.8秒
         """
         width, height = self.get_window_size()
-        # 坐标安全限制
-        x = max(50, min(width - 50, x))
-        y = max(50, min(height - 50, y))
+        def clamp(val, max_val):
+            return max(50, min(max_val - 50, val))
+        safe_start_x = clamp(start_x, width)
+        safe_start_y = clamp(start_y, height)
+        safe_end_x = clamp(end_x, width)
+        safe_end_y = clamp(end_y, height)
+        # 模拟人类滑动的微小随机偏移 (轨迹随机化)
+        offset_x = random.randint(-10, 10)
+        offset_y = random.randint(-10, 10)
+        # 将 duration 稍微随机化，避免死板的固定时长
+        actual_duration = duration * random.uniform(0.9, 1.1)
+        self.__get_touch_service().swipe(
+            safe_start_x + offset_x,
+            safe_start_y + offset_y,
+            safe_end_x,
+            safe_end_y,
+            actual_duration
+        )
+        # 增加随机短暂停顿 (模拟人类自然停顿)
+        time.sleep(random.uniform(0.05, 0.1))
 
-        scroll_distance = int(height * 0.05)  # 每次滚动的基础距离
+    def _scroll(self, x, y, direction, scroll_delta):
+        """
+        通用滚动方法，调用提取出的 swipe
+        """
+        width, height = self.get_window_size()
+        scroll_distance = int(height * 0.05)
         scroll_sign = 1 if scroll_delta > 0 else -1
 
-        # 通过一定随机化来模拟人的滑动
         for _ in range(abs(scroll_delta)):
-            # 随机化每次滑动的距离，模拟人手滑动的自然波动
-            random_offset_x = random.randint(-10, 10)  # 随机偏移X轴
-            random_offset_y = random.randint(-10, 10)  # 随机偏移Y轴
-
-            # 控制滑动的加速度，模拟人类滑动的自然效果
-            # 当滑动距离较远时，逐渐加速滑动
+            # 计算滑动因子和当前距离
             scroll_factor = random.uniform(0.8, 1.2) if random.random() > 0.2 else random.uniform(1, 1.5)
+            current_dist = int(scroll_distance * scroll_factor)
 
-            current_scroll_distance = int(scroll_distance * scroll_factor)
-
-            # 人手滑动更不规则，采用随机化的轨迹
             if direction == ADBOperation.ScrollDirection.HORIZONTAL:
-                start_x = x + random_offset_x
-                end_x = x + scroll_sign * (current_scroll_distance) + random_offset_x
-                self.__get_touch_service().swipe(start_x, y, end_x, y + random_offset_y, random.uniform(0.1, 0.2))
+                end_x = x + (scroll_sign * current_dist)
+                # 调用提取的方法
+                self.swipe(x, y, end_x, y, duration=random.uniform(0.1, 0.2))
+
             elif direction == ADBOperation.ScrollDirection.VERTICAL:
-                start_y = y + random_offset_y
-                end_y = y + scroll_sign * (current_scroll_distance) + random_offset_y
-                self.__get_touch_service().swipe(x + random_offset_x, start_y, x, end_y, random.uniform(0.1, 0.2))
+                end_y = y + (scroll_sign * current_dist)
+                # 调用提取的方法
+                self.swipe(x, y, x, end_y, duration=random.uniform(0.1, 0.2))
             else:
                 raise ValueError(f"Invalid direction: {direction}")
-
-            # 增加随机的短暂停顿，模拟人类滑动中的自然停顿
-            time.sleep(random.uniform(0.05, 0.1))
 
     def scrollY(self, x, y, scroll_delta):
         """纵向滚动（向上/向下滑动）"""

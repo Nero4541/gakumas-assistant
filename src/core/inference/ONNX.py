@@ -1,4 +1,5 @@
 import ast
+import colorsys
 import os
 import json
 import threading
@@ -8,7 +9,6 @@ from typing import List, Tuple, Generator, Optional, Union, Dict
 import numpy as np
 import cv2
 import onnxruntime as ort
-import seaborn as sns
 
 from src.utils.dml_manager import DMLManager
 from src.utils.logger import logger
@@ -77,15 +77,29 @@ class YoloModelFromONNX:
         self._engine = DMLManager.create_dml_session(model_path)
         self._model_input_name = self._engine.get_inputs()[0].name
 
+    @staticmethod
+    def _pastel_palette(n: int):
+        colors = []
+        for i in range(n):
+            h = i / n
+            s = 0.45      # 更柔
+            v = 0.95
+            r, g, b = colorsys.hsv_to_rgb(h, s, v)
+            colors.append((int(r*255), int(g*255), int(b*255)))
+        return colors
+
     def _load_model_meta(self):
         meta_path = os.path.join(self._model_dir, f"{self._model_name}_meta.json")
         with open(meta_path, "r") as f:
             meta = json.load(f)
         imgsz = json.loads(meta["imgsz"])
         names_mapping = ast.literal_eval(meta["names"])
-        palette = sns.color_palette("Set2", len(names_mapping))
-        palette_255 = [(int(r*255), int(g*255), int(b*255)) for r, g, b in palette]
-        color_mapping = {name_id:color for name_id, color in zip(names_mapping.keys(), palette_255)}
+        palette_255 = self._pastel_palette(len(names_mapping))
+        logger.debug(palette_255)
+        color_mapping = {
+            name_id: color
+            for name_id, color in zip(names_mapping.keys(), palette_255)
+        }
         self._model_meta = ONNXYoloModelMeta(imgsz, names_mapping, color_mapping)
 
     def _preprocess(self, img: np.ndarray) -> Tuple[np.ndarray, float, float, float]:

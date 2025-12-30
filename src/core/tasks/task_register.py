@@ -1,6 +1,9 @@
 import time
+from copy import copy
 
 import cv2
+import numpy as np
+from skimage.metrics import structural_similarity as ssim
 
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.modal_text import ModalText
@@ -25,7 +28,7 @@ from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from src.utils.opencv_tools import is_white_screen
 from src.utils.string_tools import string_match, MatchConfig
@@ -205,29 +208,45 @@ def register_tasks(processor: "AppProcessor"):
     def _task__claim_pass_rewards(app: "AppProcessor"):
         goto__claim_pass_rewards(app)
         y, x = app.latest_results.frame.shape[:2]
+        prev_page: Optional[np.ndarray] = None
+        MAX_WAIT_TIME = 5
         while True:
+            app.game_utils.wait_frame_stable(0.9, 1)
             buttons = ButtonList(app.latest_results)
-            flag = True
+            buttons = [button for button in buttons if string_match(button.text, ButtonText.COLLECT, MatchConfig(fuzz_threshold=90))]
             for button in buttons:
-                if not button.is_disabled() and string_match(button.text, ButtonText.COLLECT, MatchConfig(fuzz_threshold=90)):
-                    flag = False
-                    app.device.click_element(button)
-                    MAX_WAIT_TIME = 5
-                    for i in range(MAX_WAIT_TIME + 1):
-                        if MAX_WAIT_TIME < i:
-                            raise TimeoutError("Timeout waiting for modal to appear.")
-                        if app.latest_results.exists_all_labels([BaseUILabels.BUTTON, BaseUILabels.MODAL_HEADER]):
-                            modal = get_modal(app.latest_results, True)
-                            if string_match(modal.modal_title, ModalText.TITLE.RECEIPT_COMPLETED):
-                                app.device.click_element(modal.cancel_button)
-                                break
-                            elif string_match(modal.modal_title, ModalText.TITLE.CONNECTION_ERROR):
-                                app.device.click_element(modal.confirm_button)
-                            else:
-                                app.device.click_element(modal.cancel_button)
-                        sleep(1)
-                    app.game_utils.wait_for_label(BaseUILabels.CURRENT_LOCATION)
+                if button.is_disabled():
+                    continue
+                app.device.click_element(button)
+                for i in range(MAX_WAIT_TIME + 1):
+                    if MAX_WAIT_TIME < i:
+                        raise TimeoutError("Timeout waiting for modal to appear.")
+                    if app.latest_results.exists_all_labels([BaseUILabels.BUTTON, BaseUILabels.MODAL_HEADER]):
+                        modal = get_modal(app.latest_results, True)
+                        if string_match(modal.modal_title, ModalText.TITLE.RECEIPT_COMPLETED):
+                            app.device.click_element(modal.cancel_button)
+                            break
+                        elif string_match(modal.modal_title, ModalText.TITLE.CONNECTION_ERROR):
+                            app.device.click_element(modal.confirm_button)
+                        else:
+                            app.device.click_element(modal.cancel_button)
                     sleep(1)
-            app.device.scrollY(x // 2, y // 2, -20)
-            if flag:
+                app.game_utils.wait_for_label(BaseUILabels.CURRENT_LOCATION)
+                sleep(1)
+            if isinstance(app.device, Android_App):
+                h_list = [btn.h for btn in buttons]
+                width, height = app.device.get_window_size()
+                app.device.swipe(width // 2, max(h_list), width // 2, min(h_list), 0.8)
+                sleep(0.5)
+            else:
+                app.device.scrollY(x // 2, y // 2, -20)
+            app.game_utils.wait_frame_stable()
+            if prev_page is None:
+                prev_page = copy(app.latest_frame)
+                continue
+            prev_gray = cv2.cvtColor(prev_page, cv2.COLOR_BGR2GRAY)
+            curr_gray = cv2.cvtColor(app.latest_frame, cv2.COLOR_BGR2GRAY)
+            score, _ = ssim(prev_gray, curr_gray, full=True)
+            if score > 0.9:
                 break
+            prev_page = copy(app.latest_frame)

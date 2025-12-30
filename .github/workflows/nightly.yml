@@ -1,40 +1,29 @@
-name: Release
+name: Nightly Build
 
 on:
   push:
-    tags:
-      - 'v*'  # 当推送版本标签时触发，如 v1.0.0
+    branches:
+      - master
+      - dev
+  schedule:
+    - cron: '0 0 * * *'
   workflow_dispatch:
-    inputs:
-      version:
-        description: "version"
-        required: false
-      prerelease:
-        description: "prerelease"
-        required: false
-        default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 permissions:
-  contents: write  # 允许创建 release
+  contents: read
 
 jobs:
   build:
     runs-on: windows-latest
     steps:
-      - name: checkout
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
           fetch-depth: 0
           lfs: true
-        env:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -76,41 +65,26 @@ jobs:
         shell: pwsh
         run: |
           $OutDir = "${{ github.workspace }}\out\app.dist\*"
-      
-          $Version = if ("${{ github.event.inputs.version }}" -ne "") {
-            "${{ github.event.inputs.version }}"
-          } else {
-            "${{ github.ref_name }}"
-          }
-      
+
           $Date = Get-Date -Format "yyyyMMdd"
           $Commit = "${{ github.sha }}".Substring(0, 8)
-      
-          $ZipName = "gakumas-assistant_${Version}_Windows_amd64_${Date}_${Commit}.zip"
+          
+          $ZipName = "gakumas-assistant_nightly_Windows_amd64_${Date}_${Commit}.zip"
           $ZipPath = "${{ github.workspace }}\$ZipName"
-      
+          
           & "C:\Program Files\7-Zip\7z.exe" a `
             -tzip `
             -mx=9 `
             "$ZipPath" `
             "$OutDir\*"
-      
+          
           echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
+          echo "ZIP_PATH=$ZipPath" >> $env:GITHUB_ENV
 
-      - name: Generate Checksum
-        run: sha256sum ${{ env.ZIP_NAME }} > checksums.txt
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
-          name: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
-          generate_release_notes: true
-          files: |
-            ${{ env.ZIP_NAME }}
-            checksums.txt
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          retention-days: 1
+          overwrite: true

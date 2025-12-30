@@ -1,5 +1,5 @@
 from copy import copy
-from dataclasses import dataclass
+from dataclasses import dataclass,field
 from typing import List, Tuple, Union, Optional, Any
 
 import numpy as np
@@ -24,9 +24,9 @@ class Yolo_Box:
     w: float
     h: float
     label: str
-    frame: Optional[np.ndarray]
     cx: int
     cy: int
+    frame: Optional[np.ndarray] = field(repr=False)
 
     def __init__(self, x: float, y: float, w: float, h: float, label: str | None, frame: Optional[np.ndarray]):
         self.x = x

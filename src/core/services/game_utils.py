@@ -384,7 +384,7 @@ class GameUtils:
             curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
 
             score, _ = ssim(prev_gray, curr_gray, full=True)
-            logger.info(f"SSIM: {score}")
+            logger.debug(f"SSIM: {score}")
             if score >= threshold:
                 stable_times += 1
             else:
