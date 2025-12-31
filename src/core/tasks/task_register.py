@@ -13,6 +13,7 @@ from src.core.device.Windows.app import Windows_App
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
 from src.core.tasks.base_ui.auto_purchase import action__receive_weekly_gift, action__daily_exchange
+from src.core.tasks.base_ui.claim_pass_rewards import claim_pass_rewards
 from src.core.tasks.base_ui.claim_task_rewards import claim_task_rewards
 from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
 from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
@@ -207,46 +208,4 @@ def register_tasks(processor: "AppProcessor"):
     @processor.task_queue.register_task("claim_pass_rewards", "领取通行证奖励")
     def _task__claim_pass_rewards(app: "AppProcessor"):
         goto__claim_pass_rewards(app)
-        y, x = app.latest_results.frame.shape[:2]
-        prev_page: Optional[np.ndarray] = None
-        MAX_WAIT_TIME = 5
-        while True:
-            app.game_utils.wait_frame_stable(0.9, 1)
-            buttons = ButtonList(app.latest_results)
-            buttons = [button for button in buttons if string_match(button.text, ButtonText.COLLECT, MatchConfig(fuzz_threshold=90))]
-            for button in buttons:
-                if button.is_disabled():
-                    continue
-                app.device.click_element(button)
-                for i in range(MAX_WAIT_TIME + 1):
-                    if MAX_WAIT_TIME < i:
-                        raise TimeoutError("Timeout waiting for modal to appear.")
-                    if app.latest_results.exists_all_labels([BaseUILabels.BUTTON, BaseUILabels.MODAL_HEADER]):
-                        modal = get_modal(app.latest_results, True)
-                        if string_match(modal.modal_title, ModalText.TITLE.RECEIPT_COMPLETED):
-                            app.device.click_element(modal.cancel_button)
-                            break
-                        elif string_match(modal.modal_title, ModalText.TITLE.CONNECTION_ERROR):
-                            app.device.click_element(modal.confirm_button)
-                        else:
-                            app.device.click_element(modal.cancel_button)
-                    sleep(1)
-                app.game_utils.wait_for_label(BaseUILabels.CURRENT_LOCATION)
-                sleep(1)
-            if isinstance(app.device, Android_App):
-                h_list = [btn.h for btn in buttons]
-                width, height = app.device.get_window_size()
-                app.device.swipe(width // 2, max(h_list), width // 2, min(h_list), 0.8)
-                sleep(0.5)
-            else:
-                app.device.scrollY(x // 2, y // 2, -20)
-            app.game_utils.wait_frame_stable()
-            if prev_page is None:
-                prev_page = copy(app.latest_frame)
-                continue
-            prev_gray = cv2.cvtColor(prev_page, cv2.COLOR_BGR2GRAY)
-            curr_gray = cv2.cvtColor(app.latest_frame, cv2.COLOR_BGR2GRAY)
-            score, _ = ssim(prev_gray, curr_gray, full=True)
-            if score > 0.9:
-                break
-            prev_page = copy(app.latest_frame)
+        claim_pass_rewards(app)

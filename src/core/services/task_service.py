@@ -193,7 +193,7 @@ class TaskQueue:
         self._stop_event = False
         logger.debug("start exec task queue")
         self._app.debug_tools.clear_all_boxes()
-        if self._task_queue.not_empty:
+        if not self._task_queue.empty():
             with self._task_queue.mutex:
                 self._task_queue.queue.clear()
         if task_id:

@@ -3,7 +3,7 @@ import numpy as np
 from src.utils.opencv_tools import *
 
 # 读取图像
-img = cv2.imread(r"E:\Projects\gkmas-auto\tests\2025-10-13 101150.jpg")
+img = cv2.imread(r"E:\Projects\gkmas-auto\logs\debug\images\NotEnoughContests\contest_area__0.png")
 
 # d = 9  # 滤波窗口大小
 # sigma_color = 75  # 控制颜色平滑度
@@ -35,20 +35,20 @@ def _get_contest_items():
     cv2.drawContours(result, contours, -1, (255, 0, 0), 2)
     cv2.imshow("Contours Result", result)
     total_pixels = height * width  # 总像素数
-    contours = filter_by_rectangle_shape(contours, total_pixels // 4)
+    # contours = filter_by_rectangle_shape(contours, total_pixels // 4, threshold=0.6)
     print(contours)
     # 依次提取每个区域
-    for cnt in contours:
+    for index, cnt in enumerate(contours):
         x, y, w, h = cv2.boundingRect(cnt)
 
         # 筛选条件 宽度必须大于帧宽度的一半
-        if w > width * 0.5 and h > height // 4:
+        if w > width // 2 and h > height // 4:
             print(x, y, w, h)
             roi = img[y:y+h, x:x+w]
             # self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
             cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
             continue
-        cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
+        cv2.drawContours(result, [cnt], -1, (0, 0+index*10, 255), 2)
     cv2.imshow("Contours - Filtered", result)
     cv2.waitKey(0)
 

@@ -95,7 +95,6 @@ class YoloModelFromONNX:
         imgsz = json.loads(meta["imgsz"])
         names_mapping = ast.literal_eval(meta["names"])
         palette_255 = self._pastel_palette(len(names_mapping))
-        logger.debug(palette_255)
         color_mapping = {
             name_id: color
             for name_id, color in zip(names_mapping.keys(), palette_255)
