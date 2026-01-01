@@ -13,6 +13,7 @@ from src.core.device.Android.app import Android_App
 from src.entity.Game.Components.Button import ButtonList
 from src.utils.game_tools import get_modal
 from src.utils.string_tools import string_match, MatchConfig
+from src.utils.logger import logger
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -23,6 +24,7 @@ def claim_pass_rewards(app: "AppProcessor"):
     while True:
         app.game_utils.wait_frame_stable(0.9, 1)
 
+        _process_modal(app)
         _collect_visible_rewards(app)
         _scroll_reward_list(app)
 
@@ -32,6 +34,21 @@ def claim_pass_rewards(app: "AppProcessor"):
             break
 
         prev_page = copy(app.latest_frame)
+
+def _process_modal(app: "AppProcessor"):
+    """
+    处理意外的模态框
+    :param app: app实例
+    :return:
+    """
+    while app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+        modal = get_modal(app.latest_results, True)
+        if not modal:
+            continue
+        if modal.cancel_button and not modal.confirm_button:
+            logger.debug(f"Close modal '{modal.modal_title}'.'")
+            app.device.click_element(modal.cancel_button)
+    app.game_utils.wait_frame_stable(0.9, 1)
 
 def _collect_visible_rewards(app: "AppProcessor"):
     """
@@ -105,12 +122,13 @@ def _scroll_reward_list(app: "AppProcessor"):
             return
 
         h_list = [btn.h for btn in buttons]
+        offset = (buttons[0].h - buttons[0].y)
         width, _ = app.device.get_window_size()
         app.device.swipe(
             width // 2,
             max(h_list),
             width // 2,
-            min(h_list),
+            min(h_list) - offset,
             0.8
         )
         sleep(0.5)

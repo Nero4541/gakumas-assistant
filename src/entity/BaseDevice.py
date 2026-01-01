@@ -42,6 +42,7 @@ class BaseDevice(abc.ABC):
         :return:
         """
 
+
     def click_element(self, element: Yolo_Box | Yolo_Results):
         """
         点击窗口内容（元素）

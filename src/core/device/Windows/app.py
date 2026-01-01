@@ -16,9 +16,12 @@ import win32gui
 
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
+from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.system_tools import is_compiled
 
+
+debugger = DebugTools()
 
 class Windows_App(BaseDevice):
     __window_name: str
@@ -178,6 +181,12 @@ class Windows_App(BaseDevice):
         :param y:
         :return:
         """
+        debugger.add_crosshair(
+            x, y,
+            size=5,
+            color=(255, 0, 0),
+            thickness=1
+        )
         abs_x, abs_y = self._xy_abs_conversion(x, y)
         pyautogui.click(abs_x, abs_y, button='left')
         logger.debug(f"click {el_label}: {abs_x, abs_y}" if el_label else f"click: {abs_x, abs_y}")

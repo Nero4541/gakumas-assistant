@@ -132,7 +132,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
                 sleep(0.5)
         # sleep(5)
         # 如果历史哈希不相同，则向下滚动
-        app.debug_tools.clear_all_boxes()
+        app.debug_tools.clear_all()
         if last_list_hash != hash(frozenset(current_list)):
             last_list_hash = hash(frozenset(current_list))
             app.device.scrollY(scroll_x, scroll_y, -5)
@@ -184,7 +184,7 @@ def action__daily_exchange(app: "AppProcessor"):
             commodity_target.append(result.name)
     for tab_item in tabbar:
         app.device.click_element(tab_item)
-        sleep(2)
+        app.game_utils.wait_frame_stable()
         _exchange_items(app, commodity_target)
 
     return True

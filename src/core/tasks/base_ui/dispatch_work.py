@@ -1,5 +1,9 @@
 from time import sleep
 from typing import TYPE_CHECKING, Optional
+from skimage.metrics import structural_similarity as ssim
+
+import cv2
+import numpy as np
 
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.modal_text import ModalText
@@ -157,7 +161,7 @@ def _dispatch_single_work(app: "AppProcessor"):
         派遣任务
         :return:
         """
-        app.debug_tools.clear_all_boxes()
+        app.debug_tools.clear_all()
         avatars = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
         avatars = Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])
         for avatar in avatars:
@@ -181,22 +185,37 @@ def _dispatch_single_work(app: "AppProcessor"):
                 # continue
                 if not _assign_avatar_to_work(app, avatar):
                     continue
-                app.debug_tools.clear_all_boxes()
+                app.debug_tools.clear_all()
                 return True
             app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="非优选")
         # sleep(10)
-        app.debug_tools.clear_all_boxes()
+        app.debug_tools.clear_all()
         return False
-    avatar_group_x, avatar_group_y = app.latest_results.filter_by_label(BaseUILabels.AVATAR).get_COL()
-    for i in range(3):
-        logger.debug(f"[{i}]Try dispatch work")
+    def _is_page_unchanged(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.9) -> bool:
+        """
+        判断是否翻到尽头
+        :param prev: 上一帧
+        :param curr: 当前帧
+        :param threshold: 阈值
+        :return:
+        """
+        prev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
+        curr_gray = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
+        score, _ = ssim(prev_gray, curr_gray, full=True)
+        return score > threshold
+    avatar_group = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
+    avatar_group_x, avatar_group_y = avatar_group.get_COL()
+    prev_frame: Optional[np.ndarray] = None
+    while True:
         if __try_dispatch_work__():
             return
         if isinstance(app.device, Android_App):
-            app.device.scrollX(avatar_group_x, avatar_group_y, -5)
+            app.device.swipe(avatar_group.x, avatar_group_y, avatar_group.w, avatar_group_y, 1)
         else:
             app.device.scrollY(avatar_group_x, avatar_group_y, -10)
-        sleep(0.5)
+        app.game_utils.wait_frame_stable()
+        if prev_frame is not None and _is_page_unchanged(prev_frame, app.latest_frame):
+            break
     _assign_avatar_to_work(app)
-    app.debug_tools.clear_all_boxes()
+    app.debug_tools.clear_all()
 

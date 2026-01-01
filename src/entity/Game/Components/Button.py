@@ -78,11 +78,11 @@ class ButtonList:
         if self.buttons:
             for btn in self.buttons:
                 DebugTools().add_box(
-                    btn.x,
-                    btn.y,
-                    btn.w,
-                    btn.h,
-                    (255,0,0) if btn.is_disabled() else (0,255,0),
+                    int(btn.x),
+                    int(btn.y),
+                    int(btn.w),
+                    int(btn.h),
+                    color=(255,0,0) if btn.is_disabled() else (0,255,0),
                     label=btn.text,
                     duration=3
                 )

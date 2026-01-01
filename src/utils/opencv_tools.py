@@ -15,7 +15,8 @@ def gen_color_mask(img, lower_color, upper_color):
     mask = cv2.inRange(hsv_img, lower_color, upper_color)
     return mask
 
-def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3,3), iterations=1):
+
+def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3, 3), iterations=1):
     """从图像中提取指定颜色范围的轮廓"""
     mask = gen_color_mask(img, lower_color, upper_color)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize)
@@ -25,11 +26,13 @@ def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
 
+
 def get_max_contour(contours):
     """返回最大轮廓和其边界框"""
     return max(contours, key=cv2.contourArea)
 
-def extract_roi_from_mask(img, lower_color, upper_color, ksize: Tuple[int, int]=(15,15), iterations=1):
+
+def extract_roi_from_mask(img, lower_color, upper_color, ksize: Tuple[int, int] = (15, 15), iterations=1):
     """提取最大轮廓的ROI"""
     contours = get_mask_contours(img, lower_color, upper_color, ksize=ksize, iterations=iterations)
     max_contour = get_max_contour(contours)
@@ -40,6 +43,7 @@ def extract_roi_from_mask(img, lower_color, upper_color, ksize: Tuple[int, int]=
         return x, y, w, h
     return None
 
+
 def get_mark_y_position(img, lower_color, upper_color, roi_y, roi_h):
     """提取mark区域的Y位置"""
     contours = get_mask_contours(img[roi_y + roi_h:], lower_color, upper_color)
@@ -49,6 +53,7 @@ def get_mark_y_position(img, lower_color, upper_color, roi_y, roi_h):
         if _h > 5 and _w > 5:
             mark_y = min(_y, mark_y)
     return mark_y
+
 
 def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04, threshold=0.8):
     """根据面积和矩形程度筛选轮廓"""
@@ -77,6 +82,7 @@ def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04, threshold
 
     return rect_contours
 
+
 def hsv_range_to_image_cv(lower, upper, height=50, width=300):
     """
     用 OpenCV HSV 范围的 lower 和 upper 生成一张条形图，表示色调范围。
@@ -98,6 +104,7 @@ def hsv_range_to_image_cv(lower, upper, height=50, width=300):
 
     cv2.imshow(f"HSV Range {upper} - {lower}", img)
 
+
 def check_color(
         frame: np.ndarray,
         lower_color: Tuple[int, int, int],
@@ -110,12 +117,13 @@ def check_color(
     mask = cv2.inRange(hsv_roi, lower_color, upper_color)
     total_pixels = frame.size // frame.shape[2]
     # logger.debug((cv2.countNonZero(mask)/total_pixels * 100))
-    value = cv2.countNonZero(mask)/total_pixels * 100
+    value = cv2.countNonZero(mask) / total_pixels * 100
     return GeneralResult__Threshold(
         status=value >= threshold,
         threshold=threshold,
         value=value
     )
+
 
 def check_color_in_region(
         frame: np.ndarray,
@@ -134,6 +142,7 @@ def check_color_in_region(
     if roi.size == 0:
         return GeneralResult__Threshold(status=False, threshold=threshold, value=0)
     return check_color(roi, lower_color, upper_color, threshold)
+
 
 def check_status_detection(
         frame: np.ndarray,
@@ -219,7 +228,8 @@ def check_status_detection(
             value=orange_ratio
         )
 
-def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,int]=(114, 114, 114)):
+
+def letterbox(img, new_shape: Tuple[int, int] = (640, 640), color: Tuple[int, int, int] = (114, 114, 114)):
     x, y = img.shape[:2]  # current shape [height, width]
     r = min(new_shape[0] / x, new_shape[1] / y)
     new_unpad = (int(round(y * r)), int(round(x * r)))
@@ -235,6 +245,7 @@ def letterbox(img, new_shape: Tuple[int, int]=(640, 640), color: Tuple[int,int,i
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
     return img, r, (dw, dh)
 
+
 def center_crop(image: np.ndarray, size: int = 224) -> np.ndarray:
     """中心裁切"""
     h, w = image.shape[:2]
@@ -243,6 +254,7 @@ def center_crop(image: np.ndarray, size: int = 224) -> np.ndarray:
     cropped = image[start_y:start_y + size, start_x:start_x + size]
     assert cropped.shape[0] == size and cropped.shape[1] == size, f"Cropped shape error: {cropped.shape}"
     return cropped
+
 
 def intersection_area(a_x, a_y, a_w, a_h, b_x, b_y, b_w, b_h) -> float:
     """
@@ -265,14 +277,18 @@ def intersection_area(a_x, a_y, a_w, a_h, b_x, b_y, b_w, b_h) -> float:
     ih = max(0.0, y2 - y1)
     return iw * ih
 
+
 def draw_text(
         image: np.ndarray,
         text: str, position,
         font_path,
         font_size=20,
         color=(255, 255, 255),
-        max_width=200, padding_x=5,
-        line_spacing=2):
+        max_width=200,
+        padding_x=5,
+        line_spacing=2,
+        center: bool = False
+):
     """
     在图像上绘制支持中文/日文并自动换行的文字
     :param image: OpenCV 图像 (BGR)
@@ -284,36 +300,66 @@ def draw_text(
     :param max_width: 最大行宽（像素）
     :param padding_x: 左右边距
     :param line_spacing: 行间距（像素）
+    :param center: 是否让文字居中
     """
+    if max_width <= padding_x * 2:
+        max_width = padding_x * 2 + 1
+
     image_pil = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(image_pil)
-    font = ImageFont.truetype(font_path, font_size)
+
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        # 如果字体加载失败，回退到默认字体（不支持中文，但防止崩溃）
+        logger.warning(f"Font not found at {font_path}, utilizing default.")
+        font = ImageFont.load_default()
 
     # 自动换行（按像素宽度）
     lines = []
-    line = ""
-    for char in text:
-        w = draw.textbbox((0, 0), line + char, font=font)[2]  # 宽度
-        if w <= max_width - 2 * padding_x:
-            line += char
-        else:
+
+    for raw_line in text.splitlines() or [""]:
+        line = ""
+        for char in raw_line:
+            bbox = draw.textbbox((0, 0), line + char, font=font)
+            w = bbox[2] - bbox[0]
+            if w <= max_width - 2 * padding_x:
+                line += char
+            else:
+                if line:
+                    lines.append(line)
+                    line = char
+                else:
+                    # 单字符就超宽，强行放入
+                    lines.append(char)
+                    line = ""
+        if line:
             lines.append(line)
-            line = char
-    if line:
-        lines.append(line)
 
-    x, y = position
+    base_x, y = position
+
     for line in lines:
-        draw.text((x + padding_x, y), line, font=font, fill=color)
-        y += font_size + line_spacing
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_width = bbox[2] - bbox[0]
+        line_height = bbox[3] - bbox[1]
 
+        if center:
+            # 在 max_width 范围内居中
+            x = base_x + (max_width - line_width) // 2
+        else:
+            x = base_x + padding_x
+
+        draw.text((x, y), line, font=font, fill=color)
+        y += line_height + line_spacing
     # 转回 OpenCV BGR
     return cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+
 
 def get_black_image(size: Tuple[int, int]) -> bytes:
     img_black = np.zeros((size[0], size[1], 3), dtype=np.uint8)
     _, encoded_image = cv2.imencode('.png', img_black)
     return encoded_image.tobytes()
+
 
 def is_white_screen(image, brightness=250):
     """

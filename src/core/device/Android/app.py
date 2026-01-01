@@ -12,9 +12,12 @@ from src.constants.device.adb import ADBConnectMode, ADBOperation
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
 from src.utils.adb_tools import start_DroidCast, ADBShell
+from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.performance_tools import timeit
 
+
+debugger = DebugTools()
 
 class Android_App(BaseDevice):
     __config_service: ConfigService
@@ -168,6 +171,29 @@ class Android_App(BaseDevice):
         safe_start_y = clamp(start_y, height)
         safe_end_x = clamp(end_x, width)
         safe_end_y = clamp(end_y, height)
+        debugger.add_line(
+            safe_start_x,
+            safe_start_y,
+            safe_end_x,
+            safe_end_y,
+            color=(0, 255, 0),   # 绿色滑动轨迹
+            thickness=3,
+            duration=duration+1
+        )
+        debugger.add_point(
+            safe_start_x,
+            safe_start_y,
+            color=(255, 255, 0), # 起点黄
+            radius=6,
+            duration=duration+1
+        )
+        debugger.add_point(
+            safe_end_x,
+            safe_end_y,
+            color=(255, 0, 0),   # 终点红
+            radius=6,
+            duration=duration+1
+        )
         # 模拟人类滑动的微小随机偏移 (轨迹随机化)
         offset_x = random.randint(-10, 10)
         offset_y = random.randint(-10, 10)
@@ -198,12 +224,22 @@ class Android_App(BaseDevice):
 
             if direction == ADBOperation.ScrollDirection.HORIZONTAL:
                 end_x = x + (scroll_sign * current_dist)
-                # 调用提取的方法
+                DebugTools().add_line(
+                    x, y, x, end_x,
+                    color=(100, 200, 255),
+                    thickness=2,
+                    duration=1.0
+                )
                 self.swipe(x, y, end_x, y, duration=random.uniform(0.1, 0.2))
 
             elif direction == ADBOperation.ScrollDirection.VERTICAL:
                 end_y = y + (scroll_sign * current_dist)
-                # 调用提取的方法
+                DebugTools().add_line(
+                    x, y, x, end_y,
+                    color=(100, 200, 255),
+                    thickness=2,
+                    duration=1.0
+                )
                 self.swipe(x, y, x, end_y, duration=random.uniform(0.1, 0.2))
             else:
                 raise ValueError(f"Invalid direction: {direction}")
@@ -217,6 +253,12 @@ class Android_App(BaseDevice):
 
     def click(self, x, y, el_label=""):
         """点击指定坐标"""
+        debugger.add_crosshair(
+            x, y,
+            size=25,
+            color=(255, 0, 0),
+            thickness=1
+        )
         self.__get_touch_service().click(x, y)
 
     def capture(self) -> Optional[np.ndarray]:
@@ -229,7 +271,9 @@ class Android_App(BaseDevice):
                 if not self.__droidcast_service_status:
                     return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
                 response = requests.get("http://127.0.0.1:53516/screenshot")
-                response.raise_for_status()
+                if response.status_code != 200:
+                    self.__init_capture_service()
+                    return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
                 image_array = np.frombuffer(response.content, dtype=np.uint8)
                 return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
             case ADBOperation.ScreenCaptureService.uiautomator2:
