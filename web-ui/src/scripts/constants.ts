@@ -14,3 +14,13 @@ export const WS_ACTION = {
   Ping: 'ping',
   Pong: 'pong',
 } as const
+
+export const TaskStatus = {
+  PENDING: "PENDING",
+  RUNNING: "RUNNING",
+  SUCCESS: "SUCCESS",
+  RETRY: "RETRY",
+  FAILED: "FAILED",
+  CANCELED: "CANCELED",
+  SUSPENDED: "SUSPENDED"
+} as const

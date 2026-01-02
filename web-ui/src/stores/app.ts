@@ -1,7 +1,7 @@
 // Utilities
 import { defineStore } from 'pinia'
 import apis from '@/scripts/apis'
-import { WS_ACTION } from '@/scripts/constants'
+import {TaskStatus, WS_ACTION} from '@/scripts/constants'
 import { wsService } from "@/scripts/utils/websocket";
 import message from "@/scripts/utils/message";
 import {AppStatus} from "@/scripts/entity/status";
@@ -46,10 +46,10 @@ export const useAppStore = defineStore('app', {
         task.status = data.target_status
       })
       wsService.on(WS_ACTION.TaskQueueStart, () => {
-        this.status.task = true
+        this.status.task = TaskStatus.RUNNING
       })
       wsService.on(WS_ACTION.TaskQueueStop, () => {
-        this.status.task = false
+        this.status.task = TaskStatus.PENDING
       })
       wsService.on(WS_ACTION.BroadcastLog, (data) => {
         console.log(data)

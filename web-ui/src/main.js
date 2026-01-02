@@ -6,7 +6,7 @@
 
 // Plugins
 import { registerPlugins } from '@/plugins'
-import autoSave from "@/directives/auto_save.js"
+import autoSave from "@/scripts/directives/auto_save.js"
 
 // Components
 import App from './App.vue'

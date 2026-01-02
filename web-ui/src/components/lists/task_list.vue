@@ -80,6 +80,12 @@ function formatRelativeTime(ts) {
           <span class="font-medium">{{ task.description }}</span>
           <template v-slot:actions>
             <v-chip
+              v-if="task.manual_only"
+              size="small"
+              class="ml-2">
+              仅手动
+            </v-chip>
+            <v-chip
               size="small"
               :color="statusMap[task.status]?.color"
               text-color="white"

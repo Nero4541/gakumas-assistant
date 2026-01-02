@@ -30,7 +30,7 @@
     <v-main class="page_main d-flex align-center justify-center">
       <v-container class="page_container">
         <v-alert
-          v-if="!store.status.task"
+          v-if="store.status.task === TaskStatus.PENDING"
           title="等待操作"
           color="warning"
         />
@@ -56,6 +56,7 @@
   import Settings from "@/components/lists/settings.vue";
   import {useAppStore} from "@/stores/app.js";
   import app from "@/main.js";
+  import {TaskStatus} from "@/scripts/constants.ts";
   const store = useAppStore();
   let tabbar_model = ref(["tasks"])
 </script>

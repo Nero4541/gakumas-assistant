@@ -14,7 +14,7 @@ from src.constants.path.debug_path import DebugPath
 from src.constants.device.device_type import DeviceType
 from src.core.device.Android.app import Android_App
 from src.core.inference.yolo_engine import YoloInferenceEngine
-from src.core.services.task_service import TaskQueue
+from src.core.services.task_service import TaskService
 from src.core.services.clip_services import CLIPServiceManager
 from src.core.web.routers import register_routes
 from src.core.web.websocket import WebSocketManager
@@ -37,7 +37,7 @@ class AppProcessor:
     # 操作设备
     device: BaseDevice
     # 任务队列
-    task_queue: TaskQueue
+    task_queue: TaskService
     # Yolo推理引擎
     yolo_engine: YoloInferenceEngine
     # 图像debug工具
@@ -61,7 +61,7 @@ class AppProcessor:
         self.clip_manager = CLIPServiceManager()
         self.debug_tools = DebugTools()
         self.yolo_engine.register_infer_callback(self._send_frame_to_clients)
-        self.task_queue = TaskQueue(self)
+        self.task_queue = TaskService(self)
         self.game_status_manager = GameStatusManager()
         self.game_utils = GameUtils(self)
         self.ws_manager = WebSocketManager()
