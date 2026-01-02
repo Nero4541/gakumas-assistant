@@ -210,7 +210,7 @@ def _dispatch_single_work(app: "AppProcessor"):
         if __try_dispatch_work__():
             return
         if isinstance(app.device, Android_App):
-            app.device.swipe(avatar_group.x, avatar_group_y, avatar_group.w, avatar_group_y, 1)
+            app.device.swipe(avatar_group.w, avatar_group_y, avatar_group.x, avatar_group_y, 1)
         else:
             app.device.scrollY(avatar_group_x, avatar_group_y, -10)
         app.game_utils.wait_frame_stable()

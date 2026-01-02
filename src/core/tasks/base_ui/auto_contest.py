@@ -57,9 +57,12 @@ def action__loop_challenge_contest(app: "AppProcessor"):
             if contest and len(contest) == 3:
                 break
             os.makedirs(DebugPath.NotEnoughContests, exist_ok=True)
-            cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_area__{i}.png"), contest.contest_area)
-            for index, item in enumerate(contest.contests):
-                cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}.png"), item.frame)
+            try:
+                cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_area__{i}.png"), contest.contest_area)
+                for index, item in enumerate(contest.contests):
+                    cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}.png"), item.frame)
+            except Exception as e:
+                logger.warning(f"Save NotEnoughContests debug image error: {e}")
             sleep(1)
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")

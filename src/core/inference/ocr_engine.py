@@ -26,7 +26,7 @@ class OCRLoader(metaclass=SingletonMeta):
         # 初始化时创建 RapidOCR 实例
         self.ocr = RapidOCR(
             params={
-                # "EngineConfig.onnxruntime.use_dml": True,
+                "EngineConfig.onnxruntime.use_dml": True,
                 "Global.use_cls": False,
 
                 "Det.engine_type": EngineType.ONNXRUNTIME,
@@ -230,6 +230,7 @@ class OCRService:
             logger.warning(f"Empty images or dimensions are illegal: {img.shape if img is not None else 'None'}")
             return []
         img_letterbox, ratio, (dw, dh) = letterbox(img)
-        result = self.ocr_engine(img_letterbox, use_cls=False)
+        with DMLManager.get_lock():
+            result = self.ocr_engine(img_letterbox, use_cls=False)
         result = self._map_result_to_ocr_result(result, ratio, dw, dh)
         return OCR_ResultList(result)

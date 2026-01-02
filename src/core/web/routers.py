@@ -47,6 +47,8 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
                     await ws_manager.send_action(websocket, WebsocketActions.WebsocketHeartBeat.Pong)
         except WebSocketDisconnect:
             ws_manager.disconnect(websocket)
+        except Exception as e:
+            logger.error(f"Websocket Error: {e}")
 
     @app.get("/api/task/start")
     def start_task_queue():
