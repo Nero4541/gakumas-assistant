@@ -68,7 +68,7 @@ jobs:
       - name: Compress Output
         shell: pwsh
         run: |
-          $OutDir = "${{ github.workspace }}\out\app.dist\*"
+          $OutDir = "${{ github.workspace }}\out\app.dist"
 
           $Date = Get-Date -Format "yyyyMMdd"
           $Commit = "${{ github.sha }}".Substring(0, 8)

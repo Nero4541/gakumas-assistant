@@ -79,7 +79,7 @@ jobs:
       - name: Compress Output
         shell: pwsh
         run: |
-          $OutDir = "${{ github.workspace }}\out\app.dist\*"
+          $OutDir = "${{ github.workspace }}\out\app.dist"
       
           $Version = if ("${{ github.event.inputs.version }}" -ne "") {
             "${{ github.event.inputs.version }}"
