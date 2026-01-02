@@ -170,7 +170,6 @@ def _dispatch_single_work(app: "AppProcessor"):
             logger.debug(working)
             if working:
                 app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label=f"跳过，已派遣", color=(255,255,0))
-                logger.debug("Skip 'お仕事中' avatar")
                 continue
             # 大成功確定
             avatar_height, avatar_width = avatar.frame.shape[:2]
@@ -188,7 +187,6 @@ def _dispatch_single_work(app: "AppProcessor"):
                 app.debug_tools.clear_all()
                 return True
             app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="非优选")
-        # sleep(10)
         app.debug_tools.clear_all()
         return False
     def _is_page_unchanged(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.9) -> bool:
@@ -214,8 +212,18 @@ def _dispatch_single_work(app: "AppProcessor"):
         else:
             app.device.scrollY(avatar_group_x, avatar_group_y, -10)
         app.game_utils.wait_frame_stable()
+        avatar_groups = app.latest_results.filter_by_label(BaseUILabels.AVATAR).group_yolo_boxes_by_position(None, avatar_group_x//6)
+        max_x_group = max(
+            avatar_groups,
+            key=lambda g: max(box.w for box in g.boxes),
+        )
+        if len(max_x_group) < 2:
+            break
+
         if prev_frame is not None and _is_page_unchanged(prev_frame, app.latest_frame):
             break
+
+        prev_frame = app.latest_frame.copy()
     _assign_avatar_to_work(app)
     app.debug_tools.clear_all()
 
