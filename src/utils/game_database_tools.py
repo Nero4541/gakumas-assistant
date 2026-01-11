@@ -14,6 +14,7 @@ from src.entity.Game.Database.ProduceCard import ProduceCard, ProduceCardLocaliz
 from src.entity.Game.Database.ProduceCardGrowEffect import ProduceCardGrowEffect
 from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
+from src.utils.data_converter import DataConverter
 from src.utils.string_tools import string_match, MatchConfig
 from src.utils.logger import logger
 from src.constants.path.data_path import DataPath
@@ -49,41 +50,6 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
         self._load_database()
 
     @classmethod
-    @logger.catch
-    def _from_dict(cls, target_dataclass, data):
-        """
-        将Dict数据转换到dataclass
-        :param target_dataclass: 目标dataclass
-        :param data: 数据字典
-        :return:
-        """
-        if not hasattr(target_dataclass, "__dataclass_fields__"):
-            return data
-
-        kwargs = {}
-        for f_name, f_type in target_dataclass.__annotations__.items():
-            value = data.get(f_name, dataclasses.MISSING)
-
-            if value is dataclasses.MISSING:
-                continue
-
-            # List[T]
-            if getattr(f_type, "__origin__", None) is list:
-                inner = f_type.__args__[0]
-                if value is None:
-                    kwargs[f_name] = []
-                else:
-                    kwargs[f_name] = [cls._from_dict(inner, v) for v in value]
-
-            elif hasattr(f_type, "__dataclass_fields__"):
-                kwargs[f_name] = cls._from_dict(f_type, value)
-
-            else:
-                kwargs[f_name] = value
-
-        return target_dataclass(**kwargs)
-
-    @classmethod
     def _preprocess_yaml_data(cls, f: TextIO) -> str:
         _content = f.read()
         _content = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", _content)
@@ -99,7 +65,7 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
                     entry["produceDescriptions"] = [
                         d for d in pd if isinstance(d, dict)
                     ]
-            objects = [cls._from_dict(data_entity, entry) for entry in entries.get("data", [])]
+            objects = [DataConverter.from_dict(data_entity, entry) for entry in entries.get("data", [])]
         return objects
 
     def _load_yaml(self) -> list[dict]:
@@ -117,7 +83,7 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
         :param entries:
         :return:
         """
-        return [self._from_dict(self.data_cls, entry) for entry in entries]
+        return [DataConverter.from_dict(self.data_cls, entry) for entry in entries]
 
     def _load_localization_data(self):
         """
@@ -157,7 +123,7 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
         self._data = objects
         self._map = {self._build_map_key(o): o for o in objects}
 
-        logger.info(
+        logger.success(
             f"[{self.__class__.__name__}] {len(self._data)} records loaded from {self._diff_file}"
         )
 
@@ -202,6 +168,9 @@ class GakumasDatabase_GrowEffectDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCardGrowEffect
     loc_cls = None
 
+    def __init__(self, data_file = DataPath.GakumasuDiffData.GROW_EFFECT):
+        super().__init__(data_file)
+
     def _load_database(self):
         super()._load_database()
 
@@ -215,6 +184,9 @@ class GakumasDatabase_GrowEffectDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceCardDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCard
     loc_cls = ProduceCardLocalization
+
+    def __init__(self, data_file = DataPath.GakumasuDiffData.PRODUCE_CARD):
+        super().__init__(data_file)
 
     def _build_map_key(self, card):
         return f"{card.id}.{card.upgradeCount}"

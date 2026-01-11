@@ -5,14 +5,14 @@
  */
 
 // Plugins
-import { registerPlugins } from '@/plugins'
+import {registerPlugins} from '@/plugins'
 import autoSave from "@/scripts/directives/auto_save.js"
 
 // Components
 import App from './App.vue'
 
 // Composables
-import { createApp } from 'vue'
+import {createApp} from 'vue'
 
 // Styles
 import 'unfonts.css'
@@ -20,7 +20,7 @@ import {getRandomTheme} from "@/scripts/utils/theme.ts";
 import {useAppStore} from "@/stores/app.js";
 
 // Websocket
-import { wsService } from '@/scripts/utils/websocket.ts'
+import {wsService} from '@/scripts/utils/websocket.ts'
 import {getWsUrl} from "@/scripts/utils/wsURL.js";
 import {WS_ACTION} from "@/scripts/constants.ts";
 import message from "@/scripts/utils/message.js";
@@ -33,16 +33,16 @@ const theme = getRandomTheme()
 const appStore = useAppStore()
 wsService.connect(getWsUrl("/ws"))
 wsService.on(WS_ACTION.ShowMessage_Info, data => {
-  message.showInfo(data.message, data.close_delay)
+  message.showInfo(data.message, data?.close_delay ? data.close_delay * 1000 : 3000)
 })
 wsService.on(WS_ACTION.ShowMessage_Warning, data => {
-  message.showWarning(data.message, data.close_delay)
+  message.showWarning(data.message, data?.close_delay ? data.close_delay * 1000 : 3000)
 })
 wsService.on(WS_ACTION.ShowMessage_Error, data => {
-  message.showError(data.message, data.close_delay)
+  message.showError(data.message, data?.close_delay ? data.close_delay * 1000 : 3000)
 })
 wsService.on(WS_ACTION.ShowMessage_Success, data => {
-  message.showSuccess(data.message, data.close_delay)
+  message.showSuccess(data.message, data?.close_delay ? data.close_delay * 1000 : 3000)
 })
 wsService.onEvent("disconnect", () => {
   message.showWarning("连接已断开")

@@ -40,8 +40,8 @@ class DebugBox(DebugElement):
     w: int = 0  # 右下角 x
     h: int = 0  # 右下角 y
     label: Optional[str] = None
-    text_color: Tuple[int, int, int] = (255, 255, 255)
-    font_size: int = 22
+    text_color: Tuple[int, int, int] = (0, 0, 0)
+    font_size: int = 24
     thickness: int = 2
 
     color: Tuple[int, int, int] = (0, 0, 255)

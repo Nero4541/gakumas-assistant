@@ -87,46 +87,6 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
     return GamePageTypes.UNKNOWN
 
 @timeit
-def extract_skill_card_and_info(img):
-    """提取技能卡和技能卡信息，仅【P图鉴】页面可用"""
-    img_w, img_h = img.shape[:2]
-
-    # 提取信息边框的轮廓
-    lower_color = np.array([0, 0, 180])
-    upper_color = np.array([0, 0, 220])
-    contours = get_mask_contours(img, lower_color, upper_color)
-
-    # 技能卡边框颜色范围
-    skill_card_lower_color = np.array([104, 32, 87])
-    skill_card_upper_color = np.array([115, 87, 142])
-
-    # 提取每个区域
-    for cnt in contours:
-        x, y, w, h = cv2.boundingRect(cnt)
-
-        # 筛选条件：宽度必须大于图像宽度的一半，且高度大于图像高度的四分之一
-        if w > img_w // 2 and h > img_h // 4:
-            roi = img[y:y + h, x:x + w]
-
-            # 提取技能卡区域的轮廓
-            skill_card_contours = get_mask_contours(roi, skill_card_lower_color, skill_card_upper_color)
-
-            # 找到技能卡最大宽度并提取
-            for skill_card_cnt in skill_card_contours:
-                x_skill, y_skill, w_skill, h_skill = cv2.boundingRect(skill_card_cnt)
-                if h_skill >= h // 3:
-                    skill_card = roi[y_skill:y_skill + h_skill, x_skill:x_skill + w_skill]
-
-                    # 提取技能卡信息区域
-                    skill_card_info = roi[:, x_skill + w_skill:]
-                    skill_card_info = cv2.cvtColor(skill_card_info, cv2.COLOR_BGR2GRAY)
-                    _, skill_card_info = cv2.threshold(skill_card_info, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-                    # 返回技能卡和信息区域
-                    return roi, skill_card, skill_card_info
-    return None, None, None  # 如果没有找到符合条件的区域
-
-@timeit
 def modal_body_extract_item_info(
         img,
         item_lower: tuple[int, int, int] = (0,0,0),

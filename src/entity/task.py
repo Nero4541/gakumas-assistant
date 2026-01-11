@@ -20,8 +20,6 @@ class Task:
     enable: bool
     # 禁用中间件
     disabled_middleware: bool
-    # 仅手动触发
-    manual_only: bool
     # 任务方法
     function: Callable
     # 超时时间
@@ -34,6 +32,12 @@ class Task:
     _end_time: Optional[int] = -1
     # 上次运行时间
     last_run_time: float = 0
+    # 仅手动触发
+    manual_only: bool = False
+    # 允许手动挂起
+    allow_manual_suspend: bool = False
+    # 允许手动解除挂起
+    allow_manual_resume: bool = False
 
     def update_start_time(self):
         self._start_time = int(time())

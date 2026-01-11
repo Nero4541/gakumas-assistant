@@ -72,13 +72,19 @@ class Yolo_Results:
     def __init__(self, yolo_results, frame: np.ndarray):
         self.boxes = []
         self.results = yolo_results
+        img_w, img_h = frame.shape[:2]
         for index, box in enumerate(yolo_results):
             x, y, w, h = map(int, box)
+            # 规范化坐标，防止出现-1之类的问题
+            x = max(0, x)
+            y = max(0, y)
+            w = min(img_w, w)
+            h = min(img_h, h)
             label_id = int(yolo_results.class_ids[index])
             label = yolo_results.model_mata.names[label_id]
             self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
         self.sort_boxes()
-        self.frame = copy(frame)
+        self.frame = frame.copy()
 
     def __bool__(self):
         return bool(self.boxes)

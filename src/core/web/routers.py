@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from src.constants.path.data_path import DataPath
+from src.constants.task_status import TaskStatus
 from src.constants.websocket_actions import WebsocketActions
 from src.core.web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
@@ -65,6 +66,37 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         """
         processor.exec_task(task_name)
         return _api_return(True, "OK")
+
+    @app.get("/api/task/suspend")
+    def suspend_task():
+        """
+        挂起任务
+        :return:
+        """
+        current_running_task = processor.task_queue.get_current_running_task()
+        if not current_running_task:
+            return _api_return(False, "当前没有正在运行的任务")
+        if not current_running_task.allow_manual_suspend:
+            return _api_return(False, "当前任务不支持手动挂起")
+        processor.task_queue.suspend_running_task()
+        return _api_return(True, "OK")
+
+    @app.get("/api/task/resume")
+    def resume_task():
+        """
+        恢复任务
+        :return:
+        """
+        if processor.task_queue.queue_status() != TaskStatus.SUSPENDED:
+            return _api_return(False, "当前没有已挂起的任务")
+        if not processor.task_queue.get_current_suspend_task().allow_manual_resume:
+            return _api_return(False, "当前任务不支持手动解除挂起")
+        if processor.task_queue.get_current_running_task() is not None:
+            logger.debug(f"Current running task: {processor.task_queue.get_current_running_task()}")
+            return _api_return(False, "当前处于插队执行中，无法恢复执行")
+        processor.task_queue.resume_suspended_task()
+        return _api_return(True, "OK")
+
 
     @app.get("/api/task/stop")
     def stop_task_queue():

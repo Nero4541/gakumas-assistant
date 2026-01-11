@@ -155,7 +155,7 @@ class Android_App(BaseDevice):
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 return self.__adb_device
 
-    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, offset_x = 10, offset_y = 10):
         """
         基础滑动方法：执行带安全检查和随机偏移的单次滑动
         :param start_x: 起始X
@@ -195,8 +195,8 @@ class Android_App(BaseDevice):
             duration=duration+1
         )
         # 模拟人类滑动的微小随机偏移 (轨迹随机化)
-        offset_x = random.randint(-10, 10)
-        offset_y = random.randint(-10, 10)
+        offset_x = random.randint(0-offset_x, offset_x)
+        offset_y = random.randint(0-offset_y, offset_y)
         # 将 duration 稍微随机化，避免死板的固定时长
         actual_duration = duration * random.uniform(0.9, 1.1)
         self.__get_touch_service().swipe(

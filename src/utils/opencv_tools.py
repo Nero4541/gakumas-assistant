@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 import cv2
 import numpy as np
+from skimage.metrics import structural_similarity as ssim
 
 from src.entity.GeneralResult import GeneralResult__Threshold
 from src.utils.logger import logger
@@ -16,12 +17,12 @@ def gen_color_mask(img, lower_color, upper_color):
     return mask
 
 
-def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3, 3), iterations=1):
+def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3, 3), iterations=1, morph_open: bool = False, morph_close: bool = True):
     """从图像中提取指定颜色范围的轮廓"""
     mask = gen_color_mask(img, lower_color, upper_color)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, ksize)
-    # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+    if morph_open: mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+    if morph_close: mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
     mask = cv2.dilate(mask, kernel, iterations=iterations)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
@@ -374,3 +375,17 @@ def is_white_screen(image, brightness=250):
     avg_brightness = np.mean(gray_image)
     # 如果平均亮度接近255，表示是白屏
     return avg_brightness > brightness  # 你可以根据需要调整这个阈值
+
+
+def check_frame_change(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.9) -> bool:
+    """
+    检查帧是否变化
+    :param prev: 上一帧
+    :param curr: 当前帧
+    :param threshold: 阈值
+    :return:
+    """
+    prev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
+    curr_gray = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
+    score, _ = ssim(prev_gray, curr_gray, full=True)
+    return score > threshold

@@ -41,7 +41,8 @@ def register_middlewares(processor: "AppProcessor"):
                 logger.warning("Network connection error...")
                 app.device.click_element(modal.confirm_button)
                 app.game_utils.wait_loading()
-            last_modal = True
+            else:
+                last_modal = True
         else:
             last_modal = False
         return True

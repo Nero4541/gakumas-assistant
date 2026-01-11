@@ -11,3 +11,4 @@ class DebugPath:
 
     UnknownItem = os.path.join(__base_image, "UnknownItem")
     NotEnoughContests = os.path.join(__base_image, "NotEnoughContests")
+    NoValidSkillCardInfo = os.path.join(__base_image, "NoValidSkillCardInfo")

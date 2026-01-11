@@ -12,6 +12,7 @@ from time import sleep
 from src.constants.path.data_path import DataPath
 from src.constants.path.debug_path import DebugPath
 from src.constants.device.device_type import DeviceType
+from src.constants.task_status import TaskStatus
 from src.core.device.Android.app import Android_App
 from src.core.inference.yolo_engine import YoloInferenceEngine
 from src.core.services.task_service import TaskService
@@ -68,6 +69,7 @@ class AppProcessor:
         register_tasks(self)
         register_middlewares(self)
         self._register_config_listening()
+        self._load_game_database()
         logger.success("Application Initialized")
 
     def _init_environment(self):
@@ -95,18 +97,25 @@ class AppProcessor:
         ConfigModel.update_database()
         logger.success("Database Initialized")
 
+    @staticmethod
+    def _load_game_database():
+        from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils, GakumasDatabase_ProduceCardDataUtils
+        GakumasDatabase_ItemDataUtils()
+        GakumasDatabase_ProduceCardDataUtils()
+        logger.success("Load game database successfully")
+
     def _register_config_listening(self):
 
         def update_device(key, old, new):
             logger.warning(f"Reinitialize device......")
-            suspend_task = None
-            if self.task_queue.queue_status():
-                suspend_task = self.task_queue.suspend_running_task()
+            suspend_task = self.task_queue.get_current_suspend_task()
+            if suspend_task:
+                self.task_queue.suspend_running_task()
             status = self.yolo_engine.running
             self.yolo_engine.stop()
             self.device = self.create_device_instance()
             if status: self.yolo_engine.start()
-            if suspend_task is not None: self.task_queue.resume_suspended_task()
+            if suspend_task: self.task_queue.resume_suspended_task()
             return
 
         self.config_service.add_listener([
@@ -159,4 +168,4 @@ class AppProcessor:
         self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 
     def exec_task(self, task_name: str = None):
-        return self.task_queue.exec_task(task_name)
+        return self.task_queue.start_queue(task_name)

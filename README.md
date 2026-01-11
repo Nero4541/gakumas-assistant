@@ -43,24 +43,40 @@
 > - 自动P卡
 
 ## 注意事项
-> 大部分测试都是在 `Windows` 系统上测试的，因此其他操作系统若有运行问题，请提 Issues 或加群讨论。  
+> 大部分测试都是在 `Windows` 系统上测试的，因此其他操作系统若有运行问题，请提 issues 或加群讨论。  
 
-> 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`最新的日志文件上传并截图进行反馈。
+> 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件上传并截图进行反馈。
 
 > 汉化版本暂不支持，请关闭汉化插件后使用
 
 > 本项目使用 `Yolov11n` 模型进行图像识别，请确保电脑有显卡且支持[DirectML](https://learn.microsoft.com/zh-cn/windows/ai/directml/dml)，否则将会回退到CPU推理，可能会导致效率低下。
 
 ## 安装
+### Plan1: 以打包的方式安装
 前往 [Releases](https://github.com/Pigeon-Server/gakumas-assistant/releases) 下载打包后的文件   
 运行 `Gakumas Assistant.exe`  
 更多使用说明参见 [使用手册](./docs/use_script.md)  
+
+### Plan2: 手动安装
+克隆及安装项目:
+```bash
+git clone https://github.com/Pigeon-Server/gakumas-assistant
+git submodule init
+git submodule update --init
+python -m venv venv
+./venv/Scripts/activate
+pip install -r requirements.txt
+```
+运行项目:
+```bash
+python app.py
+```
 
 ## 免责声明
 **请在使用本项目前仔细阅读以下内容。使用本脚本将带来包括但不限于账号被封禁的风险。**
 
 ### 总则
-本项目是一个为游戏 **《学园偶像大师》（学園アイドルマスター）** 设计的自动操作脚本。本项目的创建目的仅为技术学习与研究，并非为了提供商业服务或鼓励不正当的游戏行为。
+该项目是一个为游戏 **《学园偶像大师》（学園アイドルマスター）** 设计的自动操作脚本。本项目的创建目的仅为技术学习与研究，并非为了提供商业服务或鼓励不正当的游戏行为。
 
 ### 版权声明
 本项目所使用的部分资源文件，包括但不限于图像、音频、模型等，其版权归属于其原始权利人。该游戏的开发商为 **QualiArts**，发行商为**万代南梦宫娱乐（Bandai Namco Entertainment Inc.）**。
@@ -83,26 +99,55 @@
 **继续下载、安装或使用本项目，即表示您已完全阅读、理解并同意承担以上所有风险和条款。如果您不同意，请立即停止使用并删除本项目的所有相关文件。**
 
 ## 开发
-**安装环境**
+> 贡献代码时请注意:
+> 1. 尽可能不硬编码坐标等参数
+> 2. 尽可能不包含游戏中的资产
+
+### **安装环境:**  
+推荐使用 uv（一款速度极快的 Python 环境管理器）来创建和管理 Python 环境。  
+请先按照官方文档完成 uv 的安装：  
+👉 https://docs.astral.sh/uv/getting-started/installation  
+安装完成后，可使用以下命令创建虚拟环境并安装依赖：
 ```bash
-python3 -m pip install -r requirements.dev.txt
-# 中国大陆网络可以使用 requirements.dev.cn.txt
+uv venv --python 3.12 --seed
+source .venv/bin/activate
+uv pip install -r requirements.dev.txt
 ```
-**拉取子模块**
+如果你更习惯使用传统的 `pip`，也可以使用以下方式：  
+```bash
+python -m venv venv
+source .venv/bin/activate
+pip install -r requirements.dev.txt
+```
+> PS：  
+> 建议创建两个环境用于开发和打包,部分库在导出/打包时才会使用  
+> 中国大陆网络环境可使用 requirements.dev.cn.txt 以提高依赖安装成功率。
+### **拉取子模块:**
+本项目包含 Git 子模块，请在克隆仓库后执行：
 ```bash
 git submodule init
 git submodule update --init
 ```
-**YOLO检测模型训练**  
+### **YOLO检测模型训练:**  
 #### 训练：
-该项目基于 YOLO v11，并使用了两个独立模型，分别负责主界面识别与训练界面识别。训练脚本位于 train/<model_name>/train.py。
+该项目基于 YOLO v11，并训练两个独立模型，分别负责主界面识别与训练界面识别。训练脚本位于 train/<model_name>/train.py。
 
 - BaseUI 模型：使用约 4.1K 张有效样本训练，用于主 UI 的目标检测。
 - Producer 模型：使用约 2K 张样本训练，用于训练界面的检测任务。
 
 两个模型均根据其应用场景独立优化，以获得更高的识别精度和更稳定的推理效果。
 #### 数据集：
-> 待脱敏后开放，如有需要请联系**skyfsj@qq.com**
+> 待脱敏后开放，如有需要请联系**skyfsj@qq.com**  
+#### 导出推理模型:
+导出脚本会导出所有模型,请在项目根运行导出脚本
+```bash
+python ./devtools/model_export.py
+```
+### 打包项目:
+本项目使用nuitka进行打包,打包后的应用程序会输出到out/app.dist中
+```bash
+python build_app.py
+```
 
 ## 许可证
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.
@@ -117,9 +162,11 @@ Unless required by applicable law or agreed to in writing, software distributed 
 本项目主要用到了以下开源项目，感谢各位开发者的付出：
 - **[GkmasObjectManager](https://github.com/AllenHeartcore/GkmasObjectManager)**  
 游戏资源提取器
+- **[campus](https://github.com/vertesan/campus)**  
+游戏数据库提取工具  
 - **[gakumasu-diff](https://github.com/vertesan/gakumasu-diff)**  
 游戏数据
 - **[GakumasTranslationData](https://github.com/chinosk6/GakumasTranslationData.git)**  
 游戏文本翻译
-- **[Gakumas_Launcher](https://github.com/a4nqi3n/Gakumas_Launcher)**
+- **[Gakumas_Launcher](https://github.com/a4nqi3n/Gakumas_Launcher)**  
 脱离DMMPlayer启动游戏

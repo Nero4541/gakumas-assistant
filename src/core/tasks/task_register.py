@@ -1,15 +1,17 @@
+import os
 import time
 from copy import copy
 
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
 
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.modal_text import ModalText
+from src.constants.path.debug_path import DebugPath
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.core.device.Windows.app import Windows_App
+from src.core.inference.ocr_engine import OCRService, OCR_ResultList
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
 from src.core.tasks.base_ui.auto_purchase import action__receive_weekly_gift, action__daily_exchange
@@ -26,18 +28,25 @@ from src.core.tasks.base_ui.start_game import (
 from time import sleep
 
 from src.entity.Game.Components.Button import ButtonList
+from src.entity.Game.Components.CheckBox import CheckBox
+from src.entity.Game.Components.TabBar import TabBar
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.utils.game_tools import get_modal
+from src.entity.Yolo import Yolo_Box
+from src.utils.debug_tools import DebugTools
+from src.utils.game_database_tools import GakumasDatabase_ProduceCardDataUtils
 from src.utils.logger import logger
 from typing import TYPE_CHECKING, Optional
 
-from src.utils.opencv_tools import is_white_screen
+from src.utils.opencv_tools import is_white_screen, get_mask_contours, check_frame_change
 from src.utils.string_tools import string_match, MatchConfig
+from src.utils.ui_message_tools import UIMessage
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
 GAME_RUNNING = False
+message_tools = UIMessage()
+debug_tools = DebugTools()
 
 def register_tasks(processor: "AppProcessor"):
 
@@ -51,7 +60,8 @@ def register_tasks(processor: "AppProcessor"):
             try:
                 logger.debug(f"device bool: {bool(processor.device)}, try capture size={processor.device.capture().size}")
                 return bool(processor.device) and processor.device.capture().size != 0
-            except:
+            except Exception as e:
+                logger.warning(f"screen capture test failed: {e}")
                 return False
         if isinstance(processor.device, Android_App):
             MAX_TRY = 3
@@ -61,8 +71,6 @@ def register_tasks(processor: "AppProcessor"):
                     logger.warning(f"[{TRY_COUNT}]Adb connect disconnect, Try reconnect")
                     processor.create_device_instance()
                 else:
-                    return True
-                if _check():
                     logger.success(f"Adb reconnection was successful")
                     return True
                 sleep(1)
@@ -209,3 +217,104 @@ def register_tasks(processor: "AppProcessor"):
     def _task__claim_pass_rewards(app: "AppProcessor"):
         goto__claim_pass_rewards(app)
         claim_pass_rewards(app)
+
+    @processor.task_queue.register_task("void_task", "测试任务")
+    def _task__void_task(app: "AppProcessor"):
+        logger.success("void_task!")
+        return True
+
+    @processor.task_queue.register_task("refresh_skill_storage", "刷新技能卡存储", disabled_middleware=True, manual_only=True, allow_manual_resume=True)
+    def _task__refresh_skill_storage(app: "AppProcessor"):
+        while True:
+            # logger.debug(app.latest_results)
+            if app.game_utils.update_current_location() != GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED:
+                message_tools.info("任务已挂起，请手动切换到图鉴页面", 30)
+                # app.task_queue.insert_task_to_run_queue("void_task")
+                app.task_queue.suspend_running_task()
+            else:
+                break
+        if app.game_utils.wait_for_label(BaseUILabels.TAB_BAR):
+            tabbar = TabBar(app.latest_results.filter_by_label(BaseUILabels.TAB_BAR).first())
+            for tab_item in tabbar:
+                if string_match(tab_item.text, "スキルカード"):
+                    app.device.click_element(tab_item)
+                    break
+        else:
+            message_tools.error("无法找到TabBar，刷新失败")
+            return False
+        if not app.game_utils.wait_for_label(BaseUILabels.BUTTON):
+            logger.error("not find task require button, refresh fail")
+            message_tools.error("无法找到任务所需的按钮，刷新失败")
+            return False
+        buttons = ButtonList(app.latest_results)
+        switch_intensify_effect = buttons.get_button_by_text("強化") or next((string_match(i.text, "強化") for i in [CheckBox(el) for el in app.latest_results.filter_by_label(BaseUILabels.CHECKBOX)]))
+        idol_switch = buttons.get_button_by_text("切り替え")
+        if not switch_intensify_effect:
+            logger.error("not find switch_intensify_effect button, refresh fail")
+            message_tools.error("无法找到卡属性切换按钮，刷新失败")
+            return False
+        if not idol_switch:
+            logger.error("not find idol_switch button, refresh fail")
+            message_tools.error("无法找到偶像切换按钮，刷新失败")
+            return False
+
+
+        # TODO 外部服务，待拆走
+        ocr_service = OCRService()
+        skill_card_database = GakumasDatabase_ProduceCardDataUtils()
+
+        os.makedirs(DebugPath.NoValidSkillCardInfo, exist_ok=True)
+        width, _ = app.device.get_window_size()
+        skill_card_form_info_box: Optional[Yolo_Box] = None
+        prev_page: Optional[np.ndarray] = None
+        swipe_start: int = 0
+        swipe_end: int = 0
+
+        while True:
+            skill_cards = app.latest_results.filter_by_labels([BaseUILabels.SKILL_CARD, BaseUILabels.SKILL_CARD_ACTIVE, BaseUILabels.SKILL_CARD_MENTAL, BaseUILabels.SKILL_CARD_TRAP])
+            skill_card_list = skill_cards.remove_by_yolo_results(skill_cards.get_y_min_element())
+            if skill_card_form_info_box is None:
+                skill_card_form_info_box = skill_cards.get_y_min_element()
+            if not swipe_start or not swipe_end:
+                swipe_start = skill_card_list.get_y_max_element().get_COL()[1]
+                swipe_end = skill_card_list.get_y_min_element().get_COL()[1]
+                logger.debug(f"swipe_start={swipe_start}, swipe_end={swipe_end}")
+                debug_tools.add_line(0, swipe_start, width, swipe_start, color=(0,255,0))
+                debug_tools.add_line(0, swipe_end, width, swipe_end, color=(0,255,255))
+            for index, skill_card in enumerate(skill_card_list):
+                debug_tools.add_box(skill_card.x, skill_card.y, skill_card.w, skill_card.h)
+
+                app.device.click_element(skill_card)
+                sleep(1)
+                app.game_utils.wait_frame_stable(stable_count=2)
+                skill_card_image = app.latest_frame[skill_card_form_info_box.y:skill_card_form_info_box.h, skill_card_form_info_box.x:skill_card_form_info_box.w]
+                skill_card_info_image = app.latest_frame[skill_card_form_info_box.y - 10:skill_card_form_info_box.h, skill_card_form_info_box.w:]
+                if app.clip_manager.skill_card_clip.retrieve(skill_card_image) is not None:
+                    continue
+                ocr_result = ocr_service.ocr(skill_card_info_image)
+                if ocr_result is None:
+                    logger.warning("No valid skill card information.")
+                    continue
+                ocr_result.auto_merge_lines(width_gap=100)
+                card_title = ocr_result.get_y_min().text
+                logger.debug(card_title)
+                status, db_search_result = skill_card_database.search(card_title)
+                if not status:
+                    logger.warning("No search skill card info form game database.")
+                    continue
+                logger.debug(db_search_result)
+                app.clip_manager.skill_card_clip.add_to_memory(skill_card_image, db_search_result)
+                # app.clip_manager.skill_card_clip.add_to_memory(skill_card.frame, db_search_result)
+                sleep(2)
+
+            if isinstance(app.device, Android_App):
+                app.device.swipe(width // 2, swipe_start, width // 2, swipe_end, offset_y=0)
+            sleep(1)
+            app.game_utils.wait_frame_stable()
+
+            debug_tools.clear_all()
+
+            if prev_page is not None and check_frame_change(prev_page, app.latest_frame):
+                break
+
+            prev_page = app.latest_frame

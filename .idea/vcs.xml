@@ -3,12 +3,6 @@
   <component name="VcsDirectoryMappings">
     <mapping directory="$PROJECT_DIR$" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/GakumasPreTranslation" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/gakuen-adapted-translation-data" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/gakumas-generic-strings-translation" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/gakumas-generic-strings-translation/gakumas-generic-source-strings" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/gakumas-master-translation" vcs="Git" />
-    <mapping directory="$PROJECT_DIR$/assets/GakumasTranslationData/gakumas-master-translation/gakumasu-diff/orig" vcs="Git" />
     <mapping directory="$PROJECT_DIR$/assets/gakumasu-diff" vcs="Git" />
   </component>
 </project>

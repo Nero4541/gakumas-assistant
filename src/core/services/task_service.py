@@ -1,12 +1,13 @@
 import inspect
 import os
 import sys
+import threading
 import traceback
 from functools import partial, lru_cache
 from pathlib import Path
 from queue import Queue
 from typing import Callable, Optional, TYPE_CHECKING, List
-from threading import Thread, Lock, Event
+from threading import Thread
 from time import time, sleep
 
 from pyautogui import FailSafeException
@@ -45,20 +46,20 @@ class TaskService:
     _task_pre_function: list[Callable] = []
     # 任务中间件方法列表
     _task_middleware_function: list[Callable] = []
-    # 插入的任务
-    _insert_task: Optional[Task] = None
     # 任务执行器线程
     _worker_thread: Thread = None
     # 当前运行的任务
     _current_running_task: Optional[Task] = None
     # 挂起的任务目标
     _suspend_target_task: Optional[Task] = None
+    # 插入的任务
+    _insert_task: Optional[Task] = None
     # 队列状态
-    _queue_status = Event()
+    _queue_status: bool = False
     # 停止任务信号
-    _stop_signal = Event()
+    _stop_signal: bool = False
     # 挂起任务信号
-    _suspend_task_signal = Event()
+    _suspend_task_signal: bool = False
 
     def __init__(self, app):
         self._app = app
@@ -81,6 +82,8 @@ class TaskService:
             timeout: int | None = None,
             disabled_middleware: bool = False,
             manual_only: bool = False,
+            allow_manual_suspend: bool = False,
+            allow_manual_resume: bool = False
     ):
         """
         注册任务
@@ -89,24 +92,26 @@ class TaskService:
         :param timeout: 超时时间
         :param disabled_middleware: 禁用中间件
         :param manual_only: 仅手动模式
+        :param allow_manual_suspend: 允许手动挂起
+        :param allow_manual_resume: 允许手动恢复
         :return:
         """
         def __register(func):
             if self._find_task(task_id):
                 raise RuntimeError(f"Duplicate task name: '{task_id}'")
-            enable = True
-            if task_id in config_service().base.disabled_tasks.value:
-                enable = False
+            enable =  task_id not in config_service().base.disabled_tasks.value
             self._task_list.append(Task(
                 id=task_id,
                 task_name=task_name,
                 enable=enable,
                 disabled_middleware=disabled_middleware,
                 manual_only=manual_only,
+                allow_manual_suspend=allow_manual_suspend,
+                allow_manual_resume=allow_manual_resume,
                 function=func,
                 timeout=timeout
             ))
-        logger.debug(f"register task: {task_id}")
+        logger.debug(f"register task: {task_name}({task_id})")
         def decorator(func: Callable):
             __register(func)
         return decorator
@@ -143,18 +148,18 @@ class TaskService:
                 raise RuntimeError(f"Task pre function {func.__name__} failed: \n{tb_str}")
         return True
 
-    def exec_task(self, task_id: str = None):
+    def start_queue(self, task_id: str = None):
         """
         执行任务
         :param task_id: 任务ID(可选)
         :return:
         """
-        if self._queue_status.is_set():
+        if self._queue_status:
             return False  # 已在运行中
-        self._queue_status.set()
+        self._queue_status = True
         # 重置状态机
-        self._stop_signal.clear()
-        self._suspend_task_signal.clear()
+        self._stop_signal = False
+        self._suspend_task_signal = False
         self._suspend_target_task = None
         debug_tools.clear_all()
         # 清理队列
@@ -187,7 +192,7 @@ class TaskService:
         挂起当前正在运行的任务
         :return: 被挂起的 Task
         """
-        if self._suspend_task_signal.is_set():
+        if self._suspend_task_signal:
             raise RuntimeError("Task already suspended")
 
         target = self._current_running_task
@@ -197,30 +202,35 @@ class TaskService:
 
         if not target:
             raise RuntimeError("No running task to suspend")
-
-        target.update_status(TaskStatus.SUSPENDED)
-        self._suspend_target_task = target
-        self._suspend_task_signal.set()
-        logger.debug(f"Suspend task: {target.task_name}({target.id})")
+        def _send_signal():
+            self._suspend_task_signal = True
+            target.update_status(TaskStatus.SUSPENDED)
+            self._suspend_target_task = target
+            self._current_running_task = None
+            logger.debug(f"Suspend task: {target.task_name}({target.id})")
+        # 抛出线程，防止任务中调用导致出现问题
+        threading.Thread(target=_send_signal, daemon=True).start()
         return target
 
     def resume_suspended_task(self):
         """
         恢复被挂起的任务
         """
-        if not self._suspend_task_signal.is_set():
+        if not self._suspend_task_signal:
             raise RuntimeError("Current not task suspended")
 
         target = self._suspend_target_task
+        self._suspend_task_signal = False
         target.update_status(TaskStatus.RUNNING)
-        self._suspend_task_signal.clear()
+        self._suspend_target_task = None
+        self._current_running_task = target
         logger.debug(f"Resume task: {target.task_name}({target.id})")
 
     def insert_task_to_run_queue(self, task_id: str):
         """
         插队执行：挂起当前 -> 执行新任务 -> 恢复旧任务
         """
-        if self._suspend_task_signal.is_set():
+        if self._suspend_task_signal:
             logger.error("System is already suspended, cannot insert.")
             return False
 
@@ -229,7 +239,7 @@ class TaskService:
             logger.error(f"Task '{task_id}' does not exist.")
             return False
 
-        logger.debug(f"Insert task: {insert_task.task_name}(id: {insert_task.id})")
+        logger.debug(f"Insert task: {insert_task.task_name}({insert_task.id})")
 
         try:
             self.suspend_running_task()
@@ -244,10 +254,9 @@ class TaskService:
                 self._task_thread(insert_task)
             finally:
                 logger.debug("Resume suspended task")
-                self._insert_task = None
                 self.resume_suspended_task()
 
-        self._insert_task = insert_task
+        self._current_running_task = insert_task
         Thread(target=_insert_runner, daemon=True).start()
         return True
 
@@ -269,29 +278,29 @@ class TaskService:
                     raise RuntimeError(f"Pre-function {func.__name__} returned False")
         except Exception as e:
             logger.error(f"Task queue pre-check failed: {e}")
-            self._queue_status.clear()
+            websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueStop)
+            self._queue_status = False
             self._app.yolo_engine.pause()
             return
 
         try:
             while not self._task_queue.empty():
-                if self._stop_signal.is_set():
+                if self._stop_signal:
                     break
                 task = self._task_queue.get()
                 self._current_running_task = task
                 logger.info(f"Run task: {task.task_name}({task.id})")
                 self._task_thread(task)
-                self._current_running_task = None
-
                 if task.status == TaskStatus.FAILED:
-                    logger.warning(f"Task '{task.id}' failed, clearing queue.")
+                    logger.warning(f"Task {task.task_name}({task.id}) failed, clearing queue.")
                     with self._task_queue.mutex:
                         self._task_queue.queue.clear()
                     break
         finally:
             websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueStop)
-            self._queue_status.clear()
+            self._queue_status = False
             self._app.yolo_engine.pause()
+            self._current_running_task = None
             logger.debug("Task queue processor exited")
 
     @staticmethod
@@ -352,16 +361,28 @@ class TaskService:
         if not self.is_called_by(frame, task.function.__code__):
             return partial(self._trace_calls, task=task)
 
-        # 检查停止信号
-        if self._stop_signal.is_set():
-            raise UserCancelTask(task)
+        execute_file = frame.f_code.co_filename
 
-        if os.path.join(os.getcwd(), "src") not in frame.f_code.co_filename:
+        # 忽略不在src里的
+        if os.path.join(os.getcwd(), "src") not in execute_file:
             return partial(self._trace_calls, task=task)
 
-        if self._suspend_task_signal.is_set() and self._suspend_target_task == task:
-            wait_and_extend(lambda: self._suspend_task_signal.is_set(), step=0.1)
-            if self._stop_signal.is_set():
+        # print(f">>> [Trace] {frame.f_code.co_filename}:{frame.f_lineno} | func: {frame.f_code.co_name}")
+
+        # 忽略队列管理器
+        if execute_file == __file__ or execute_file == inspect.getfile(Task):
+            return partial(self._trace_calls, task=task)
+
+        if "logger" in execute_file:
+            return partial(self._trace_calls, task=task)
+
+        # 检查停止信号
+        if self._stop_signal:
+            raise UserCancelTask(task)
+
+        if self._suspend_task_signal and self._suspend_target_task == task:
+            wait_and_extend(lambda: self._suspend_task_signal, step=0.1)
+            if self._stop_signal:
                 raise UserCancelTask(task)
 
         if task.timeout not in (None, -1):
@@ -371,12 +392,12 @@ class TaskService:
         # Windows 焦点丢失挂起
         if isinstance(self._app.device, Windows_App):
             wait_and_extend(lambda: not self._app.device.is_app_focused())
-            if self._stop_signal.is_set():
+            if self._stop_signal:
                 raise UserCancelTask(task)
 
         if not task.disabled_middleware and self._is_middleware_code(frame.f_code.co_filename):
             wait_and_extend(lambda: not self._exec_task_middleware(), step=0.2)
-            if self._stop_signal.is_set():
+            if self._stop_signal:
                 raise UserCancelTask(task)
 
         return partial(self._trace_calls, task=task)
@@ -397,7 +418,7 @@ class TaskService:
             sig = inspect.signature(func)
             result = func(self._app) if len(sig.parameters) > 0 else func()
             # 处理结果状态
-            if isinstance(result, TaskStatus) or (isinstance(result, str) and result in TaskStatus.__dict__):
+            if result in TaskStatus.__dict__.keys():
                 task.update_status(result)
             elif result is False:
                 task.update_status(TaskStatus.CANCELED)
@@ -422,6 +443,12 @@ class TaskService:
     def _get_enable_tasks(self):
         """获取启用的任务"""
         return [task for task in self._task_list if task.enable]
+
+    def get_current_running_task(self) -> Task:
+        return self._current_running_task
+
+    def get_current_suspend_task(self) -> Task:
+        return self._suspend_target_task
 
     def get_task_list(self):
         """获取所有任务列表"""
@@ -452,17 +479,18 @@ class TaskService:
         return False
 
     def queue_status(self):
-        if self._queue_status.is_set():
-            if self._suspend_task_signal.is_set():
+        if self._queue_status:
+            if self._suspend_task_signal:
                 return TaskStatus.SUSPENDED
             return TaskStatus.RUNNING
         return TaskStatus.PENDING
 
     def stop(self):
         """停止任务队列"""
-        if not self._queue_status.is_set():
+        if not self._queue_status:
             return False
-        self._stop_signal.set()
+        self._stop_signal = True
+        self._suspend_task_signal = False
         with self._task_queue.mutex:
             for task in [t for t in self._task_list if t.status == TaskStatus.PENDING]:
                 task.update_status(TaskStatus.CANCELED)

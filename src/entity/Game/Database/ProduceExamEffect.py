@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List
 
-from src.entity.Game.Database.General import ProduceDescriptionItem
+from src.entity.Game.Database.General import ProduceDescriptionItem, GeneralProduceDescriptionsLocalization
 
 
 @dataclass
@@ -36,4 +36,4 @@ class ProduceExamEffect:
     effectGroupIds: List[str]
     # 效果介绍
     produceDescriptions: List[ProduceDescriptionItem]
-    localization: List[ProduceDescriptionItem] = None
+    localization: GeneralProduceDescriptionsLocalization = None

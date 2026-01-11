@@ -218,6 +218,8 @@ def _dispatch_single_work(app: "AppProcessor"):
             key=lambda g: max(box.w for box in g.boxes),
         )
         if len(max_x_group) < 2:
+            if __try_dispatch_work__():
+                return
             break
 
         if prev_frame is not None and _is_page_unchanged(prev_frame, app.latest_frame):
