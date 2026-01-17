@@ -25,6 +25,24 @@ let task_config = store.get_task_config(props.task_name)
         />
       </v-col>
       <v-col cols="12">
+        <v-switch
+          label="自动刷新交换所"
+          hint="每日自动刷新交换所"
+          persistent-hint
+          clearable
+          density="comfortable"
+          v-model="task_config.refresh_shop.value"
+        />
+      </v-col>
+      <v-col cols="12" v-if="task_config.refresh_shop.value">
+        <v-switch
+          label="使用钻石刷新交换所"
+          clearable
+          density="comfortable"
+          v-model="task_config.use_gem_refresh.value"
+        />
+      </v-col>
+      <v-col cols="12">
         <select_item :data="task_config"/>
       </v-col>
     </v-row>

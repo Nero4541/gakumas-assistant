@@ -42,6 +42,9 @@ class YoloInferenceEngine:
         self.__result_write_lock = threading.Lock()
         self.load_model()
 
+    def set_device(self, device: BaseDevice):
+        self._device = device
+
     def load_model(self, model_type: str = YoloModelType.BASE_UI):
         """
         加载指定类型的Yolo模型

@@ -12,6 +12,7 @@ class ModalText:
         WORK_START_CONFIRMATION = "仕事開始確認"
         EXPENDITURE = "活動費"
         DESTROYING_PRODUCTION_DATA = "プロデュースデータの破棄"
+        UPDATE_CONFIRM = "更新確認"
         CONFIRM = "確認"
         INFO_FETCH_FAILED = "情報取得に失敗"
 

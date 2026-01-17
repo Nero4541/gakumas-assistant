@@ -8,8 +8,10 @@ class WebsocketActions:
 
     class TaskService:
         TaskStatusUpdate = "task:status_update"
+        UpdateCurrentTask = "task:update_current_task"
         TaskQueueStart = "task:start"
         TaskQueueStop = "task:stop"
+        TaskQueueSuspend = "task:suspend"
 
     class Message:
         ShowMessage_Info = "show_msg:info"

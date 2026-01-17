@@ -12,6 +12,7 @@ import {ConfigItem} from "@/scripts/entity/config";
 export interface AppState {
   status: AppStatus
   task_list: Record<string, TaskItem>
+  current_task: string | undefined
   config: Record<string, Record<string, ConfigItem>>
 }
 
@@ -31,15 +32,15 @@ export const useAppStore = defineStore('app', {
       }
     },
     task_list: {},
+    current_task: "",
     config: {}
   }),
   actions: {
     async init() {
       await this.refresh_all_data()
       wsService.on(WS_ACTION.TaskStatusUpdate, (data) => {
-        const task: TaskItem = this.task_list?.[data.id]
+        const task: TaskItem = this.get_task_by_id(data.id)
         if (!task) {
-          console.warn(`Update undefined task status: ${data.id}`)
           return
         }
         console.log(`Update task '${data.id}' status: ${task.status} -> ${data.target_status}`)
@@ -51,8 +52,11 @@ export const useAppStore = defineStore('app', {
       wsService.on(WS_ACTION.TaskQueueStop, () => {
         this.status.task = TaskStatus.PENDING
       })
-      wsService.on(WS_ACTION.BroadcastLog, (data) => {
-        console.log(data)
+      wsService.on(WS_ACTION.TaskQueueSuspend, () => {
+        this.status.task = TaskStatus.SUSPENDED
+      })
+      wsService.on(WS_ACTION.UpdateCurrentTask, (data) => {
+        this.current_task = data.task_id
       })
       wsService.onEvent("reconnect", async () => {
         await this.refresh_all_data()
@@ -62,7 +66,6 @@ export const useAppStore = defineStore('app', {
       await this.refresh_task_list()
       await this.refresh_app_status()
       await this.load_config()
-      console.log(this.$state)
     },
     async refresh_task_list() {
       const response = await apis.get_registered_tasks()
@@ -98,6 +101,14 @@ export const useAppStore = defineStore('app', {
         this.config = response.data
         message.showSuccess("设置重置完成，部分设置可能需要重启生效")
       })
+    },
+    get_task_by_id(task_id: string): TaskItem | undefined {
+      const task: TaskItem = this.task_list?.[task_id]
+      if (!task) {return}
+      return task
+    },
+    get_current_task(): TaskItem | undefined {
+      return this.get_task_by_id(this.current_task)
     }
   }
 })

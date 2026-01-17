@@ -28,6 +28,7 @@ class OCRLoader(metaclass=SingletonMeta):
             params={
                 "EngineConfig.onnxruntime.use_dml": True,
                 "Global.use_cls": False,
+                "Global.min_height": 10,
 
                 "Det.engine_type": EngineType.ONNXRUNTIME,
                 "Det.lang_type": LangDet.CH,

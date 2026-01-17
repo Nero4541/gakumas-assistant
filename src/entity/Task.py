@@ -32,6 +32,8 @@ class Task:
     _end_time: Optional[int] = -1
     # 上次运行时间
     last_run_time: float = 0
+    # 隐藏任务
+    hide: bool = False
     # 仅手动触发
     manual_only: bool = False
     # 允许手动挂起

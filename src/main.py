@@ -114,6 +114,7 @@ class AppProcessor:
             status = self.yolo_engine.running
             self.yolo_engine.stop()
             self.device = self.create_device_instance()
+            self.yolo_engine.set_device(self.device)
             if status: self.yolo_engine.start()
             if suspend_task: self.task_queue.resume_suspended_task()
             return

@@ -18,7 +18,8 @@ from src.core.device.Windows.app import Windows_App
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
 from src.core.web.websocket import WebSocketManager
-from src.entity.task import Task
+from src.entity.Task import Task
+from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.string_tools import string_match, MatchConfig, MatchResult
@@ -82,6 +83,7 @@ class TaskService:
             timeout: int | None = None,
             disabled_middleware: bool = False,
             manual_only: bool = False,
+            hide: bool = False,
             allow_manual_suspend: bool = False,
             allow_manual_resume: bool = False
     ):
@@ -92,6 +94,7 @@ class TaskService:
         :param timeout: 超时时间
         :param disabled_middleware: 禁用中间件
         :param manual_only: 仅手动模式
+        :param hide: 隐藏任务
         :param allow_manual_suspend: 允许手动挂起
         :param allow_manual_resume: 允许手动恢复
         :return:
@@ -106,6 +109,7 @@ class TaskService:
                 enable=enable,
                 disabled_middleware=disabled_middleware,
                 manual_only=manual_only,
+                hide=hide,
                 allow_manual_suspend=allow_manual_suspend,
                 allow_manual_resume=allow_manual_resume,
                 function=func,
@@ -187,7 +191,7 @@ class TaskService:
             return False
         return True
 
-    def suspend_running_task(self) -> Task:
+    def suspend_running_task(self, update_status: bool = True) -> Task:
         """
         挂起当前正在运行的任务
         :return: 被挂起的 Task
@@ -207,6 +211,8 @@ class TaskService:
             target.update_status(TaskStatus.SUSPENDED)
             self._suspend_target_task = target
             self._current_running_task = None
+            if update_status:
+                websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueSuspend)
             logger.debug(f"Suspend task: {target.task_name}({target.id})")
         # 抛出线程，防止任务中调用导致出现问题
         threading.Thread(target=_send_signal, daemon=True).start()
@@ -224,6 +230,7 @@ class TaskService:
         target.update_status(TaskStatus.RUNNING)
         self._suspend_target_task = None
         self._current_running_task = target
+        websocket_manager.broadcast_action_sync(WebsocketActions.TaskService.TaskQueueStart)
         logger.debug(f"Resume task: {target.task_name}({target.id})")
 
     def insert_task_to_run_queue(self, task_id: str):
@@ -289,6 +296,12 @@ class TaskService:
                     break
                 task = self._task_queue.get()
                 self._current_running_task = task
+                websocket_manager.broadcast_action_sync(
+                    WebsocketActions.TaskService.UpdateCurrentTask,
+                    WebSocketData(message={
+                        "task_id": task.id,
+                    }
+                ))
                 logger.info(f"Run task: {task.task_name}({task.id})")
                 self._task_thread(task)
                 if task.status == TaskStatus.FAILED:
@@ -460,8 +473,10 @@ class TaskService:
                 "start_time": task.get_start_time(),
                 "status": task.status,
                 "manual_only": task.manual_only,
+                "allow_manual_resume": task.allow_manual_resume,
+                "allow_manual_suspend": task.allow_manual_suspend,
             }
-            for task in self._task_list
+            for task in self._task_list if task.hide is False
         }
 
     def disable_task(self, task_id: str):

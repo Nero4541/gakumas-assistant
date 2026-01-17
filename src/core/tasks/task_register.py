@@ -218,7 +218,7 @@ def register_tasks(processor: "AppProcessor"):
         goto__claim_pass_rewards(app)
         claim_pass_rewards(app)
 
-    @processor.task_queue.register_task("void_task", "测试任务")
+    @processor.task_queue.register_task("void_task", "测试任务", hide=True)
     def _task__void_task(app: "AppProcessor"):
         logger.success("void_task!")
         return True

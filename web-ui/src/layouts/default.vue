@@ -29,16 +29,6 @@
 
     <v-main class="page_main d-flex align-center justify-center">
       <v-container class="page_container">
-        <v-alert
-          v-if="store.status.task === TaskStatus.PENDING"
-          title="等待操作"
-          color="warning"
-        />
-        <v-alert
-          v-else
-          title="脚本执行中......"
-          color="success"
-        />
         <WebSocketToolsBar/>
         <WebSocketView />
       </v-container>

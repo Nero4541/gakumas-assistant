@@ -3,7 +3,7 @@ from typing import Optional
 
 import numpy as np
 
-from src.entity.Game.Components import Button
+from src.entity.Game.Components.Button import Button
 
 
 @dataclass

@@ -4,6 +4,8 @@ export const WS_ACTION = {
   TaskStatusUpdate: 'task:status_update',
   TaskQueueStart: 'task:start',
   TaskQueueStop: 'task:stop',
+  TaskQueueSuspend: "task:suspend",
+  UpdateCurrentTask: "task:update_current_task",
 
   ShowMessage_Info: 'show_msg:info',
   ShowMessage_Warning: 'show_msg:warning',
