@@ -155,7 +155,7 @@ class Android_App(BaseDevice):
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 return self.__adb_device
 
-    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, offset_x = 10, offset_y = 10):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, offset_x = 10, offset_y = 10, safe_margin = 50):
         """
         基础滑动方法：执行带安全检查和随机偏移的单次滑动
         :param start_x: 起始X
@@ -163,10 +163,13 @@ class Android_App(BaseDevice):
         :param end_x: 结束X
         :param end_y: 结束Y
         :param duration: 滑动总时长，默认0.8秒
+        :param offset_x: 随机偏移x值
+        :param offset_y: 随机偏移y值
+        :param safe_margin: 安全边距
         """
         width, height = self.get_window_size()
         def clamp(val, max_val):
-            return max(50, min(max_val - 50, val))
+            return max(safe_margin, min(max_val - safe_margin, val))
         safe_start_x = clamp(start_x, width)
         safe_start_y = clamp(start_y, height)
         safe_end_x = clamp(end_x, width)

@@ -13,11 +13,14 @@ from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList, ContestItem
+from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.string_tools import MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
+
+debug_tools = DebugTools()
 
 def action__check_and_collect_rewards(app: "AppProcessor"):
     """
@@ -55,6 +58,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
                 continue
             logger.debug(contest)
             if contest and len(contest) == 3:
+                debug_tools.clear_all()
                 break
             os.makedirs(DebugPath.NotEnoughContests, exist_ok=True)
             try:
@@ -64,6 +68,7 @@ def action__loop_challenge_contest(app: "AppProcessor"):
             except Exception as e:
                 logger.warning(f"Save NotEnoughContests debug image error: {e}")
             sleep(1)
+            debug_tools.clear_all()
         if not contest or len(contest) != 3:
             logger.info("There is no contest.")
             break
@@ -112,12 +117,17 @@ def _start_battle(app: "AppProcessor", width: int, height: int):
     app.device.click_element(start_button)
     app.game_utils.wait_loading()
     app.game_utils.check_image_change_at_yolobox(start_button)
-    app.game_utils.wait_for_label(BaseUILabels.CHECKBOX, interval=0.5, continuous=3, timeout=5)
-    check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
-    if not check_box.checked:
-        app.device.click_element(check_box)
-    app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
-    sleep(1)
+    if not app.game_utils.wait_for_label(BaseUILabels.CHECKBOX, interval=0.5, continuous=3, timeout=10):
+        logger.error("not find checkbox")
+    else:
+        try:
+            check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
+            if not check_box.checked:
+                app.device.click_element(check_box)
+            app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
+            sleep(1)
+        except Exception as e:
+            logger.error(f"not find checkbox: {e}")
     while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
         app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
         sleep(1)

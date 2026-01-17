@@ -300,7 +300,7 @@ def _handle_tabbar__manny_exchange(app: "AppProcessor", commodity_target):
             continue
         if not use_gem_refresh:
             break
-        if remaining_attempts is not None and remaining_attempts <= 0:
+        if remaining_attempts is not None and remaining_attempts == 0:
             break
         app.device.click_element(update_shop_btn)
         app.game_utils.wait_frame_stable()

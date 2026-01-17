@@ -19,7 +19,13 @@ class CLIPayload_Item(_BaseCLIPPayload):
     id = CharField(unique=True)
 
 class CLIPayload_SkillCard(_BaseCLIPPayload):
-    id = CharField(unique=True)
+    id = CharField()
+    level = IntegerField(default=0)
+
+    class Meta:
+        indexes = (
+            (('id', 'level'), True),
+        )
 
 class CLIPMemory(BaseModel):
     uuid = UUIDField(default=uuid4, unique=True, primary_key=True)

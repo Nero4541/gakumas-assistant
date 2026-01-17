@@ -13,7 +13,7 @@ from src.entity.Game.Page.Types.index import GamePageTypes
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 from src.core.inference.ocr_engine import OCRService
-from src.utils.opencv_tools import check_color_in_region, check_color
+from src.utils.opencv_tools import check_color_in_region, check_color, check_frame_change
 from src.utils.game_tools import get_modal
 from src.utils.string_tools import string_match, MatchConfig
 
@@ -181,7 +181,6 @@ def _dispatch_single_work(app: "AppProcessor"):
             )
             if _is_avatar_guaranteed_success(avatar):
                 app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="大成功确定", color=(0,255,0))
-                # continue
                 if not _assign_avatar_to_work(app, avatar):
                     continue
                 app.debug_tools.clear_all()
@@ -189,18 +188,6 @@ def _dispatch_single_work(app: "AppProcessor"):
             app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="非优选")
         app.debug_tools.clear_all()
         return False
-    def _is_page_unchanged(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.9) -> bool:
-        """
-        判断是否翻到尽头
-        :param prev: 上一帧
-        :param curr: 当前帧
-        :param threshold: 阈值
-        :return:
-        """
-        prev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
-        curr_gray = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
-        score, _ = ssim(prev_gray, curr_gray, full=True)
-        return score > threshold
     avatar_group = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
     avatar_group_x, avatar_group_y = avatar_group.get_COL()
     prev_frame: Optional[np.ndarray] = None
@@ -222,7 +209,7 @@ def _dispatch_single_work(app: "AppProcessor"):
                 return
             break
 
-        if prev_frame is not None and _is_page_unchanged(prev_frame, app.latest_frame):
+        if prev_frame is not None and check_frame_change(prev_frame, app.latest_frame):
             break
 
         prev_frame = app.latest_frame.copy()

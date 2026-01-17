@@ -9,11 +9,13 @@ from copy import copy
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.inference.ocr_engine import OCRService, OCR_Result
+from src.utils.debug_tools import DebugTools
 from src.utils.opencv_tools import gen_color_mask, filter_by_rectangle_shape
 from src.utils.string_tools import string_match, MatchConfig
 from src.utils.logger import logger
 
 ocr_service = OCRService()
+debug_tools = DebugTools()
 
 @dataclass
 class ContestItem(Yolo_Box):
@@ -109,23 +111,21 @@ class ContestList:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.dilate(mask, kernel, iterations=2)
-        # cv2.imshow("Contests - mask", mask)
-        # result = copy(self.contest_area)
+        result = copy(self.contest_area)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         # contours = filter_by_rectangle_shape(contours, total_pixels // 4)
         # 依次提取每个区域
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-
             # 筛选条件 宽度必须大于帧宽度的一半
-            if w > width * 0.5 and h > height // 4:
+            if w > width * 0.5:
                 roi = self.contest_area[y:y+h, x:x+w]
                 self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
-                # cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
+                cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
+                debug_tools.add_box(x, box_y := int(self._start_y+y), x+w, box_y+h, color=(127,255,0))
                 continue
-        #     cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
-        # cv2.imshow("Contours - Filtered", result)
-        # cv2.waitKey(1)
+            cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
+            debug_tools.add_box(x, box_y := int(self._start_y+y), x+w, box_y+h, color=(255,0,0))
 
     def _get_valid_contests(self) -> List[ContestItem]:
         return [r for r in self.contests if r.combat_power is not None]

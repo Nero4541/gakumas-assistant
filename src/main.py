@@ -89,9 +89,19 @@ class AppProcessor:
         """
         from src.models.base import db
         from src.models import all_models
+        from playhouse.migrate import SqliteMigrator, migrate
         if db.is_closed():
             db.connect()
         db.create_tables(all_models)
+        migrator = SqliteMigrator(db)
+        for model in all_models:
+            existing_columns = [c.name for c in db.get_columns(model._meta.table_name)]
+            for field_name, field_obj in model._meta.fields.items():
+                if field_name not in existing_columns:
+                    logger.warning(f"Field '{field_name}' is missing in DB. Migrating...")
+                    migrate(
+                        migrator.add_column(model._meta.table_name, field_name, field_obj)
+                    )
         db.close()
         from src.models.config import ConfigModel
         ConfigModel.update_database()
