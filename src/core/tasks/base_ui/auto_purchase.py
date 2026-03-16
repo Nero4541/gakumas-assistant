@@ -165,7 +165,7 @@ def _save_debug_unknown_item(info_img, item_img, body_img, index, name):
     cv2.imwrite(os.path.join(DebugPath.UnknownItem, f"modal_item_{index}.png"), item_img)
 
 def _purchase_item(app: "AppProcessor", item_data, el: Yolo_Box):
-    """购买物品（保持原有逻辑，稍作精简）"""
+    """购买物品"""
     logger.info(f"Purchase {item_data.name}...")
     for _ in range(3):
         app.device.click_element(el)

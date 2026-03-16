@@ -34,4 +34,6 @@ class ProduceExamTrigger:
     # 与此触发器相关的课程类型
     lessonType: str
     produceDescriptions: List[ProduceDescriptionItem]
+    playProduceDescriptions: List[ProduceDescriptionItem]
+    playEffectProduceDescriptions: List[ProduceDescriptionItem]
     localization: List[ProduceDescriptionItem] = None

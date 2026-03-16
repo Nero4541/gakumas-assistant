@@ -39,6 +39,8 @@ class Item:
     shopCoinGashaId: str
     storyEventId: str
     produceHighScoreEventId: str
+    researchEventId: str
+    tourEventId: str
     idolCardRarity: str
     supportCardRarity: str
     characterId: str

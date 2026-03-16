@@ -1,0 +1,26 @@
+"""
+Auto-generated from assets/gakumasu-diff and localization JSON.
+Do not edit manually; regenerate via devtools/generate_game_database_schemas.py.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, List
+
+@dataclass
+class GvgRaid:
+    id: str = None
+    name: str = None
+    titleAssetId: str = None
+    bannerAssetId: str = None
+    storyGroupId: str = None
+    examSettingId: str = None
+    order: int = None
+    localization: GvgRaidLocalization = None
+
+@dataclass
+class GvgRaidLocalization:
+    id: str = None
+    order: int = None
+    name: str = None

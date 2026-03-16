@@ -25,6 +25,15 @@ def _goto_tab_contest(app: "AppProcessor"):
     app.game_utils.click_on_label(BaseUILabels.TAB_CONTEST)
     app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__CONTEST)
 
+def _goto_tab_idol(app: "AppProcessor"):
+    if app.game_utils.update_current_location() == GamePageTypes.MAIN_MENU__IDOL:
+        return
+    _back_home(app)
+    if not app.game_utils.wait_for_label(BaseUILabels.TAB_IDOL):
+        raise TimeoutError("Timeout waiting for [tab:idol] to appear.")
+    app.game_utils.click_on_label(BaseUILabels.TAB_IDOL)
+    app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__IDOL)
+
 def goto__get_expenditure(app: "AppProcessor"):
     """ 进入“活动费”领取菜单 """
     _back_home(app)
@@ -92,3 +101,9 @@ def goto__claim_pass_rewards(app: "AppProcessor"):
         if modal:
             app.device.click_element(modal.cancel_button)
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.PASS_REWARD)
+
+def goto_support_card_list_page(app: "AppProcessor"):
+    _goto_tab_idol(app)
+    app.game_utils.click_button(ButtonText.PAGE__IDOL.SUPPORT_CARD, match_config=MatchConfig(fuzz_threshold=90))
+    app.game_utils.wait_loading()
+    app.game_utils.wait_for_label(BaseUILabels.SUPPORT_CARD)

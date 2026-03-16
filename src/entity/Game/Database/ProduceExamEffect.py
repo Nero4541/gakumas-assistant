@@ -27,6 +27,8 @@ class ProduceExamEffect:
     # 应用效果后卡牌移动的位置
     movePositionType: str
     pickRangeType: str
+    pickCountType: str
+    pickCountReferenceProduceCardSearchId: str
     pickCountMin: int
     pickCountMax: int
     chainProduceExamEffectId: str
@@ -36,4 +38,5 @@ class ProduceExamEffect:
     effectGroupIds: List[str]
     # 效果介绍
     produceDescriptions: List[ProduceDescriptionItem]
+    customizeProduceDescriptions: List[ProduceDescriptionItem]
     localization: GeneralProduceDescriptionsLocalization = None

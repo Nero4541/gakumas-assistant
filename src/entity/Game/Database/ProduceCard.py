@@ -1,7 +1,8 @@
 from dataclasses import dataclass
-from typing import List
+from typing import Dict, List
 
 from src.entity.Game.Database.General import ProduceDescriptionLocalizationItem, ProduceDescriptionItem
+from src.entity.Game.Database.ProduceCardCustomize import ProduceCardCustomize
 from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
@@ -52,7 +53,9 @@ class ProduceCard:
     playEffects: List[ProduceCardPlayEffects]
     playMovePositionType: str
     moveEffectTriggerType: str
+    moveProduceExamTriggerIds: List[str]
     moveProduceExamEffectIds: list[str]
+    isConversion: bool
     isEndTurnLost: bool
     isInitial: bool
     isRestrict: bool
@@ -75,4 +78,8 @@ class ProduceCard:
     order: str
     produceDescriptions: List[ProduceDescriptionItem]
     playProduceExamTriggerCls: ProduceExamTrigger = None
+    moveProduceExamTriggerClss: List[ProduceExamTrigger] = None
+    moveProduceExamEffectClss: List[ProduceExamEffect] = None
+    produceCardCustomizeClss: List[ProduceCardCustomize] = None
+    produceCardCustomizeMap: Dict[str, List[ProduceCardCustomize]] = None
     localization: ProduceCardLocalization = None

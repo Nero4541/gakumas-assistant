@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import List
 
+from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
 
@@ -25,3 +26,5 @@ class ProduceCardGrowEffect:
     playProduceExamTriggerCls: ProduceExamTrigger = None
     playEffectProduceExamTriggerCls: ProduceExamTrigger = None
     targetPlayEffectProduceExamTriggerClss: List[ProduceExamTrigger] = None
+    playProduceExamEffectCls: ProduceExamEffect = None
+    targetPlayProduceExamEffectClss: List[ProduceExamEffect] = None

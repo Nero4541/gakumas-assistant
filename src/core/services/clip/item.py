@@ -14,12 +14,6 @@ from src.utils.clip_tools import CLIPTools
 
 item_db = GakumasDatabase_ItemDataUtils()
 
-# @dataclass
-# class Item:
-#     id: str
-#     name: str
-#     description: str
-
 class ItemCLIP(CLIPTools):
     def __init__(self,session):
         super().__init__(session, "items")

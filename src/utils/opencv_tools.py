@@ -56,7 +56,7 @@ def get_mark_y_position(img, lower_color, upper_color, roi_y, roi_h):
     return mark_y
 
 
-def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04, threshold=0.8):
+def filter_by_rectangle_shape(contours, min_area, vertices: int = 4,epsilon_factor=0.04, threshold=0.8):
     """根据面积和矩形程度筛选轮廓"""
     rect_contours = []
 
@@ -72,7 +72,7 @@ def filter_by_rectangle_shape(contours, min_area, epsilon_factor=0.04, threshold
         approx = cv2.approxPolyDP(contour, epsilon, True)
 
         # 顶点数量检查（矩形特征）
-        if len(approx) == 4:
+        if len(approx) == vertices:
             # 规整度检查：轮廓面积与外接矩形面积的比值
             x, y, w, h = cv2.boundingRect(contour)
             bounding_rect_area = w * h
@@ -117,7 +117,6 @@ def check_color(
     hsv_roi = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv_roi, lower_color, upper_color)
     total_pixels = frame.size // frame.shape[2]
-    # logger.debug((cv2.countNonZero(mask)/total_pixels * 100))
     value = cv2.countNonZero(mask) / total_pixels * 100
     return GeneralResult__Threshold(
         status=value >= threshold,

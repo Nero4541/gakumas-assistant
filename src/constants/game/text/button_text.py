@@ -27,3 +27,8 @@ class ButtonText:
 
     class PAGE__TASK_REWARDS:
         PASS_REWARDS = "ミッションパス"  # 月卡奖励领取页
+
+    class PAGE__IDOL:
+        SUPPORT_CARD = "サポートカード"  # 支援卡
+        MEMORY_CARD = "メモリー"  # 回忆卡
+        IDOL_CULTIVATION = "Ｐアイドル育成"  # 偶像育成

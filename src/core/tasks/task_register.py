@@ -21,7 +21,8 @@ from src.core.tasks.base_ui.claim_task_rewards import claim_task_rewards
 from src.core.tasks.base_ui.dispatch_work import handle__work_dispatch_results, action__dispatch_all_available_work
 from src.core.tasks.base_ui.get_gift import action__has_gift_items, action__collect_all_gifts
 from src.core.tasks.base_ui.goto_pages import goto__get_expenditure, goto__work_dispatch_page, goto__gift_page, \
-    goto__shop_page, goto__contest_page, goto__claim_task_rewards_page, goto__claim_pass_rewards
+    goto__shop_page, goto__contest_page, goto__claim_task_rewards_page, goto__claim_pass_rewards, \
+    goto_support_card_list_page
 from src.core.tasks.base_ui.refresh_skill_storage import refresh_skill_storage
 from src.core.tasks.base_ui.start_game import (
     action__click_start_game,
@@ -202,6 +203,28 @@ def register_tasks(processor: "AppProcessor"):
         if app.config_service().task__auto_purchase.weekly_gift.value:
             action__receive_weekly_gift(app)
         action__daily_exchange(app)
+
+    @processor.task_queue.register_task("auto_enhancement_support_card", "自动强化支援卡")
+    def _task__auto_enhancement_support_card(app: "AppProcessor"):
+        goto_support_card_list_page(app)
+        app.game_utils.wait_frame_stable()
+        support_cards = app.latest_results.filter_by_label(BaseUILabels.SUPPORT_CARD)
+        buttons = app.latest_results.filter_by_label(BaseUILabels.BUTTON)
+        # support_cards = support_cards.from_boxes([
+        #     card for card in support_cards
+        #     if any(
+        #         card.x <= btn.cx <= card.w
+        #         for btn in buttons
+        #     )
+        # ])
+        # logger.debug(f"found {len(support_cards)} cards: {support_cards}")
+        debug_tools.clear_all()
+        logger.debug(f"buttons: {buttons}")
+        for card in support_cards:
+            logger.debug(f"support card: {card}, bool={any(btn.cy >= card.y and btn.cy <= card.h for btn in buttons)}")
+            if any(card.y <= btn.cy <= card.h for btn in buttons):
+                continue
+            debug_tools.add_box(card.x, card.y, card.w, card.h)
 
     @processor.task_queue.register_task("auto_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):

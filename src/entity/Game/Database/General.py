@@ -18,6 +18,7 @@ class ProduceDescriptionItem:
     # 卡片移动类型
     produceCardMovePositionType: str
     produceStepType: str
+    produceStepBusinessType: str
     # 文本
     text: str
     targetId: str
@@ -37,14 +38,14 @@ class ProduceDescriptionItem:
 
 @dataclass
 class ProduceDescriptionLocalizationItem:
-    produceDescriptionType: str
-    examDescriptionType: str
-    examEffectType: str
-    produceCardCategory: str
-    produceCardMovePositionType: str
-    produceStepType: str
-    targetId: str
-    text: str
+    produceDescriptionType: str = ""
+    examDescriptionType: str = ""
+    examEffectType: str = ""
+    produceCardCategory: str = ""
+    produceCardMovePositionType: str = ""
+    produceStepType: str = ""
+    targetId: str = ""
+    text: str = ""
 
 @dataclass
 class GeneralProduceDescriptionsLocalization:
