@@ -82,7 +82,7 @@ class TaskService:
         def decorator(func: Callable):
             if self._find_task(task_id):
                 raise RuntimeError(f"Duplicate task name: '{task_id}'")
-            enable = task_id not in config_service().base.disabled_tasks.value
+            enable = task_id not in config_service.base.disabled_tasks
             self._task_list.append(Task(
                 id=task_id,
                 task_name=task_name,

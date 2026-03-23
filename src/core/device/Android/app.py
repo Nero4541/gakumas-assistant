@@ -34,13 +34,13 @@ class Android_App(BaseDevice):
 
     def __init__(self) -> None:
         self.__config_service = ConfigService()
-        self.__package_name = self.__config_service().base.game_package_name.value
-        self.__connect_mode = self.__config_service().base.adb_connect_mode.value
-        self.__adb_serial = self.__config_service().base.adb_serial.value
-        self.__adb_host = self.__config_service().base.adb_host.value
-        self.__adb_port = self.__config_service().base.adb_port.value
-        self.__screen_capture_service = self.__config_service().base.android_screen_capture_service.value
-        self.__screen_touch_service = self.__config_service().base.android_touch_service.value
+        self.__package_name = self.__config_service.base.game_package_name
+        self.__connect_mode = self.__config_service.base.adb_connect_mode
+        self.__adb_serial = self.__config_service.base.adb_serial
+        self.__adb_host = self.__config_service.base.adb_host
+        self.__adb_port = self.__config_service.base.adb_port
+        self.__screen_capture_service = self.__config_service.base.android_screen_capture_service
+        self.__screen_touch_service = self.__config_service.base.android_touch_service
         if not self.__connect_ADB():
             return
         self.__init_capture_service()
@@ -70,8 +70,8 @@ class Android_App(BaseDevice):
                 return False
             return True
         elif self.__connect_mode == ADBConnectMode.NETWORK:
-            self._adb_host = self.__config_service().base.adb_host.value
-            self._adb_port = self.__config_service().base.adb_port.value
+            self._adb_host = self.__config_service.base.adb_host
+            self._adb_port = self.__config_service.base.adb_port
             logger.debug(f"Try connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
             adbutils.adb.connect(f"{self.__adb_host}:{self.__adb_port}")
             try:
@@ -102,7 +102,7 @@ class Android_App(BaseDevice):
                 self.__droidcast_service_status, self.__capture_service_shell = start_DroidCast(self.__adb_device)
             case _:
                 self.__screen_capture_service = ADBOperation.ScreenCaptureService.ADB
-                self.__config_service().base.android_screen_capture_service.value = ADBOperation.ScreenCaptureService.ADB
+                self.__config_service.base.android_screen_capture_service = ADBOperation.ScreenCaptureService.ADB
                 self.__config_service.save_config()
                 logger.warning(f"Not support capture service: '{self.__screen_capture_service}', reverted to ADB")
 
@@ -150,7 +150,7 @@ class Android_App(BaseDevice):
                 return self.__adb_device
             case _:
                 self.__screen_touch_service = ADBOperation.TouchService.ADB
-                self.__config_service().base.android_touch_service.value = ADBOperation.TouchService.ADB
+                self.__config_service.base.android_touch_service = ADBOperation.TouchService.ADB
                 self.__config_service.save_config()
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 return self.__adb_device
@@ -267,7 +267,7 @@ class Android_App(BaseDevice):
     def capture(self) -> Optional[np.ndarray]:
         if not self.__bool__():
             return None
-        match self.__config_service().base.android_screen_capture_service.value:
+        match self.__config_service.base.android_screen_capture_service:
             case ADBOperation.ScreenCaptureService.ADB:
                 return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
             case ADBOperation.ScreenCaptureService.DroidCast:
@@ -282,5 +282,5 @@ class Android_App(BaseDevice):
             case ADBOperation.ScreenCaptureService.uiautomator2:
                 return self.__u2_device.screenshot(format='opencv')
             case _:
-                logger.warning(f"Undefined screenshot service {self.__config_service().base.android_screen_capture_service.value}, reverted to ADB")
+                logger.warning(f"Undefined screenshot service {self.__config_service.base.android_screen_capture_service}, reverted to ADB")
                 return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)

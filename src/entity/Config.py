@@ -2,10 +2,36 @@ import copy
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Any, Tuple
+from typing import Optional, List, Any, Tuple, Dict
 
 from src.constants.device.adb import ADBOperation, ADBConnectMode
 from src.utils.logger import logger
+
+
+@dataclass
+class ConfigItemUI:
+    label: Optional[str] = None
+    hint: Optional[str] = None
+    component: Optional[str] = None
+    options: List[Dict[str, Any]] = field(default_factory=list)
+    visible_if: Optional[Dict[str, Any]] = None
+    readonly: bool = False
+    resettable: bool = False
+    auto_generate: bool = True
+    order: int = 0
+
+    def to_json_dict(self) -> dict:
+        return {
+            "label": self.label,
+            "hint": self.hint,
+            "component": self.component,
+            "options": self.options,
+            "visible_if": self.visible_if,
+            "readonly": self.readonly,
+            "resettable": self.resettable,
+            "auto_generate": self.auto_generate,
+            "order": self.order,
+        }
 
 
 @dataclass
@@ -25,10 +51,60 @@ class ConfigItem:
     value: Any = None
     # 最后修改时间
     last_modified_time: datetime = None
+    # 前端展示元数据
+    ui: ConfigItemUI = field(default_factory=ConfigItemUI)
 
     def __post_init__(self):
         if self.value is None:
-            self.value = self.default_value
+            self.value = copy.deepcopy(self.default_value)
+
+    def set(self, value: Any, touch: bool = True):
+        self.value = value
+        if touch:
+            self.last_modified_time = datetime.now()
+        return self.value
+
+    def reset(self, touch: bool = True):
+        return self.set(copy.deepcopy(self.default_value), touch=touch)
+
+    def unwrap(self):
+        return self.value
+
+    def __repr__(self):
+        return repr(self.value)
+
+    def __str__(self):
+        return str(self.value)
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def __len__(self):
+        return len(self.value)
+
+    def __iter__(self):
+        return iter(self.value)
+
+    def __contains__(self, item):
+        return item in self.value
+
+    def __getitem__(self, item):
+        return self.value[item]
+
+    def __getattr__(self, item):
+        return getattr(self.value, item)
+
+    def __eq__(self, other):
+        if isinstance(other, ConfigItem):
+            other = other.value
+        return self.value == other
+
+    def __int__(self):
+        return int(self.value)
+
+    def __float__(self):
+        return float(self.value)
+
 
 @dataclass
 class ConfigVerifyError:
@@ -38,6 +114,7 @@ class ConfigVerifyError:
 
     def __str__(self):
         return f"[{self.section}.{self.field}]: {self.message}"
+
 
 class _BaseConfigGroup:
     def __init__(self):
@@ -51,7 +128,7 @@ class _BaseConfigGroup:
                 setattr(self, name, attr.__class__())
 
     def __str__(self):
-            return self._to_str()
+        return self._to_str()
 
     def _to_str(self, indent=0):
         lines = []
@@ -68,46 +145,180 @@ class _Base(_BaseConfigGroup):
     """脚本基本配置"""
 
     # 脚本运行模式
-    run_mode = ConfigItem(default_value="PC", data_type=str, verify=r"Phone|PC", use_verify=True)
+    run_mode = ConfigItem(
+        default_value="PC",
+        data_type=str,
+        verify=r"Phone|PC",
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="运行模式",
+            hint="脚本的执行模式（需重启生效）",
+            component="select",
+            options=[
+                {"title": "电脑端（DMM）", "value": "PC"},
+                {"title": "手机端", "value": "Phone"},
+            ],
+            order=10,
+        )
+    )
     # 游戏窗口名
-    game_window_name = ConfigItem(default_value="gakumas", data_type=str)
+    game_window_name = ConfigItem(
+        default_value="gakumas",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="游戏窗口名",
+            hint="默认：gakumas（修改后需重启生效）",
+            resettable=True,
+            visible_if={"base.run_mode": "PC"},
+            order=100,
+        )
+    )
     # 自动启动游戏
-    auto_start_game = ConfigItem(default_value=False, data_type=bool)
+    auto_start_game = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="自动启动游戏",
+            hint="当游戏未启动时是否自动启动游戏",
+            component="switch",
+            order=20,
+        )
+    )
     # adb连接模式
     adb_connect_mode = ConfigItem(
         default_value=ADBConnectMode.NETWORK,
         data_type=str,
         verify="|".join(v for k, v in ADBConnectMode.__dict__.items() if not k.startswith("__") and not callable(v)),
-        use_verify=True
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="ADB连接模式",
+            hint="安卓调试桥的连接模式，手机建议使用USB，模拟器可使用网络连接（修改后需重启生效）",
+            component="select",
+            options=[
+                {"title": "网络连接", "value": "Network"},
+                {"title": "USB连接", "value": "USB"},
+            ],
+            visible_if={"base.run_mode": "Phone"},
+            order=30,
+        )
     )
     # adb地址
-    adb_host = ConfigItem(default_value="127.0.0.1", data_type=str)
+    adb_host = ConfigItem(
+        default_value="127.0.0.1",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="ADB主机名",
+            hint="安卓调试桥的ip地址，模拟器一般是127.0.0.1",
+            resettable=True,
+            visible_if={"base.run_mode": "Phone", "base.adb_connect_mode": "Network"},
+            order=40,
+        )
+    )
     # adb端口(Network)
-    adb_port = ConfigItem(default_value="5555", data_type=int)
+    adb_port = ConfigItem(
+        default_value="5555",
+        data_type=int,
+        ui=ConfigItemUI(
+            label="ADB端口",
+            hint="安卓调试桥的端口，默认5555，Android11以上为系统随机",
+            component="number",
+            resettable=True,
+            visible_if={"base.run_mode": "Phone", "base.adb_connect_mode": "Network"},
+            order=50,
+        )
+    )
     # adb端口(USB)
-    adb_serial = ConfigItem(default_value="", data_type=str)
+    adb_serial = ConfigItem(
+        default_value="",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="通过USB连接的ADB设备",
+            hint="请选择通过USB连接的设备，如未找到设备请尝试刷新列表",
+            component="adb_devices",
+            visible_if={"base.run_mode": "Phone", "base.adb_connect_mode": "USB"},
+            order=60,
+        )
+    )
     # Android截图服务
     android_screen_capture_service = ConfigItem(
         default_value=ADBOperation.ScreenCaptureService.ADB,
         data_type=str,
         verify="|".join(k for k in ADBOperation.ScreenCaptureService.__dict__ if not k.startswith("__") and not callable(k)),
-        use_verify=True
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="ADB截图方式",
+            hint="DroidCast>ADB",
+            component="select",
+            options=[
+                {"title": "DroidCast", "value": "DroidCast"},
+                {"title": "ADB", "value": "ADB"},
+            ],
+            visible_if={"base.run_mode": "Phone"},
+            order=70,
+        )
     )
     # Android点击服务
     android_touch_service = ConfigItem(
         default_value="ADB",
         data_type=str,
         verify="|".join(k for k in ADBOperation.TouchService.__dict__ if not k.startswith("__") and not callable(k)),
-        use_verify=True
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="ADB点击屏幕方式",
+            hint="部分点击服务可能存在兼容性问题，如遇到问题请回退到ADB",
+            component="select",
+            options=[
+                {"title": "ADB", "value": "ADB"},
+            ],
+            visible_if={"base.run_mode": "Phone"},
+            order=80,
+        )
     )
     # 游戏APP名
-    game_package_name = ConfigItem(default_value="com.bandainamcoent.idolmaster_gakuen", data_type=str)
+    game_package_name = ConfigItem(
+        default_value="com.bandainamcoent.idolmaster_gakuen",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="游戏包名",
+            hint="默认：com.bandainamcoent.idolmaster_gakuen（修改后需重启生效）",
+            resettable=True,
+            visible_if={"base.run_mode": "Phone"},
+            order=90,
+        )
+    )
     # 禁用任务列表
-    disabled_tasks = ConfigItem(default_value=[], data_type=list)
+    disabled_tasks = ConfigItem(
+        default_value=[],
+        data_type=list,
+        ui=ConfigItemUI(
+            label="禁用任务列表",
+            hint="配置禁用任务列表",
+            component="disabled_tasks",
+            order=110,
+        )
+    )
     # 是否启用自动运行
-    enabled_auto_startup = ConfigItem(default_value=False, data_type=bool)
+    enabled_auto_startup = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="每日自动执行脚本",
+            hint="未实现",
+            component="switch",
+            order=120,
+        )
+    )
     # 自动运行触发时间
-    auto_startup_time = ConfigItem(default_value="12:00", data_type=str)
+    auto_startup_time = ConfigItem(
+        default_value="12:00",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="自动运行触发时间",
+            component="time",
+            order=130,
+        )
+    )
+
 
 class _Task:
     """任务配置"""
@@ -136,10 +347,50 @@ class _Task:
 
 class _DMMPlayerConfig(_BaseConfigGroup):
     """DMMPlayer启动器配置"""
-    game_exe_path = ConfigItem(default_value="", data_type=str)
-    viewer_id = ConfigItem(default_value="", data_type=str)
-    open_id = ConfigItem(default_value="", data_type=str)
-    pf_token = ConfigItem(default_value="", data_type=str)
+    game_exe_path = ConfigItem(
+        default_value="",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="游戏安装目录",
+            hint="游戏安装路径，指向gakumas.exe（默认自动获取，非必要无需修改）",
+            visible_if={"base.run_mode": "PC"},
+            order=140,
+        )
+    )
+    viewer_id = ConfigItem(
+        default_value="",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="Viewer ID",
+            hint="自动获取，非必要无需修改",
+            readonly=True,
+            visible_if={"base.run_mode": "PC"},
+            order=150,
+        )
+    )
+    open_id = ConfigItem(
+        default_value="",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="Open ID",
+            hint="自动获取，非必要无需修改",
+            readonly=True,
+            visible_if={"base.run_mode": "PC"},
+            order=160,
+        )
+    )
+    pf_token = ConfigItem(
+        default_value="",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="PF Token",
+            hint="自动获取，非必要无需修改",
+            readonly=True,
+            visible_if={"base.run_mode": "PC"},
+            order=170,
+        )
+    )
+
 
 @dataclass
 class Config(_BaseConfigGroup):
@@ -177,15 +428,27 @@ class Config(_BaseConfigGroup):
                     result[name] = {
                         "value": value,
                         "default_value": attr.default_value,
+                        "data_type": attr.data_type.__name__,
                         "verify": attr.verify,
                         "use_verify": attr.use_verify,
-                        "last_modified_time": attr.last_modified_time.isoformat() if attr.last_modified_time else None
+                        "last_modified_time": attr.last_modified_time.isoformat() if attr.last_modified_time else None,
+                        "ui": attr.ui.to_json_dict(),
                     }
                 elif isinstance(attr, _BaseConfigGroup):
                     result[name] = serialize_group(attr)
             return result
 
         return serialize_group(self)
+
+    def get_item(self, path: str) -> ConfigItem:
+        current = self
+        for key in path.split("."):
+            if not hasattr(current, key):
+                raise AttributeError(f"Config path not found: {path}")
+            current = getattr(current, key)
+        if not isinstance(current, ConfigItem):
+            raise AttributeError(f"Config path is not a ConfigItem: {path}")
+        return current
 
     def from_json_dict(self, data: dict) -> Tuple[bool,List[ConfigVerifyError]]:
         errors = []
@@ -221,8 +484,7 @@ class Config(_BaseConfigGroup):
                             ))
                             continue  # 跳过赋值
                     # 赋值
-                    item.value = value
-                    item.last_modified_time = datetime.now()
+                    item.set(value)
 
                 elif isinstance(item, _BaseConfigGroup):
                     # 递归处理嵌套

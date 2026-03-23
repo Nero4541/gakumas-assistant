@@ -1,11 +1,44 @@
 import threading
 from copy import deepcopy, copy
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List
 
 from src.entity.Base import SingletonMeta
 from src.utils.logger import logger
 from src.models.config import ConfigModel
-from src.entity.Config import Config, ConfigVerifyError
+from src.entity.Config import Config, ConfigItem, _BaseConfigGroup
+
+
+class _ConfigValueGroupProxy:
+    """返回配置项 value 的只读/可赋值视图。"""
+
+    def __init__(self, group: _BaseConfigGroup):
+        object.__setattr__(self, "_group", group)
+
+    def __getattr__(self, item):
+        attr = getattr(object.__getattribute__(self, "_group"), item)
+        if isinstance(attr, ConfigItem):
+            return attr.value
+        if isinstance(attr, _BaseConfigGroup):
+            return _ConfigValueGroupProxy(attr)
+        return attr
+
+    def __setattr__(self, key, value):
+        group = object.__getattribute__(self, "_group")
+        attr = getattr(group, key, None)
+        if isinstance(attr, ConfigItem):
+            attr.set(value)
+            return
+        if isinstance(attr, _BaseConfigGroup):
+            raise AttributeError(f"Cannot replace config group '{key}' directly")
+        setattr(group, key, value)
+
+    def __dir__(self):
+        group = object.__getattribute__(self, "_group")
+        return sorted(set(object.__dir__(self) + dir(group)))
+
+    def __repr__(self):
+        return repr(object.__getattribute__(self, "_group"))
+
 
 class ConfigLoader(metaclass=SingletonMeta):
     _instance: 'ConfigLoader' = None
@@ -39,6 +72,7 @@ class ConfigLoader(metaclass=SingletonMeta):
     def last_save(self):
         return copy(self._last_save_config)
 
+
 class ConfigService(metaclass=SingletonMeta):
     def __init__(self):
         self._loader = ConfigLoader()
@@ -51,6 +85,13 @@ class ConfigService(metaclass=SingletonMeta):
             if self._config is None:
                 self._config = self._loader.load()
             return self._config
+
+    @property
+    def items(self) -> Config:
+        return self.get_config()
+
+    def item(self, path: str) -> ConfigItem:
+        return self.get_config().get_item(path)
 
     def save_config(self, new_config: Config = None):
         with self._lock:
@@ -154,3 +195,17 @@ class ConfigService(metaclass=SingletonMeta):
 
     def __call__(self):
         return self.get_config()
+
+    def __getattr__(self, item):
+        config = self.get_config()
+        if not hasattr(config, item):
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{item}'")
+        attr = getattr(config, item)
+        if isinstance(attr, ConfigItem):
+            return attr.value
+        if isinstance(attr, _BaseConfigGroup):
+            return _ConfigValueGroupProxy(attr)
+        return attr
+
+    def __dir__(self):
+        return sorted(set(object.__dir__(self) + dir(self.get_config())))

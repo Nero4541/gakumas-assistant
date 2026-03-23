@@ -1,15 +1,73 @@
 <script setup>
-import Base__disabled_task_list from "@/components/lists/config/base/base__disabled_task_list.vue";
-import app from "@/main.js";
+import apis from "@/scripts/apis.js";
+import ConfigAutoField from "@/components/lists/config/config_auto_field.vue";
 import dialogs from "@/scripts/utils/dialogs.js";
+import message from "@/scripts/utils/message.js";
 import {useAppStore} from "@/stores/app.ts";
 
 const appStore = useAppStore();
+const autoSections = ["base", "dmm_player"]
+
+const settingEntries = computed(() => {
+  const entries = []
+  for (const sectionName of autoSections) {
+    const section = appStore.config?.[sectionName]
+    if (!section) {
+      continue
+    }
+    for (const [fieldName, item] of Object.entries(section)) {
+      if (!item?.ui?.auto_generate) {
+        continue
+      }
+      if (!isVisible(item.ui?.visible_if)) {
+        continue
+      }
+      entries.push({
+        key: `${sectionName}.${fieldName}`,
+        sectionName,
+        fieldName,
+        item,
+        order: item.ui?.order ?? 0,
+      })
+    }
+  }
+  return entries.sort((left, right) => left.order - right.order)
+})
+
+const showDmmRefresh = computed(() => appStore.config?.base?.run_mode?.value === "PC")
+
+function getConfigValue(path) {
+  const [sectionName, fieldName] = path.split(".")
+  return appStore.config?.[sectionName]?.[fieldName]?.value
+}
+
+function isVisible(visibleIf) {
+  if (!visibleIf) {
+    return true
+  }
+  return Object.entries(visibleIf).every(([path, expected]) => {
+    const currentValue = getConfigValue(path)
+    if (Array.isArray(expected)) {
+      return expected.includes(currentValue)
+    }
+    return currentValue === expected
+  })
+}
+
+function shouldShowDivider(entryKey) {
+  return entryKey === "base.enabled_auto_startup"
+}
+
+async function refreshDmmPlayerToken() {
+  await apis.refresh_ddm_player_token()
+  await appStore.load_config()
+  await message.showSuccess("启动参数刷新成功")
+}
 
 function reset() {
   dialogs.confirm("是否要重置所有设置项", "请谨慎操作，该操作回导致所有设置项恢复默认（包括任务设置）").then(() => {
     appStore.reset_config();
-  }).catch((err) => {
+  }).catch(() => {
     console.log("用户取消")
   })
 }
@@ -21,42 +79,18 @@ function reset() {
     <v-divider/>
     <v-list nav>
       <v-list-item subtitle="基础设置"/>
-      <base__run_mode :data="appStore.config"/>
-      <v-list-item>
-        <v-switch
-          v-model="appStore.config.base.auto_start_game.value"
-          label="自动启动游戏"
-          hint="当游戏未启动时是否自动启动游戏"
-          persistent-hint
-        />
-      </v-list-item>
-      <base__pc :data="appStore.config" v-if="appStore.config.base.run_mode.value === 'PC'"/>
-      <base__phone :data="appStore.config" v-if="appStore.config.base.run_mode.value === 'Phone'"/>
-      <base__disabled_task_list/>
-      <v-divider/>
-      <v-list-item>
-        <v-switch
-          label="每日自动执行脚本"
-          hint="未实现"
-          :color="app.config.globalProperties.$theme.color"
-          persistent-hint
-          v-model="appStore.config.base.enabled_auto_startup.value"
-        />
-      </v-list-item>
-      <v-list-item>
-        <v-text-field
-          v-model="appStore.config.base.auto_startup_time.value"
-          label="自动运行触发时间"
-          readonly
+      <template v-for="entry in settingEntries" :key="entry.key">
+        <v-divider v-if="shouldShowDivider(entry.key)" />
+        <ConfigAutoField :config="appStore.config" :item="entry.item" />
+      </template>
+      <v-list-item v-if="showDmmRefresh">
+        <v-btn
+          block
+          append-icon="md:refresh"
+          @click="refreshDmmPlayerToken"
         >
-          <v-menu
-            :close-on-content-click="false"
-            activator="parent"
-            min-width="0"
-          >
-            <v-time-picker v-model="appStore.config.base.auto_startup_time.value" format="24hr"></v-time-picker>
-          </v-menu>
-        </v-text-field>
+          刷新启动参数
+        </v-btn>
       </v-list-item>
     </v-list>
     <template v-slot:append>
@@ -80,6 +114,3 @@ function reset() {
     </template>
   </v-navigation-drawer>
 </template>
-
-<style scoped>
-</style>

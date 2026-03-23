@@ -40,7 +40,7 @@ class Windows_App(BaseDevice):
         ctypes.windll.user32.SetProcessDPIAware()
 
         self.__config_service = ConfigService()
-        self.__window_name = self.__config_service().base.game_window_name.value
+        self.__window_name = self.__config_service.base.game_window_name
 
     def __bool__(self) -> bool:
         return bool(win32gui.FindWindow(None, self.__window_name))
@@ -81,7 +81,7 @@ class Windows_App(BaseDevice):
         启动游戏
         :return:
         """
-        dmm_play_config = self.__config_service().dmm_player
+        dmm_play_config = self.__config_service.dmm_player
         game_path = dmm_play_config.game_exe_path.value
         try:
             subprocess.Popen(
