@@ -14,7 +14,8 @@ permissions:
 
 jobs:
   prepare-android-touch-resources:
-    runs-on: ubuntu-latest
+    # NDK r14b's bundled clang needs libncurses.so.5, which is not available on ubuntu-24.04.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -77,6 +78,14 @@ jobs:
           echo "ANDROID_NDK_HOME=${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}" >> "${GITHUB_ENV}"
           echo "NDK_BUILD=${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}/ndk-build" >> "${GITHUB_ENV}"
           echo "${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}" >> "${GITHUB_PATH}"
+
+      - name: Install legacy NDK runtime dependencies
+        if: matrix.name == 'minitouch' && steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libncurses5 libtinfo5
 
       - name: Build MaaTouch artifact
         if: matrix.name == 'maatouch' && steps.cache.outputs.cache-hit != 'true'

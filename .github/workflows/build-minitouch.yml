@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    # NDK r14b's bundled clang needs libncurses.so.5, which is not available on ubuntu-24.04.
     runs-on: ubuntu-22.04
     env:
       MINITOUCH_REPO_URL: https://github.com/openstf/minitouch.git
