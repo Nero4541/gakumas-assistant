@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       MINITOUCH_REPO_URL: https://github.com/openstf/minitouch.git
       MINITOUCH_REF: ${{ github.event.inputs.source_ref || 'master' }}
@@ -35,6 +35,13 @@ jobs:
           echo "ANDROID_NDK_HOME=${ndk_root}/android-ndk-${ANDROID_NDK_VERSION}" >> "${GITHUB_ENV}"
           echo "NDK_BUILD=${ndk_root}/android-ndk-${ANDROID_NDK_VERSION}/ndk-build" >> "${GITHUB_ENV}"
           echo "${ndk_root}/android-ndk-${ANDROID_NDK_VERSION}" >> "${GITHUB_PATH}"
+
+      - name: Install legacy NDK runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y libncurses5 libtinfo5
 
       - name: Build minitouch binaries
         shell: bash
