@@ -11,6 +11,7 @@ MINITOUCH_WORK_ROOT="${MINITOUCH_WORK_ROOT:-${RUNNER_TEMP:-${REPO_ROOT}/.cache}/
 MINITOUCH_SOURCE_DIR="${MINITOUCH_SOURCE_DIR:-${MINITOUCH_WORK_ROOT}/src}"
 MINITOUCH_OUTPUT_DIR="${MINITOUCH_OUTPUT_DIR:-${REPO_ROOT}/out/minitouch-package}"
 MINITOUCH_APP_ABI="${MINITOUCH_APP_ABI:-}"
+LIBEVDEV_SUBMODULE_URL="${LIBEVDEV_SUBMODULE_URL:-https://gitlab.freedesktop.org/libevdev/libevdev.git}"
 
 copy_upstream_notice_files() {
   local source_root="$1"
@@ -68,7 +69,15 @@ rm -rf "${MINITOUCH_SOURCE_DIR}" "${MINITOUCH_OUTPUT_DIR}"
 mkdir -p "${MINITOUCH_WORK_ROOT}" "${MINITOUCH_OUTPUT_DIR}"
 
 git clone --depth 1 --branch "${MINITOUCH_REF}" "${MINITOUCH_REPO_URL}" "${MINITOUCH_SOURCE_DIR}"
-git -C "${MINITOUCH_SOURCE_DIR}" submodule update --init --depth 1
+
+# openstf/minitouch still points libevdev at a deprecated git:// endpoint.
+# Rewrite it to the current HTTPS repository so CI can fetch the submodule.
+if git -C "${MINITOUCH_SOURCE_DIR}" config -f .gitmodules --get submodule.libevdev.url >/dev/null 2>&1; then
+  git -C "${MINITOUCH_SOURCE_DIR}" config -f .gitmodules submodule.libevdev.url "${LIBEVDEV_SUBMODULE_URL}"
+  git -C "${MINITOUCH_SOURCE_DIR}" submodule sync --recursive
+fi
+
+git -C "${MINITOUCH_SOURCE_DIR}" submodule update --init
 SOURCE_COMMIT="$(git -C "${MINITOUCH_SOURCE_DIR}" rev-parse HEAD)"
 
 build_args=()
