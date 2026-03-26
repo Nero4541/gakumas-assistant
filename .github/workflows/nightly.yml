@@ -64,7 +64,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: Download Android NDK
         if: matrix.name == 'minitouch' && steps.cache.outputs.cache-hit != 'true'
