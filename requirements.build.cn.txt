@@ -1,0 +1,2 @@
+-i https://mirrors.cloud.tencent.com/pypi/simple
+-r requirements.build.txt

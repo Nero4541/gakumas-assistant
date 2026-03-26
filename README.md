@@ -131,8 +131,10 @@ source .venv/bin/activate
 pip install -r requirements.dev.txt
 ```
 > PS：  
-> 建议创建两个环境用于开发和打包,部分库在导出/打包时才会使用  
-> 中国大陆网络环境可使用 requirements.dev.cn.txt 以提高依赖安装成功率。
+> 建议创建两个环境用于开发和打包:
+> 开发环境安装 `requirements.dev.txt`
+> 打包环境安装 `requirements.build.txt`
+> 中国大陆网络环境可使用 requirements.dev.cn.txt 或 requirements.build.cn.txt 以提高依赖安装成功率。
 ### **拉取子模块:**
 本项目包含 Git 子模块，请在克隆仓库后执行：
 ```bash
@@ -157,6 +159,7 @@ python ./devtools/model_export.py
 ### 打包项目:
 本项目使用 `Nuitka` 进行打包，支持 `Windows`、`macOS`、`Linux`。打包后的应用程序会输出到 `out/app.dist` 中。
 ```bash
+pip install -r requirements.build.txt
 python build_app.py
 ```
 说明：

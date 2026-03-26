@@ -190,15 +190,14 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install nuitka
+          pip install -r requirements.build.txt
 
       - name: Get Cache Build
         id: cache-build
         uses: actions/cache@v3
         with:
           path: out/app.build
-          key: ${{ runner.os }}-nuitka-build-${{ hashFiles('build_app.py', 'requirements.txt') }}
+          key: ${{ runner.os }}-nuitka-build-${{ hashFiles('build_app.py', 'requirements.txt', 'requirements.build.txt') }}
           restore-keys: |
             ${{ runner.os }}-nuitka-build-
 

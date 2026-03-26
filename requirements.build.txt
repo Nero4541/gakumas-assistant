@@ -1,0 +1,5 @@
+-r requirements.txt
+
+# Nuitka uses imageio on Windows to convert the PNG app icon during packaging.
+imageio
+nuitka
