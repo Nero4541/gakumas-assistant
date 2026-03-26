@@ -107,6 +107,35 @@ def _auto_form_team(app: "AppProcessor"):
     app.game_utils.click_button(ButtonText.CLOSE)
     app.game_utils.back_next_page()
 
+
+def _click_skip_until_disappears(
+    app: "AppProcessor",
+    timeout: float = 20.0,
+    interval: float = 0.5,
+    stable_missing: int = 3,
+):
+    """
+    持续点击 Skip，直到连续多帧都确认它已经消失。
+    避免因为单帧漏检而过早进入结算阶段。
+    """
+    wait_time = 0.0
+    missing_count = 0
+    while wait_time < timeout:
+        skip_buttons = app.latest_results.filter_by_label(BaseUILabels.SKIP_BUTTON)
+        if skip_buttons:
+            missing_count = 0
+            logger.debug("Found label 'Skip Button', clicking...")
+            app.device.click_element(skip_buttons.first())
+        else:
+            missing_count += 1
+            logger.debug(f"Skip Button not found. Stable miss count: {missing_count}/{stable_missing}")
+            if missing_count >= stable_missing:
+                logger.debug("Skip Button disappeared stably. Entering finish phase.")
+                return
+        sleep(interval)
+        wait_time += interval
+    raise TimeoutError("Waiting for skip button to disappear timeout")
+
 def _start_battle(app: "AppProcessor", width: int, height: int):
     """
     发起挑战并跳过战斗过程。
@@ -124,14 +153,11 @@ def _start_battle(app: "AppProcessor", width: int, height: int):
             check_box = CheckBox(app.latest_results.filter_by_label(BaseUILabels.CHECKBOX).first())
             if not check_box.checked:
                 app.device.click_element(check_box)
-            app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
-            sleep(1)
         except Exception as e:
             logger.error(f"not find checkbox: {e}")
-    while app.latest_results.exists_label(BaseUILabels.SKIP_BUTTON):
-        app.game_utils.click_on_label(BaseUILabels.SKIP_BUTTON)
-        sleep(1)
+    _click_skip_until_disappears(app)
     app.device.click(width // 2, height // 2)
+    sleep(1)
 
 
 def _finish_battle(app: "AppProcessor"):
@@ -139,23 +165,37 @@ def _finish_battle(app: "AppProcessor"):
     处理战斗结束的按钮点击与奖励弹窗。
     超时等待过程中持续点击屏幕中部。
     """
-    COUNT, WAIT = 0, 15
+    COUNT, WAIT = 0, 30
     while COUNT < WAIT:
-        buttons = ButtonList(app.latest_results)
-        if button := buttons.get_button_by_text(ButtonText.NEXT):
-            app.device.click_element(button)
-            break
-        app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
-        sleep(1)
-        COUNT += 1
-    if COUNT >= WAIT:
-        raise TimeoutError("Waiting for the challenge to end timeout")
-    app.game_utils.click_button(ButtonText.EXIT)
-    while True:
+        skip_buttons = app.latest_results.filter_by_label(BaseUILabels.SKIP_BUTTON)
+        if skip_buttons:
+            logger.debug("Skip Button still visible during finish phase, clicking again.")
+            app.device.click_element(skip_buttons.first())
+            sleep(1)
+            COUNT += 1
+            continue
         if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
             return
         if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
-            modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
-            if modal is None:
+            modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, timeout=1, no_body=True)
+            if modal is not None:
+                app.device.click_element(modal.cancel_button)
+                sleep(1)
+                COUNT += 1
                 continue
-            app.device.click_element(modal.cancel_button)
+        if app.latest_results.exists_label(BaseUILabels.BUTTON):
+            buttons = ButtonList(app.latest_results)
+            if button := buttons.get_button_by_text(ButtonText.NEXT):
+                app.device.click_element(button)
+                sleep(1)
+                COUNT += 1
+                continue
+            if button := buttons.get_button_by_text(ButtonText.EXIT):
+                app.device.click_element(button)
+                sleep(1)
+                COUNT += 1
+                continue
+        app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
+        sleep(1)
+        COUNT += 1
+    raise TimeoutError("Waiting for the challenge to end timeout")

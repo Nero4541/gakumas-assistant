@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamGimmickEffectGroupProduceDescriptionsItem:
     produceDescriptionType: str = None
     examDescriptionType: str = None
@@ -34,7 +34,7 @@ class ProduceExamGimmickEffectGroupProduceDescriptionsItem:
     isOnlyOutGame: bool = None
     changeColor: bool = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamGimmickEffectGroup:
     id: str = None
     priority: int = None
@@ -50,7 +50,7 @@ class ProduceExamGimmickEffectGroup:
     produceDescriptions: List[ProduceExamGimmickEffectGroupProduceDescriptionsItem] = field(default_factory=list)
     localization: ProduceExamGimmickEffectGroupLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamGimmickEffectGroupLocalizationProduceDescriptionsItem:
     produceDescriptionType: str = None
     examDescriptionType: str = None
@@ -61,7 +61,7 @@ class ProduceExamGimmickEffectGroupLocalizationProduceDescriptionsItem:
     targetId: str = None
     text: str = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamGimmickEffectGroupLocalization:
     id: str = None
     priority: int = None

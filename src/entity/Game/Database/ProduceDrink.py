@@ -5,14 +5,14 @@ from src.entity.Game.Database.EffectGroup import EffectGroup
 from src.entity.Game.Database.General import ProduceDescriptionItem, ProduceDescriptionLocalizationItem
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDrinkLocalization:
     id: str
     name: str
     produceDescriptions: List[ProduceDescriptionLocalizationItem]
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDrink:
     id: str
     assetId: str

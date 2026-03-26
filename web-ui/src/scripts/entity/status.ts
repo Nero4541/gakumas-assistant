@@ -11,10 +11,17 @@ export interface GameStatus {
   player: PlayerStatus
 }
 
+export interface DeviceStatus {
+  available: boolean
+  code: string
+  message: string
+}
+
 /** 应用整体状态 */
 export interface AppStatus {
   platform: string
   yolo: boolean
   task: boolean
+  device: DeviceStatus
   game: GameStatus
 }

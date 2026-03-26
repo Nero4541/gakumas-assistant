@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class PhotoPose:
     id: str = None
     photoBackgroundId: str = None
@@ -30,7 +30,7 @@ class PhotoPose:
     order: int = None
     localization: PhotoPoseLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class PhotoPoseLocalization:
     id: str = None
     name: str = None

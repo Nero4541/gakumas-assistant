@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceChallengeSlot:
     id: str = None
     produceId: str = None
@@ -17,7 +17,7 @@ class ProduceChallengeSlot:
     unlockDescription: str = None
     localization: ProduceChallengeSlotLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceChallengeSlotLocalization:
     id: str = None
     produceId: str = None

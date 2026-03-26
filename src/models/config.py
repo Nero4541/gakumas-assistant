@@ -19,6 +19,10 @@ class ConfigModel(BaseModel):
     class Meta:
         table_name = "config"
 
+    @staticmethod
+    def _verify_value(config_item: ConfigItem) -> str:
+        return config_item.verify or ""
+
     @classmethod
     def load_config(cls) -> ConfigEntity:
         config = ConfigEntity()
@@ -45,8 +49,6 @@ class ConfigModel(BaseModel):
                 cast_value = config_item.default_value
 
             config_item.value = cast_value
-            config_item.verify = row.verify
-            config_item.use_verify = row.use_verify
             config_item.last_modified_time = row.last_modified_time
 
         return config
@@ -71,13 +73,18 @@ class ConfigModel(BaseModel):
 
                     config_row, created = cls.get_or_create(key=key, defaults={
                         'value': value_str,
-                        'verify': config_item.verify or "",
+                        'verify': cls._verify_value(config_item),
                         'use_verify': config_item.use_verify or False,
                         'last_modified_time': datetime.now()
                     })
-                    if not created and config_row.value != value_str:
+                    verify_value = cls._verify_value(config_item)
+                    metadata_changed = (
+                        config_row.verify != verify_value
+                        or config_row.use_verify != bool(config_item.use_verify)
+                    )
+                    if not created and (config_row.value != value_str or metadata_changed):
                         config_row.value = value_str
-                        config_row.verify = config_item.verify
+                        config_row.verify = verify_value
                         config_row.use_verify = config_item.use_verify
                         config_row.last_modified_time = datetime.now()
                         config_row.save()
@@ -97,18 +104,26 @@ class ConfigModel(BaseModel):
                 if not isinstance(config_item, ConfigItem):
                     continue
                 key = f"{section_name}.{attr_name}"
-                if cls.filter(key=key):
+                verify_value = cls._verify_value(config_item)
+                row = cls.get_or_none(cls.key == key)
+                if row is None:
+                    if not cls.create(
+                        key=key,
+                        value=config_item.default_value,
+                        verify=verify_value,
+                        use_verify=config_item.use_verify,
+                        last_modified_time=datetime.now()
+                    ):
+                        logger.warning(f"Failed to create config key: {key}")
+                        return
+                    logger.info(f"Created config key: {key}")
                     continue
-                if not cls.create(
-                    key=key,
-                    value=config_item.default_value,
-                    verify=config_item.verify or "",
-                    use_verify=config_item.use_verify,
-                    last_modified_time=datetime.now()
-                ):
-                    logger.warning(f"Failed to create config key: {key}")
-                    return
-                logger.info(f"Created config key: {key}")
+
+                if row.verify != verify_value or row.use_verify != bool(config_item.use_verify):
+                    row.verify = verify_value
+                    row.use_verify = config_item.use_verify
+                    row.save()
+                    logger.info(f"Updated config schema metadata: {key}")
 
     @staticmethod
     def cast_to_type(value: str, target_type: type):

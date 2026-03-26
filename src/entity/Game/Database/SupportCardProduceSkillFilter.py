@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardProduceSkillFilter:
     id: str = None
     title: str = None
@@ -17,7 +17,7 @@ class SupportCardProduceSkillFilter:
     produceTriggerIds: List[str] = field(default_factory=list)
     localization: SupportCardProduceSkillFilterLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardProduceSkillFilterLocalization:
     id: str = None
     order: int = None

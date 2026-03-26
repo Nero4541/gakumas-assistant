@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class VoiceGroup:
     id: str = None
     voiceAssetId: str = None
@@ -18,7 +18,7 @@ class VoiceGroup:
     order: int = None
     localization: VoiceGroupLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class VoiceGroupLocalization:
     id: str = None
     voiceAssetId: str = None

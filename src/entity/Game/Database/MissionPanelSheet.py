@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class MissionPanelSheet:
     missionPanelSheetGroupId: str = None
     number: int = None
@@ -23,7 +23,7 @@ class MissionPanelSheet:
     panelGradientColors2: List[str] = field(default_factory=list)
     localization: MissionPanelSheetLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MissionPanelSheetLocalization:
     missionPanelSheetGroupId: str = None
     number: int = None

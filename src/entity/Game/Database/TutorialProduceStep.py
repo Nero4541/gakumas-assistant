@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class TutorialProduceStep:
     tutorialType: str = None
     idolCardId: str = None
@@ -29,7 +29,7 @@ class TutorialProduceStep:
     produceExamGimmickEffectGroupId: str = None
     localization: TutorialProduceStepLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class TutorialProduceStepLocalization:
     tutorialType: str = None
     stepNumber: int = None

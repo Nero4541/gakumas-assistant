@@ -8,13 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateCommonProduceCardProduceCardsItem:
     id: str = None
     upgradeCount: int = None
     customizes: List[Any] = field(default_factory=list)
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateCommonProduceCard:
     id: str = None
     planType: str = None

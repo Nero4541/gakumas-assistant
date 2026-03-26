@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class FeatureLock:
     tutorialType: str = None
     name: str = None
@@ -19,7 +19,7 @@ class FeatureLock:
     viewConditionSetId: str = None
     localization: FeatureLockLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class FeatureLockLocalization:
     tutorialType: str = None
     name: str = None

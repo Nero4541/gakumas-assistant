@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Media:
     id: str = None
     name: str = None
@@ -27,7 +27,7 @@ class Media:
     order: int = None
     localization: MediaLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MediaLocalization:
     id: str = None
     name: str = None

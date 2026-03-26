@@ -8,13 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ShopItemRewardsItem:
     resourceType: str = None
     resourceId: str = None
     quantity: int = None
 
-@dataclass
+@dataclass(slots=True)
 class ShopItem:
     id: str = None
     shopId: str = None
@@ -41,7 +41,7 @@ class ShopItem:
     order: int = None
     localization: ShopItemLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ShopItemLocalization:
     id: str = None
     name: str = None

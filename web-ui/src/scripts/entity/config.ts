@@ -2,7 +2,13 @@ export interface ConfigItemUI {
   label?: string
   hint?: string
   component?: string
-  options?: Array<Record<string, any>>
+  options?: Array<Record<string, any> & {
+    title?: string
+    value?: any
+    disabled?: boolean
+    disabled_reason?: string
+    description?: string
+  }>
   visible_if?: Record<string, any>
   readonly?: boolean
   resettable?: boolean

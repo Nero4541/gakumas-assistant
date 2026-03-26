@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Produce:
     id: str = None
     name: str = None
@@ -33,7 +33,7 @@ class Produce:
     order: int = None
     localization: ProduceLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceLocalization:
     id: str = None
     name: str = None

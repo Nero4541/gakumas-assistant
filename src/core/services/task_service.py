@@ -2,18 +2,23 @@ import ctypes
 import inspect
 import os
 import traceback
+from datetime import datetime, timedelta
 from functools import lru_cache
 from pathlib import Path
 from queue import Queue
 from typing import Callable, Optional, TYPE_CHECKING, List
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from time import time, sleep
 
-from pyautogui import FailSafeException
+try:
+    from pyautogui import FailSafeException
+except Exception:
+    class FailSafeException(Exception):
+        pass
 
 from src.constants.task_status import TaskStatus
 from src.constants.websocket_actions import WebsocketActions
-from src.core.device.Windows.app import Windows_App
+from src.core.device.windows_compat import is_windows_device
 from src.core.exceptions.TaskException import UserCancelTask, TaskTimeout
 from src.core.services.config_service import ConfigService
 from src.core.web.websocket import WebSocketManager
@@ -47,6 +52,7 @@ def _raise_in_thread(thread_id: int, exc_type: type):
         raise SystemError("PyThreadState_SetAsyncExc affected multiple threads")
 
 class TaskService:
+    AUTO_STARTUP_TIME_FORMAT = "%H:%M"
 
     def __init__(self, app: "AppProcessor"):
         self._app = app
@@ -64,6 +70,10 @@ class TaskService:
         self._resume_event.set()  # 初始为非挂起
         self._suspended = Event()
         self._task_runner_thread: Optional[Thread] = None
+        self._auto_startup_refresh_event = Event()
+        self._auto_startup_state_lock = Lock()
+        self._auto_startup_next_run: Optional[datetime] = None
+        self._init_auto_startup_scheduler()
 
     # ========== 注册 ==========
 
@@ -119,6 +129,9 @@ class TaskService:
     def start_queue(self, task_id: str = None):
         """启动任务队列"""
         if self._queue_status:
+            return False
+        if not self._app.ensure_device_ready(restart_inference=True):
+            logger.warning(f"Task queue start rejected: {self._app.get_device_status().get('message', 'device unavailable')}")
             return False
         self._queue_status = True
         self._stop_event.clear()
@@ -226,6 +239,84 @@ class TaskService:
         Thread(target=_insert_runner, daemon=True).start()
         return True
 
+    def _init_auto_startup_scheduler(self):
+        """初始化每日自动执行调度器。"""
+        config_service.add_listener(
+            ["base.enabled_auto_startup", "base.auto_startup_time"],
+            self._on_auto_startup_config_changed,
+        )
+        self._auto_startup_thread = Thread(target=self._auto_startup_scheduler_loop, daemon=True)
+        self._auto_startup_thread.start()
+
+    def _on_auto_startup_config_changed(self, key: str, old_value, new_value):
+        logger.info(f"Reload auto startup schedule because '{key}' changed: {old_value!r} -> {new_value!r}")
+        self._auto_startup_refresh_event.set()
+
+    @classmethod
+    def _parse_auto_startup_time(cls, value: str):
+        return datetime.strptime(value, cls.AUTO_STARTUP_TIME_FORMAT)
+
+    @classmethod
+    def _get_next_auto_startup_datetime(cls, now: datetime, time_text: str) -> datetime:
+        schedule_time = cls._parse_auto_startup_time(time_text)
+        next_run = now.replace(
+            hour=schedule_time.hour,
+            minute=schedule_time.minute,
+            second=0,
+            microsecond=0,
+        )
+        current_minute = now.replace(second=0, microsecond=0)
+        if next_run < current_minute:
+            next_run += timedelta(days=1)
+        return next_run
+
+    def _set_auto_startup_next_run(self, next_run: Optional[datetime]):
+        with self._auto_startup_state_lock:
+            self._auto_startup_next_run = next_run
+
+    def get_auto_startup_next_run(self) -> Optional[datetime]:
+        with self._auto_startup_state_lock:
+            return self._auto_startup_next_run
+
+    def _wait_for_auto_startup_refresh(self, timeout: float) -> bool:
+        if self._auto_startup_refresh_event.wait(timeout=max(timeout, 0)):
+            self._auto_startup_refresh_event.clear()
+            return True
+        return False
+
+    def _auto_startup_scheduler_loop(self):
+        """每日自动执行任务队列。"""
+        while True:
+            if not config_service.base.enabled_auto_startup:
+                self._set_auto_startup_next_run(None)
+                self._wait_for_auto_startup_refresh(60)
+                continue
+            try:
+                next_run = self._get_next_auto_startup_datetime(
+                    datetime.now(),
+                    config_service.base.auto_startup_time,
+                )
+            except ValueError:
+                self._set_auto_startup_next_run(None)
+                logger.error(
+                    f"Invalid auto startup time: {config_service.base.auto_startup_time!r}, "
+                    f"expected format {self.AUTO_STARTUP_TIME_FORMAT}"
+                )
+                self._wait_for_auto_startup_refresh(60)
+                continue
+            self._set_auto_startup_next_run(next_run)
+            logger.info(f"Next auto startup scheduled at {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+            wait_seconds = (next_run - datetime.now()).total_seconds()
+            if self._wait_for_auto_startup_refresh(wait_seconds):
+                continue
+            self._set_auto_startup_next_run(None)
+            if self._queue_status:
+                logger.warning("Skip auto startup because task queue is already running")
+                continue
+            logger.info("Auto startup triggered, starting task queue")
+            if not self.start_queue():
+                logger.warning("Auto startup failed to start task queue")
+
     # ========== 内部实现 ==========
 
     # 项目 src 目录的绝对路径，用于 trace 白名单过滤
@@ -259,12 +350,12 @@ class TaskService:
         posix_path = Path(filename).as_posix()
         return any(wl in posix_path for wl in TaskService.MIDDLEWARE_WHITELIST)
 
-    def _make_trace(self, task: Task):
+    def _make_trace(self, task: Task, timeout_event: Event):
         """
         轻量 trace，两个职责：
         1. 挂起时阻塞任务线程（白名单文件中 Event.wait()）
         2. 中间件拦截（仅在 tasks/game_utils 路径下，中间件返回 False 时阻塞）
-        急停/超时/焦点由 watchdog + PyThreadState_SetAsyncExc 处理。
+        急停仍由 PyThreadState_SetAsyncExc 处理，超时由 watchdog 设置事件后在 trace 安全点抛出。
         """
         resume_event = self._resume_event
         should_trace = self._should_trace
@@ -276,6 +367,8 @@ class TaskService:
             filename = frame.f_code.co_filename
             if not should_trace(filename):
                 return _trace
+            if timeout_event.is_set():
+                raise TaskTimeout(task)
             # 挂起检查
             resume_event.wait()
             # 中间件拦截：仅在白名单路径中执行，返回 False 时阻塞任务
@@ -287,7 +380,7 @@ class TaskService:
 
         return _trace
 
-    def _watchdog(self, task: Task):
+    def _watchdog(self, task: Task, timeout_event: Event):
         """
         看门狗线程：周期性检查超时、Windows焦点、执行中间件。
         与任务线程完全解耦，不侵入任务代码。
@@ -307,20 +400,20 @@ class TaskService:
             else:
                 if suspend_start is not None:
                     elapsed = time() - suspend_start
-                    if task.timeout not in (None, -1):
-                        task.timeout += elapsed
+                    task.extend_timeout(elapsed)
                     suspend_start = None
 
             # 超时检查
-            if task.timeout not in (None, -1):
-                if (time() - task.get_start_time()) > task.timeout:
+            task_timeout = task.get_timeout()
+            start_time = task.get_start_time()
+            if task_timeout not in (None, -1) and start_time not in (None, -1, None):
+                if (time() - start_time) > task_timeout:
                     logger.warning(f"Task '{task.task_name}' timed out")
-                    if self._task_runner_thread is not None and self._task_runner_thread.is_alive():
-                        _raise_in_thread(self._task_runner_thread.ident, TaskTimeout)
+                    timeout_event.set()
                     break
 
             # Windows 焦点检查
-            if isinstance(self._app.device, Windows_App):
+            if is_windows_device(self._app.device):
                 if not self._app.device.is_app_focused():
                     focus_lost_start = time()
                     while not self._app.device.is_app_focused():
@@ -328,8 +421,8 @@ class TaskService:
                             return
                         sleep(0.1)
                     waited = time() - focus_lost_start
-                    if waited > 0 and task.timeout not in (None, -1):
-                        task.timeout += waited
+                    if waited > 0:
+                        task.extend_timeout(waited)
 
             # 中间件执行
             if not task.disabled_middleware:
@@ -389,24 +482,29 @@ class TaskService:
 
     def _task_thread(self, task: Task):
         """执行单个任务：启动任务线程 + watchdog 线程"""
-        runner = Thread(target=self._run_task_inner, args=(task,), daemon=True)
+        task.reset_runtime_state()
+        task.update_start_time()
+        task.update_status(TaskStatus.RUNNING)
+        timeout_event = Event()
+        runner = Thread(target=self._run_task_inner, args=(task, timeout_event), daemon=True)
         self._task_runner_thread = runner
-        watchdog = Thread(target=self._watchdog, args=(task,), daemon=True)
+        watchdog = Thread(target=self._watchdog, args=(task, timeout_event), daemon=True)
         runner.start()
         watchdog.start()
         runner.join()
         self._task_runner_thread = None
 
-    def _run_task_inner(self, task: Task):
+    def _run_task_inner(self, task: Task, timeout_event: Event):
         """任务实际执行（在独立线程中，供 PyThreadState_SetAsyncExc 定位）"""
         import sys
         try:
-            task.update_status(TaskStatus.RUNNING)
-            task.update_start_time()
-            sys.settrace(self._make_trace(task))
+            sys.settrace(self._make_trace(task, timeout_event))
             func = task.function
             sig = inspect.signature(func)
             result = func(self._app) if len(sig.parameters) > 0 else func()
+            sys.settrace(None)
+            if timeout_event.is_set():
+                raise TaskTimeout(task)
             if result in TaskStatus.__dict__.keys():
                 task.update_status(result)
             elif result is False:
@@ -414,12 +512,16 @@ class TaskService:
             else:
                 task.update_status(TaskStatus.SUCCESS)
         except (UserCancelTask, FailSafeException):
+            sys.settrace(None)
             task.update_status(TaskStatus.CANCELED)
             logger.warning(f"Task '{task.task_name}({task.id})' cancelled")
         except TaskTimeout:
+            timeout_event.clear()
+            sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
             logger.error(f"Task '{task.task_name}({task.id})' timed out")
         except Exception as e:
+            sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
             logger.error(f"Task '{task.task_name}({task.id})' failed:\n{tb_str}")

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceStepFanPresentMotion:
     characterId: str = None
     motionType: str = None

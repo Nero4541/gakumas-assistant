@@ -8,19 +8,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class MainTaskRewardsItem:
     resourceType: str = None
     resourceId: str = None
     quantity: int = None
 
-@dataclass
+@dataclass(slots=True)
 class MainTaskAdditionalRewardsItem:
     resourceType: str = None
     resourceId: str = None
     quantity: int = None
 
-@dataclass
+@dataclass(slots=True)
 class MainTask:
     mainTaskGroupId: str = None
     number: int = None
@@ -41,7 +41,7 @@ class MainTask:
     unlockFeatureTutorialType: str = None
     localization: MainTaskLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MainTaskLocalization:
     mainTaskGroupId: str = None
     number: int = None

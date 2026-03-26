@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import List
 
-@dataclass
+@dataclass(slots=True)
 class ItemGashas:
     id: str
     bannerAssetId: str
@@ -11,14 +11,14 @@ class ItemGashas:
     startTime: str
     endTime: str
 
-@dataclass
+@dataclass(slots=True)
 class ItemLocalization:
     id: str
     name: str
     description: str
     acquisitionRouteDescription: str
 
-@dataclass
+@dataclass(slots=True)
 class Item:
     id: str
     name: str

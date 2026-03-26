@@ -9,8 +9,10 @@ import requests
 import uiautomator2 as u2
 
 from src.constants.device.adb import ADBConnectMode, ADBOperation
+from src.core.device.Android.adapters import ScrcpyAdapter, MinitouchAdapter, MaaTouchAdapter
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
+from src.utils.adb_runtime import describe_adb_error
 from src.utils.adb_tools import start_DroidCast, ADBShell
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
@@ -31,6 +33,11 @@ class Android_App(BaseDevice):
     __screen_touch_service: str
     __droidcast_service_status: bool = False
     __capture_service_shell: ADBShell = None
+    __scrcpy_adapter: Optional[ScrcpyAdapter] = None
+    __minitouch_adapter: Optional[MinitouchAdapter] = None
+    __maatouch_adapter: Optional[MaaTouchAdapter] = None
+    __unavailable_reason: str = ""
+    __unavailable_code: str = ""
 
     def __init__(self) -> None:
         self.__config_service = ConfigService()
@@ -44,6 +51,7 @@ class Android_App(BaseDevice):
         if not self.__connect_ADB():
             return
         self.__init_capture_service()
+        self.__init_touch_service()
         if (
             self.__screen_capture_service == ADBOperation.ScreenCaptureService.uiautomator2
             or self.__screen_touch_service ==  ADBOperation.TouchService.uiautomator2
@@ -51,38 +59,132 @@ class Android_App(BaseDevice):
             self.__connect_uiautomator2()
 
     def __del__(self) -> None:
+        if self.__maatouch_adapter is not None:
+            self.__maatouch_adapter.stop()
+        if self.__minitouch_adapter is not None:
+            self.__minitouch_adapter.stop()
+        if self.__scrcpy_adapter is not None:
+            self.__scrcpy_adapter.stop()
         if self.__capture_service_shell is not None:
             self.__capture_service_shell.close()
 
     def __bool__(self) -> bool:
         return bool(self.__adb_device)
 
+    def get_unavailable_reason(self) -> str:
+        return self.__unavailable_reason
+
+    def get_unavailable_code(self) -> str:
+        return self.__unavailable_code
+
+    def _set_unavailable(self, code: str, reason: str) -> bool:
+        self.__unavailable_code = code
+        self.__unavailable_reason = reason
+        logger.warning(reason)
+        return False
+
+    def _get_adb_error_context(self) -> dict:
+        if self.__connect_mode == ADBConnectMode.NETWORK:
+            return {
+                "connect_mode": "Network",
+                "host": self.__adb_host,
+                "port": self.__adb_port,
+            }
+        return {
+            "connect_mode": "USB",
+            "serial": self.__adb_serial,
+        }
+
+    def _reset_runtime_services(self):
+        if self.__maatouch_adapter is not None:
+            try:
+                self.__maatouch_adapter.stop()
+            except Exception:
+                pass
+            self.__maatouch_adapter = None
+        if self.__minitouch_adapter is not None:
+            try:
+                self.__minitouch_adapter.stop()
+            except Exception:
+                pass
+            self.__minitouch_adapter = None
+        if self.__scrcpy_adapter is not None:
+            try:
+                self.__scrcpy_adapter.stop()
+            except Exception:
+                pass
+            self.__scrcpy_adapter = None
+        if self.__capture_service_shell is not None:
+            try:
+                self.__capture_service_shell.close()
+            except Exception:
+                pass
+            self.__capture_service_shell = None
+        self.__droidcast_service_status = False
+        self.__u2_device = None
+
+    def _handle_runtime_adb_error(self, exc: Exception, action: str):
+        code, reason = describe_adb_error(exc, **self._get_adb_error_context())
+        self._reset_runtime_services()
+        self.__adb_device = None
+        self._set_unavailable(code, f"{action}失败：{reason}")
+        raise RuntimeError(self.__unavailable_reason) from exc
+
+    def _verify_adb_transport(self) -> bool:
+        if self.__adb_device is None:
+            return self._set_unavailable("adb_not_connected", "当前未连接到 ADB 设备。")
+        try:
+            self.__adb_device.shell("echo connected")
+        except Exception as exc:
+            code, reason = describe_adb_error(exc, **self._get_adb_error_context())
+            self.__adb_device = None
+            return self._set_unavailable(code, reason)
+        self.__unavailable_code = ""
+        self.__unavailable_reason = ""
+        return True
+
     def __connect_ADB(self) -> bool:
         if self.__connect_mode == ADBConnectMode.USB:
-            if self.__adb_serial not in [dev.serial for dev in adbutils.adb.device_list()]:
-                logger.error(f"Invalid ADB serial: {self.__adb_serial}")
-                return False
+            try:
+                usb_devices = [dev.serial for dev in adbutils.adb.device_list()]
+            except Exception as exc:
+                code, reason = describe_adb_error(exc, connect_mode="USB", serial=self.__adb_serial)
+                return self._set_unavailable(code, reason)
+            if not self.__adb_serial and len(usb_devices) == 1:
+                self.__adb_serial = usb_devices[0]
+                logger.info(f"Auto selected USB ADB device: {self.__adb_serial}")
+            if self.__adb_serial not in usb_devices:
+                code, reason = describe_adb_error(
+                    RuntimeError("USB ADB device not found"),
+                    connect_mode="USB",
+                    serial=self.__adb_serial,
+                )
+                return self._set_unavailable(code, reason)
             logger.debug(f"Try connect ADB(serial: {self.__adb_serial})")
             try:
                 self.__adb_device = adbutils.adb.device(serial=self.__adb_serial)
             except Exception as e:
-                logger.error(f"ADB Connect Error: {e}")
-                return False
-            return True
+                code, reason = describe_adb_error(e, connect_mode="USB", serial=self.__adb_serial)
+                return self._set_unavailable(code, reason)
+            return self._verify_adb_transport()
         elif self.__connect_mode == ADBConnectMode.NETWORK:
             self._adb_host = self.__config_service.base.adb_host
             self._adb_port = self.__config_service.base.adb_port
             logger.debug(f"Try connect ADB(host: {self._adb_host}, port: {self._adb_port})......")
-            adbutils.adb.connect(f"{self.__adb_host}:{self.__adb_port}")
             try:
+                adbutils.adb.connect(f"{self.__adb_host}:{self.__adb_port}")
                 self.__adb_device = adbutils.adb.device(f"{self.__adb_host}:{self.__adb_port}")
             except Exception as e:
-                logger.error(f"ADB Connect Error: {e}")
-                return False
-            return True
+                code, reason = describe_adb_error(
+                    e,
+                    connect_mode="Network",
+                    host=self.__adb_host,
+                    port=self.__adb_port,
+                )
+                return self._set_unavailable(code, reason)
+            return self._verify_adb_transport()
         else:
-            logger.error(f"Invalid connect mode: {self.__connect_mode}")
-            return False
+            return self._set_unavailable("invalid_connect_mode", f"无效的 ADB 连接模式：{self.__connect_mode}")
 
     def __connect_uiautomator2(self):
         logger.debug("Try connect to UIAutomator2...")
@@ -92,6 +194,21 @@ class Android_App(BaseDevice):
             logger.warning(f"uiautomator2 Initial Error：\n{e}")
             self.__u2_device = None
 
+    def __ensure_scrcpy_adapter(self) -> bool:
+        if self.__scrcpy_adapter is None:
+            self.__scrcpy_adapter = ScrcpyAdapter(self.__adb_device)
+        return self.__scrcpy_adapter.start()
+
+    def __ensure_minitouch_adapter(self) -> bool:
+        if self.__minitouch_adapter is None:
+            self.__minitouch_adapter = MinitouchAdapter(self.__adb_device)
+        return self.__minitouch_adapter.start()
+
+    def __ensure_maatouch_adapter(self) -> bool:
+        if self.__maatouch_adapter is None:
+            self.__maatouch_adapter = MaaTouchAdapter(self.__adb_device)
+        return self.__maatouch_adapter.start()
+
     def __init_capture_service(self):
         match self.__screen_capture_service:
             case ADBOperation.ScreenCaptureService.ADB:
@@ -100,11 +217,35 @@ class Android_App(BaseDevice):
                 pass
             case ADBOperation.ScreenCaptureService.DroidCast:
                 self.__droidcast_service_status, self.__capture_service_shell = start_DroidCast(self.__adb_device)
+            case ADBOperation.ScreenCaptureService.scrcpy:
+                if not self.__ensure_scrcpy_adapter():
+                    logger.warning("scrcpy capture service unavailable, fallback to ADB")
+                    self.__screen_capture_service = ADBOperation.ScreenCaptureService.ADB
             case _:
-                self.__screen_capture_service = ADBOperation.ScreenCaptureService.ADB
-                self.__config_service.base.android_screen_capture_service = ADBOperation.ScreenCaptureService.ADB
-                self.__config_service.save_config()
                 logger.warning(f"Not support capture service: '{self.__screen_capture_service}', reverted to ADB")
+                self.__screen_capture_service = ADBOperation.ScreenCaptureService.ADB
+
+    def __init_touch_service(self):
+        match self.__screen_touch_service:
+            case ADBOperation.TouchService.ADB:
+                pass
+            case ADBOperation.TouchService.uiautomator2:
+                pass
+            case ADBOperation.TouchService.scrcpy:
+                if not self.__ensure_scrcpy_adapter():
+                    logger.warning("scrcpy touch service unavailable, fallback to ADB")
+                    self.__screen_touch_service = ADBOperation.TouchService.ADB
+            case ADBOperation.TouchService.maatouch:
+                if not self.__ensure_maatouch_adapter():
+                    logger.warning("MaaTouch service unavailable, fallback to ADB")
+                    self.__screen_touch_service = ADBOperation.TouchService.ADB
+            case ADBOperation.TouchService.minitouch:
+                if not self.__ensure_minitouch_adapter():
+                    logger.warning("minitouch service unavailable, fallback to ADB")
+                    self.__screen_touch_service = ADBOperation.TouchService.ADB
+            case _:
+                logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
+                self.__screen_touch_service = ADBOperation.TouchService.ADB
 
     def start_game(self):
         """启动游戏"""
@@ -146,13 +287,26 @@ class Android_App(BaseDevice):
                 if self.__u2_device is not None:
                     return self.__u2_device
                 return self.__adb_device
+            case ADBOperation.TouchService.scrcpy:
+                if self.__ensure_scrcpy_adapter():
+                    return self.__scrcpy_adapter
+                logger.warning("scrcpy touch service unavailable, fallback to ADB for current action")
+                return self.__adb_device
+            case ADBOperation.TouchService.maatouch:
+                if self.__ensure_maatouch_adapter():
+                    return self.__maatouch_adapter
+                logger.warning("MaaTouch service unavailable, fallback to ADB for current action")
+                return self.__adb_device
+            case ADBOperation.TouchService.minitouch:
+                if self.__ensure_minitouch_adapter():
+                    return self.__minitouch_adapter
+                logger.warning("minitouch service unavailable, fallback to ADB for current action")
+                return self.__adb_device
             case ADBOperation.TouchService.ADB:
                 return self.__adb_device
             case _:
-                self.__screen_touch_service = ADBOperation.TouchService.ADB
-                self.__config_service.base.android_touch_service = ADBOperation.TouchService.ADB
-                self.__config_service.save_config()
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
+                self.__screen_touch_service = ADBOperation.TouchService.ADB
                 return self.__adb_device
 
     def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, offset_x = 10, offset_y = 10, safe_margin = 50):
@@ -267,20 +421,30 @@ class Android_App(BaseDevice):
     def capture(self) -> Optional[np.ndarray]:
         if not self.__bool__():
             return None
-        match self.__config_service.base.android_screen_capture_service:
-            case ADBOperation.ScreenCaptureService.ADB:
-                return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
-            case ADBOperation.ScreenCaptureService.DroidCast:
-                if not self.__droidcast_service_status:
+        try:
+            match self.__screen_capture_service:
+                case ADBOperation.ScreenCaptureService.ADB:
                     return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
-                response = requests.get("http://127.0.0.1:53516/screenshot")
-                if response.status_code != 200:
-                    self.__init_capture_service()
+                case ADBOperation.ScreenCaptureService.DroidCast:
+                    if not self.__droidcast_service_status:
+                        return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+                    response = requests.get("http://127.0.0.1:53516/screenshot")
+                    if response.status_code != 200:
+                        self.__init_capture_service()
+                        return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+                    image_array = np.frombuffer(response.content, dtype=np.uint8)
+                    return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+                case ADBOperation.ScreenCaptureService.uiautomator2:
+                    return self.__u2_device.screenshot(format='opencv')
+                case ADBOperation.ScreenCaptureService.scrcpy:
+                    if self.__ensure_scrcpy_adapter():
+                        frame = self.__scrcpy_adapter.capture(wait_timeout=1.0)
+                        if frame is not None:
+                            return frame
+                    logger.warning("scrcpy frame unavailable, fallback to ADB screenshot for current capture")
                     return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
-                image_array = np.frombuffer(response.content, dtype=np.uint8)
-                return cv2.imdecode(image_array, cv2.IMREAD_COLOR)
-            case ADBOperation.ScreenCaptureService.uiautomator2:
-                return self.__u2_device.screenshot(format='opencv')
-            case _:
-                logger.warning(f"Undefined screenshot service {self.__config_service.base.android_screen_capture_service}, reverted to ADB")
-                return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+                case _:
+                    logger.warning(f"Undefined screenshot service {self.__screen_capture_service}, reverted to ADB")
+                    return cv2.cvtColor(np.asarray(self.__adb_device.screenshot()), cv2.COLOR_RGB2BGR)
+        except Exception as exc:
+            self._handle_runtime_adb_error(exc, "截图")

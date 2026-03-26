@@ -17,6 +17,7 @@ class ADBOperation:
         ADB = "ADB"
         uiautomator2 = "uiautomator2"
         DroidCast = "DroidCast"
+        scrcpy = "scrcpy"
         class Bin:
             DroidCast = "bin/DroidCast-debug-1.2.1.apk"
 
@@ -26,3 +27,6 @@ class ADBOperation:
         """
         ADB = "ADB"
         uiautomator2 = "uiautomator2"
+        scrcpy = "scrcpy"
+        minitouch = "minitouch"
+        maatouch = "maatouch"

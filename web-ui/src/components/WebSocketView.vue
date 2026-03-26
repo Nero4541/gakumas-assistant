@@ -145,8 +145,9 @@ onUnmounted(() => {
 
 <style scoped>
 .websocket_view {
+  flex: 1 1 auto;
+  min-height: 0;
   width: 100%;
-  height: 100%;
   overflow: hidden;
   position: relative;
   background: rgb(33, 33, 33);

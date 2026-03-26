@@ -3,6 +3,8 @@ import importlib
 import os
 import re
 import threading
+import hashlib
+import pickle
 from typing import Any, Dict, List, TextIO
 
 import yaml
@@ -40,6 +42,8 @@ from src.entity.Game.Database.SupportCard import SupportCard, SupportCardLocaliz
 from src.utils.data_converter import DataConverter
 from src.utils.logger import logger
 from src.utils.string_tools import string_match
+
+_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".cache", "yaml_db")
 
 
 class _SingletonByFileMeta(type):
@@ -103,7 +107,25 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
             for entry in entries.get("data", [])
         ]
 
+    def _get_file_hash(self) -> str:
+        with open(self._diff_file, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest()
+
+    def _get_cache_path(self, file_hash: str) -> str:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        return os.path.join(_CACHE_DIR, f"{file_hash}.pkl")
+
     def _load_yaml(self) -> list[dict]:
+        file_hash = self._get_file_hash()
+        cache_path = self._get_cache_path(file_hash)
+
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "rb") as f:
+                    return pickle.load(f)
+            except:
+                pass
+
         with open(self._diff_file, "r", encoding="utf-8") as f:
             content = self._preprocess_yaml_data(f)
         data = yaml.load(content, Loader=yaml.CSafeLoader)
@@ -113,6 +135,13 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
             raise TypeError(
                 f"{self._diff_file} parsed to {type(data).__name__}, expected list"
             )
+
+        try:
+            with open(cache_path, "wb") as f:
+                pickle.dump(data, f)
+        except:
+            pass
+
         return data
 
     def _load_objects(self, entries) -> list:
@@ -153,6 +182,10 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
         logger.success(
             f"[{self.__class__.__name__}] {len(self._data)} records loaded from {self._diff_file}"
         )
+
+    def reload(self):
+        self._load_database()
+        return self
 
     def get_all_item(self):
         return self._data
@@ -908,6 +941,29 @@ def preload_all_game_databases(bind_relations: bool = True) -> Dict[str, _BaseYa
             bind_game_database_relations(db_map)
 
     return db_map
+
+
+def reload_loaded_game_databases():
+    with _RELATION_BIND_LOCK, _SingletonByFileMeta._lock:
+        old_instances = dict(_SingletonByFileMeta._instances)
+        if not old_instances:
+            return {}
+        _SingletonByFileMeta._instances = {}
+        rebuilt_old_instances = {}
+        for key, old_instance in old_instances.items():
+            loader_cls, data_file = key
+            fresh_instance = loader_cls(data_file)
+            old_instance.__dict__.clear()
+            old_instance.__dict__.update(fresh_instance.__dict__)
+            rebuilt_old_instances[key] = old_instance
+        current_instances = dict(_SingletonByFileMeta._instances)
+        current_instances.update(rebuilt_old_instances)
+        _SingletonByFileMeta._instances = current_instances
+        return {
+            os.path.splitext(os.path.basename(db._diff_file))[0]: db
+            for db in current_instances.values()
+            if getattr(db, "_diff_file", None)
+        }
 
 
 _register_dynamic_table_utils()

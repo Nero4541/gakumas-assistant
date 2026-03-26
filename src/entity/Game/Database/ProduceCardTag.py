@@ -8,13 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardTag:
     id: str = None
     name: str = None
     localization: ProduceCardTagLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardTagLocalization:
     id: str = None
     name: str = None

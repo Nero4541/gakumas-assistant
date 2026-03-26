@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class MeishiIllustrationAsset:
     id: str = None
     type: str = None
@@ -23,7 +23,7 @@ class MeishiIllustrationAsset:
     order: int = None
     localization: MeishiIllustrationAssetLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MeishiIllustrationAssetLocalization:
     id: str = None
     name: str = None

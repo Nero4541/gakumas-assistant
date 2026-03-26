@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class PhotoFacialMotionGroup:
     id: str = None
     number: int = None
@@ -17,7 +17,7 @@ class PhotoFacialMotionGroup:
     disableAutoBlink: bool = None
     localization: PhotoFacialMotionGroupLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class PhotoFacialMotionGroupLocalization:
     id: str = None
     number: int = None

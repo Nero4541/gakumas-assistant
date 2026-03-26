@@ -1,10 +1,13 @@
 import re
+import sys
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List
 
 import cv2
 import numpy as np
+import rapidocr as rapidocr_package
 
 from src.entity.Base import SingletonMeta
 from src.entity.Yolo import Yolo_Box
@@ -22,24 +25,88 @@ class OCRLoader(metaclass=SingletonMeta):
     _instance = None
     _infer_lock = threading.Lock()
 
+    @staticmethod
+    def _resolve_resource_path(relative_path: str) -> str | None:
+        relative = Path(relative_path)
+        candidates = [
+            Path.cwd() / "rapidocr" / relative,
+            Path(sys.argv[0]).resolve().parent / "rapidocr" / relative,
+            Path(rapidocr_package.__file__).resolve().parent / relative,
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+        logger.info(
+            "RapidOCR resource {} not found locally, fallback to RapidOCR default model resolution. Looked in: {}",
+            relative_path,
+            ", ".join(str(path) for path in candidates),
+        )
+        return None
+
+    @staticmethod
+    def _create_accelerated_session(model_path: str):
+        try:
+            return DMLManager.create_dml_session(model_path)
+        except Exception as exc:
+            logger.warning(
+                "Failed to create accelerated OCR session for {}, fallback to RapidOCR default session: {}",
+                model_path,
+                exc,
+            )
+            return None
+
+    @staticmethod
+    def _attach_accelerated_session(engine, component_name: str, session) -> None:
+        if session is None:
+            return
+        component = getattr(engine, component_name, None)
+        if component is None or not hasattr(component, "session"):
+            logger.warning(
+                "RapidOCR component {} is unavailable, skip attaching accelerated session.",
+                component_name,
+            )
+            return
+        component.session.session = session
+        logger.info(
+            "Attached accelerated OCR session to {} with providers: {}",
+            component_name,
+            session.get_providers(),
+        )
+
     def __init__(self):
+        det_model_path = self._resolve_resource_path("models/ch_PP-OCRv5_mobile_det.onnx")
+        cls_model_path = self._resolve_resource_path("models/ch_ppocr_mobile_v2.0_cls_infer.onnx")
+        rec_model_path = self._resolve_resource_path("models/japan_PP-OCRv4_rec_infer.onnx")
+        det_session = self._create_accelerated_session(det_model_path) if det_model_path else None
+        cls_session = self._create_accelerated_session(cls_model_path) if cls_model_path else None
+        rec_session = self._create_accelerated_session(rec_model_path) if rec_model_path else None
+        params = {
+            "EngineConfig.onnxruntime.use_dml": "DmlExecutionProvider" in DMLManager.get_session_providers(),
+            "Global.use_cls": False,
+            "Global.min_height": 10,
+
+            "Det.engine_type": EngineType.ONNXRUNTIME,
+            "Det.lang_type": LangDet.CH,
+            "Det.model_type": ModelType.MOBILE,
+            "Det.ocr_version": OCRVersion.PPOCRV5,
+
+            "Rec.engine_type": EngineType.ONNXRUNTIME,
+            "Rec.lang_type": LangRec.JAPAN,
+            "Rec.model_type": ModelType.MOBILE,
+        }
+        if det_model_path is not None:
+            params["Det.model_path"] = det_model_path
+        if cls_model_path is not None:
+            params["Cls.model_path"] = cls_model_path
+        if rec_model_path is not None:
+            params["Rec.model_path"] = rec_model_path
         # 初始化时创建 RapidOCR 实例
         self.ocr = RapidOCR(
-            params={
-                "EngineConfig.onnxruntime.use_dml": True,
-                "Global.use_cls": False,
-                "Global.min_height": 10,
-
-                "Det.engine_type": EngineType.ONNXRUNTIME,
-                "Det.lang_type": LangDet.CH,
-                "Det.model_type": ModelType.MOBILE,
-                "Det.ocr_version": OCRVersion.PPOCRV5,
-
-                "Rec.engine_type": EngineType.ONNXRUNTIME,
-                "Rec.lang_type": LangRec.JAPAN,
-                "Rec.model_type": ModelType.MOBILE,
-            },
+            params=params,
         )
+        self._attach_accelerated_session(self.ocr, "text_det", det_session)
+        self._attach_accelerated_session(self.ocr, "text_cls", cls_session)
+        self._attach_accelerated_session(self.ocr, "text_rec", rec_session)
 
     def __call__(self, *args, **kwargs):
         with self._infer_lock:
@@ -199,9 +266,15 @@ class OCR_ResultList:
 
 
 class OCRService:
-    ocr_engine: OCRLoader
+    ocr_engine: OCRLoader | None
+
     def __init__(self):
-        self.ocr_engine = OCRLoader()
+        self.ocr_engine = None
+
+    def _get_ocr_engine(self) -> OCRLoader:
+        if self.ocr_engine is None:
+            self.ocr_engine = OCRLoader()
+        return self.ocr_engine
 
     @classmethod
     def _map_result_to_ocr_result(cls, result, ratio: float, dw: float, dh:float) -> List[OCR_Result]:
@@ -232,6 +305,6 @@ class OCRService:
             return []
         img_letterbox, ratio, (dw, dh) = letterbox(img)
         with DMLManager.get_lock():
-            result = self.ocr_engine(img_letterbox, use_cls=False)
+            result = self._get_ocr_engine()(img_letterbox, use_cls=False)
         result = self._map_result_to_ocr_result(result, ratio, dw, dh)
         return OCR_ResultList(result)

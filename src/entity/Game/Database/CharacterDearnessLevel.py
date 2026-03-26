@@ -8,18 +8,18 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class CharacterDearnessLevelProduceSkillsItem:
     id: str = None
     level: int = None
 
-@dataclass
+@dataclass(slots=True)
 class CharacterDearnessLevelRewardsItem:
     resourceType: str = None
     resourceId: str = None
     quantity: int = None
 
-@dataclass
+@dataclass(slots=True)
 class CharacterDearnessLevel:
     characterId: str = None
     dearnessLevel: int = None
@@ -39,7 +39,7 @@ class CharacterDearnessLevel:
     dearnessPointThreshold: int = None
     localization: CharacterDearnessLevelLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class CharacterDearnessLevelLocalization:
     characterId: str = None
     dearnessLevel: int = None

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class CharacterAdv:
     characterId: str = None
     name: str = None
@@ -16,7 +16,7 @@ class CharacterAdv:
     notIdol: bool = None
     localization: CharacterAdvLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class CharacterAdvLocalization:
     characterId: str = None
     name: str = None

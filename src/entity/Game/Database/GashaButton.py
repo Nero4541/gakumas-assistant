@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class GashaButton:
     id: str = None
     name: str = None
@@ -37,7 +37,7 @@ class GashaButton:
     isOverride: bool = None
     localization: GashaButtonLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class GashaButtonLocalization:
     id: str = None
     order: int = None

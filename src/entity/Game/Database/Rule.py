@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Rule:
     type: str = None
     platformType: str = None
@@ -16,7 +16,7 @@ class Rule:
     html: str = None
     localization: RuleLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class RuleLocalization:
     type: str = None
     platformType: str = None

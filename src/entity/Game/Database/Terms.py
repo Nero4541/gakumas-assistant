@@ -8,14 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Terms:
     type: str = None
     name: str = None
     url: str = None
     localization: TermsLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class TermsLocalization:
     type: str = None
     name: str = None

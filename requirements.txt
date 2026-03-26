@@ -1,19 +1,20 @@
 opencv-python
-onnxruntime-directml
+onnxruntime-directml; platform_system == "Windows"
+onnxruntime
 pyautogui
 loguru
 numpy
 adbutils
 uiautomator2
+av
 fastapi
 uvicorn[standard]
 starlette
-pywin32
-scikit-learn
-scikit-image
+pywin32; platform_system == "Windows"
 rapidfuzz
 rapidocr==3.2.0
 peewee
 openai
 pyyaml
 pywebview
+requests

@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Tower:
     id: str = None
     characterId: str = None
@@ -19,7 +19,7 @@ class Tower:
     order: int = None
     localization: TowerLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class TowerLocalization:
     id: str = None
     title: str = None

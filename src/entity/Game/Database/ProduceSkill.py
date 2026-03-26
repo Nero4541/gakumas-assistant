@@ -4,14 +4,14 @@ from typing import List
 from src.entity.Game.Database.General import ProduceDescriptionItem, ProduceDescriptionLocalizationItem
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceSkillLocalization:
     id: str
     level: int
     produceDescriptions: List[ProduceDescriptionLocalizationItem]
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceSkill:
     id: str
     level: int

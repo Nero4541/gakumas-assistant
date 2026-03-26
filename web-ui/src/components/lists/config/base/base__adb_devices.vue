@@ -9,13 +9,20 @@ const props = defineProps({
   }
 })
 
-let device
-let load_status = ref(false)
+const device = ref([])
+const load_status = ref(false)
+const load_message = ref("")
+const device_hint = computed(() => {
+  const baseHint = "请选择通过USB连接的设备，如未找到设备请尝试刷新列表"
+  return load_message.value ? `${baseHint}。${load_message.value}` : baseHint
+})
 
 function load_device_list() {
   load_status.value = false
+  load_message.value = ""
   apis.get_all_adb_device(props.only_usb_device).then((res) => {
-    device = res.data.devices;
+    device.value = res.data.devices || []
+    load_message.value = res.data.message || ""
     load_status.value = true
   })
 }
@@ -33,7 +40,7 @@ load_device_list()
       @click:append="load_device_list"
       clearable
       label="通过USB连接的ADB设备"
-      hint="请选择通过USB连接的设备，如未找到设备请尝试刷新列表"
+      :hint="device_hint"
       persistent-hint
     />
   </v-list-item>

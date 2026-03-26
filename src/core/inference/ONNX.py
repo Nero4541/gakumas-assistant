@@ -46,15 +46,83 @@ class ONNXYoloResult:
         img = self.image.copy()
         for box, score, cls in zip(self.boxes, self.scores, self.class_ids):
             x, y, w, h = box.astype(int)
-            color = self.model_mata.colors.get(cls, (0, 255, 0))
+            color = self.model_mata.colors.get(int(cls), (0, 255, 0))
             cv2.rectangle(img, (x, y), (x + w, y + h), color, line_width)
-            label = f"{self.model_mata.names.get(cls, cls)}: {score:.2f}"
-            # 计算标签文本的尺寸
-            (label_width, label_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_size, 1)
-            label_x = x
-            label_y = y - 10 if y - 10 > label_height else y + 10
-            cv2.rectangle(img, (label_x, label_y - label_height), (label_x + label_width, label_y + label_height), color, cv2.FILLED)
-            cv2.putText(img, label, (label_x, label_y), cv2.FONT_HERSHEY_SIMPLEX, font_size, (0, 0, 0), 1, cv2.LINE_AA)
+            label = f"{self.model_mata.names.get(int(cls), cls)}: {score:.2f}"
+            (label_width, label_height), _ = cv2.getTextSize(
+                label,
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_size,
+                1,
+            )
+            label_x = max(x, 0)
+            label_y = y - 10 if y - 10 > label_height else y + label_height + 4
+            cv2.rectangle(
+                img,
+                (label_x, label_y - label_height - 4),
+                (label_x + label_width, label_y + 2),
+                color,
+                cv2.FILLED,
+            )
+            cv2.putText(
+                img,
+                label,
+                (label_x, label_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                font_size,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
+            )
+        return img
+
+@dataclass
+class ONNXYoloClassifyResult:
+    class_id: int
+    score: float
+    probs: np.ndarray
+    model_meta: ONNXYoloModelMeta
+    image: np.ndarray
+
+    def __bool__(self):
+        return self.score > 0
+
+    @property
+    def class_name(self):
+        return self.model_meta.names.get(self.class_id, str(self.class_id))
+
+    def plot(
+            self,
+            line_width: int = 2,
+            font_size: float = 0.5,
+    ) -> np.ndarray:
+        img = self.image.copy()
+        color = (0, 255, 0)
+        label = f"{self.class_name}: {self.score:.2f}"
+        (label_width, label_height), _ = cv2.getTextSize(
+            label,
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_size,
+            1,
+        )
+        padding = max(line_width, 4)
+        cv2.rectangle(
+            img,
+            (padding, padding),
+            (padding + label_width + 8, padding + label_height + 12),
+            color,
+            cv2.FILLED,
+        )
+        cv2.putText(
+            img,
+            label,
+            (padding + 4, padding + label_height + 2),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            font_size,
+            (0, 0, 0),
+            1,
+            cv2.LINE_AA,
+        )
         return img
 
 class YoloModelFromONNX:
@@ -200,6 +268,42 @@ class YoloModelFromONNX:
             {self._model_input_name: input_tensor}
         )
         return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh)
+
+class YoloClassifyModelFromONNX:
+    _model_meta: ONNXYoloModelMeta
+    _engine: ort.InferenceSession
+    _model_input_name: str
+
+    def __init__(self, model_path: str):
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(model_path)
+        model_dir, model_file = os.path.split(model_path)
+        model_name = os.path.splitext(model_file)[0]
+
+        meta_path = os.path.join(model_dir, f"{model_name}_meta.json")
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        imgsz = json.loads(meta["imgsz"])
+        names_mapping = ast.literal_eval(meta["names"])
+
+        self._model_meta = ONNXYoloModelMeta(imgsz, names_mapping, {})
+        self._engine = DMLManager.create_dml_session(model_path)
+        self._model_input_name = self._engine.get_inputs()[0].name
+
+    def _preprocess(self, img: np.ndarray) -> np.ndarray:
+        img_resized = cv2.resize(img, self._model_meta.imgsz)
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        img_rgb = img_rgb.astype(np.float32) / 255.0
+        img_rgb = img_rgb.transpose(2, 0, 1)
+        return np.expand_dims(img_rgb, axis=0)
+
+    def __call__(self, img: np.ndarray) -> ONNXYoloClassifyResult:
+        input_tensor = self._preprocess(img)
+        outputs = DMLManager.run(self._engine, {self._model_input_name: input_tensor})
+        probs = outputs[0][0]
+        class_id = int(np.argmax(probs))
+        score = float(probs[class_id])
+        return ONNXYoloClassifyResult(class_id, score, probs, self._model_meta, img)
 
 class CLIPModelFromONNX:
     session: ort.InferenceSession

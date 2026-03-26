@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateUnitSlotUnlock:
     grade: str = None
     slotCountPerStage: List[int] = field(default_factory=list)

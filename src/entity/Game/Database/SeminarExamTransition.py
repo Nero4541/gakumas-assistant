@@ -8,13 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class SeminarExamTransitionRewardsItem:
     resourceType: str = None
     resourceId: str = None
     quantity: int = None
 
-@dataclass
+@dataclass(slots=True)
 class SeminarExamTransition:
     examEffectType: str = None
     isLessonInt: int = None
@@ -27,7 +27,7 @@ class SeminarExamTransition:
     rewards: List[SeminarExamTransitionRewardsItem] = field(default_factory=list)
     localization: SeminarExamTransitionLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class SeminarExamTransitionLocalization:
     examEffectType: str = None
     isLessonInt: int = None

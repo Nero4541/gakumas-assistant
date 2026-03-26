@@ -30,6 +30,8 @@ class Task:
     _start_time: Optional[int] = -1
     # 结束时间
     _end_time: Optional[int] = -1
+    # 运行时超时（允许在挂起/失焦时补偿，不污染原始 timeout 配置）
+    _runtime_timeout: Optional[float] = None
     # 上次运行时间
     last_run_time: float = 0
     # 隐藏任务
@@ -41,11 +43,16 @@ class Task:
     # 允许手动解除挂起
     allow_manual_resume: bool = False
 
+    def reset_runtime_state(self):
+        self._start_time = -1
+        self._end_time = -1
+        self._runtime_timeout = float(self.timeout) if self.timeout not in (None, -1) else self.timeout
+
     def update_start_time(self):
         self._start_time = int(time())
         self.last_run_time = self._start_time
         self._end_time = None
-        self.update_status(TaskStatus.RUNNING)
+        self._runtime_timeout = float(self.timeout) if self.timeout not in (None, -1) else self.timeout
         return self._start_time
 
     def update_end_time(self):
@@ -69,3 +76,12 @@ class Task:
 
     def get_start_time(self):
         return self._start_time
+
+    def get_timeout(self):
+        return self._runtime_timeout
+
+    def extend_timeout(self, seconds: float):
+        if self._runtime_timeout in (None, -1):
+            return self._runtime_timeout
+        self._runtime_timeout += seconds
+        return self._runtime_timeout

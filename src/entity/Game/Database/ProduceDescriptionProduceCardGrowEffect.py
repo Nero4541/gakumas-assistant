@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionProduceCardGrowEffect:
     type: str = None
     name: str = None
@@ -18,7 +18,7 @@ class ProduceDescriptionProduceCardGrowEffect:
     produceCardCustomizeDescription: str = None
     localization: ProduceDescriptionProduceCardGrowEffectLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionProduceCardGrowEffectLocalization:
     type: str = None
     name: str = None

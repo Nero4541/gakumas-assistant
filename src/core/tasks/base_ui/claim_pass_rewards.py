@@ -1,9 +1,7 @@
 from copy import copy
 from time import sleep
 from typing import TYPE_CHECKING, Optional
-from skimage.metrics import structural_similarity as ssim
 
-import cv2
 import numpy as np
 
 from src.constants.game.text.button_text import ButtonText
@@ -12,8 +10,9 @@ from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.entity.Game.Components.Button import ButtonList
 from src.utils.game_tools import get_modal
-from src.utils.string_tools import string_match, MatchConfig
 from src.utils.logger import logger
+from src.utils.opencv_tools import compute_ssim_score
+from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -144,7 +143,5 @@ def _is_page_unchanged(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.
     :param threshold: 阈值
     :return:
     """
-    prev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
-    curr_gray = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
-    score, _ = ssim(prev_gray, curr_gray, full=True)
+    score = compute_ssim_score(prev, curr)
     return score > threshold

@@ -4,7 +4,7 @@ from typing import List
 from src.entity.Game.Database.General import ProduceDescriptionItem, GeneralProduceDescriptionsLocalization
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamEffect:
     id: str
     # 效果类型

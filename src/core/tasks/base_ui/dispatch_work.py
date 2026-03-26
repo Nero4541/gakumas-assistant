@@ -1,8 +1,6 @@
 from time import sleep
 from typing import TYPE_CHECKING, Optional
-from skimage.metrics import structural_similarity as ssim
 
-import cv2
 import numpy as np
 
 from src.constants.game.text.button_text import ButtonText

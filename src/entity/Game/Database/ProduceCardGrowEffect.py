@@ -5,7 +5,7 @@ from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardGrowEffect:
     """成长效果"""
     # 效果id

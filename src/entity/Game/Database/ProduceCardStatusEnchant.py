@@ -6,13 +6,13 @@ from src.entity.Game.Database.ProduceCardGrowEffect import ProduceCardGrowEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardStatusEnchantLocalization:
     id: str
     produceDescriptions: List[ProduceDescriptionLocalizationItem]
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardStatusEnchant:
     id: str
     produceExamTriggerId: str

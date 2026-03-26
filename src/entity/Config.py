@@ -1,4 +1,5 @@
 import copy
+import platform
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -6,6 +7,42 @@ from typing import Optional, List, Any, Tuple, Dict
 
 from src.constants.device.adb import ADBOperation, ADBConnectMode
 from src.utils.logger import logger
+
+
+def _config_enum_values(enum_cls) -> List[str]:
+    return [
+        value for key, value in enum_cls.__dict__.items()
+        if not key.startswith("__") and isinstance(value, str)
+    ]
+
+
+def _default_run_mode() -> str:
+    return "PC" if platform.system() == "Windows" else "Phone"
+
+
+def _run_mode_options() -> List[Dict[str, Any]]:
+    pc_option: Dict[str, Any] = {
+        "title": "电脑端（DMM）",
+        "value": "PC",
+    }
+    try:
+        from src.core.device.windows_compat import (
+            get_windows_unavailability_reason,
+            windows_pc_mode_is_available,
+        )
+
+        if not windows_pc_mode_is_available():
+            pc_option["disabled"] = True
+            pc_option["disabled_reason"] = get_windows_unavailability_reason()
+    except Exception:
+        if platform.system() != "Windows":
+            pc_option["disabled"] = True
+            pc_option["disabled_reason"] = "PC / DMM 模式仅支持 Windows。"
+
+    return [
+        pc_option,
+        {"title": "手机端", "value": "Phone"},
+    ]
 
 
 @dataclass
@@ -146,7 +183,7 @@ class _Base(_BaseConfigGroup):
 
     # 脚本运行模式
     run_mode = ConfigItem(
-        default_value="PC",
+        default_value=_default_run_mode(),
         data_type=str,
         verify=r"Phone|PC",
         use_verify=True,
@@ -154,10 +191,7 @@ class _Base(_BaseConfigGroup):
             label="运行模式",
             hint="脚本的执行模式（需重启生效）",
             component="select",
-            options=[
-                {"title": "电脑端（DMM）", "value": "PC"},
-                {"title": "手机端", "value": "Phone"},
-            ],
+            options=_run_mode_options(),
             order=10,
         )
     )
@@ -243,13 +277,14 @@ class _Base(_BaseConfigGroup):
     android_screen_capture_service = ConfigItem(
         default_value=ADBOperation.ScreenCaptureService.ADB,
         data_type=str,
-        verify="|".join(k for k in ADBOperation.ScreenCaptureService.__dict__ if not k.startswith("__") and not callable(k)),
+        verify="|".join(_config_enum_values(ADBOperation.ScreenCaptureService)),
         use_verify=True,
         ui=ConfigItemUI(
             label="ADB截图方式",
-            hint="DroidCast>ADB",
+            hint="scrcpy / DroidCast 的延迟通常优于 ADB 截图；scrcpy 需要将官方 Releases 的 scrcpy-server 放到 bin",
             component="select",
             options=[
+                {"title": "scrcpy", "value": "scrcpy"},
                 {"title": "DroidCast", "value": "DroidCast"},
                 {"title": "ADB", "value": "ADB"},
             ],
@@ -259,15 +294,18 @@ class _Base(_BaseConfigGroup):
     )
     # Android点击服务
     android_touch_service = ConfigItem(
-        default_value="ADB",
+        default_value=ADBOperation.TouchService.ADB,
         data_type=str,
-        verify="|".join(k for k in ADBOperation.TouchService.__dict__ if not k.startswith("__") and not callable(k)),
+        verify="|".join(_config_enum_values(ADBOperation.TouchService)),
         use_verify=True,
         ui=ConfigItemUI(
             label="ADB点击屏幕方式",
-            hint="部分点击服务可能存在兼容性问题，如遇到问题请回退到ADB",
+            hint="可选 MaaTouch / minitouch / scrcpy；MaaTouch 需放入官方构建产物到 bin/maatouch 或用 workflow 生成，minitouch 需放入官方构建产物到 bin/minitouch 且当前只支持 Android 9 及以下",
             component="select",
             options=[
+                {"title": "MaaTouch", "value": "maatouch"},
+                {"title": "minitouch", "value": "minitouch"},
+                {"title": "scrcpy", "value": "scrcpy"},
                 {"title": "ADB", "value": "ADB"},
             ],
             visible_if={"base.run_mode": "Phone"},
@@ -303,7 +341,7 @@ class _Base(_BaseConfigGroup):
         data_type=bool,
         ui=ConfigItemUI(
             label="每日自动执行脚本",
-            hint="未实现",
+            hint="开启后会在设定时间自动开始执行任务队列",
             component="switch",
             order=120,
         )
@@ -312,10 +350,55 @@ class _Base(_BaseConfigGroup):
     auto_startup_time = ConfigItem(
         default_value="12:00",
         data_type=str,
+        verify=r"(?:[01]\d|2[0-3]):[0-5]\d",
+        use_verify=True,
         ui=ConfigItemUI(
             label="自动运行触发时间",
+            hint="24小时制，格式为 HH:MM",
             component="time",
+            visible_if={"base.enabled_auto_startup": True},
             order=130,
+        )
+    )
+    # 是否启用资源仓库更新检查
+    enabled_check_resource_updates = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="定时检查资源仓库更新",
+            hint="按设定周期检查 assets/GakumasTranslationData 与 assets/gakumasu-diff 是否有上游更新",
+            component="switch",
+            order=135,
+        )
+    )
+    # 启动时检查资源仓库更新
+    check_resource_updates_on_startup = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="启动时检查资源仓库更新",
+            hint="每次启动后立即检查一次资源仓库更新",
+            component="switch",
+            order=136,
+        )
+    )
+    # 资源仓库定时检查周期
+    resource_update_check_period = ConfigItem(
+        default_value="daily",
+        data_type=str,
+        verify=r"daily|every_3_days|weekly",
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="资源仓库检查周期",
+            hint="仅用于定时检查",
+            component="select",
+            options=[
+                {"title": "每天", "value": "daily"},
+                {"title": "每 3 天", "value": "every_3_days"},
+                {"title": "每周", "value": "weekly"},
+            ],
+            visible_if={"base.enabled_check_resource_updates": True},
+            order=137,
         )
     )
 

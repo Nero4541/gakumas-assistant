@@ -8,14 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionProduceEffect:
     type: Any = None
     name: str = None
     produceDescriptionLabelId: str = None
     localization: ProduceDescriptionProduceEffectLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionProduceEffectLocalization:
     type: str = None
     name: str = None

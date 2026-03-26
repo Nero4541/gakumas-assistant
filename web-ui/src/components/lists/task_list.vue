@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from "vue";
 import apis from "@/scripts/apis.js";
 import auto_purchase_setting from "@/components/lists/config/task_settings/auto_purchase_setting.vue"
 import auto_contest_setting from "@/components/lists/config/task_settings/auto_contest_setting.vue";
@@ -6,6 +7,25 @@ import dispatch_work_setting from "@/components/lists/config/task_settings/dispa
 import { useAppStore } from "@/stores/app.js";
 
 const app_store = useAppStore();
+const props = defineProps({
+  modelValue: {
+    type: Boolean,
+    default: true,
+  },
+  temporary: {
+    type: Boolean,
+    default: false,
+  },
+  disableTransition: {
+    type: Boolean,
+    default: false,
+  },
+  width: {
+    type: [Number, String],
+    default: 400,
+  },
+})
+const emit = defineEmits(["update:modelValue"])
 
 const settingComponents = {
   auto_purchase: auto_purchase_setting,
@@ -58,105 +78,161 @@ function formatRelativeTime(ts) {
   if (diff < 172800) return "昨天"
   return `${Math.floor(diff / 86400)}天前`
 }
+
+const drawerValue = computed({
+  get: () => (props.temporary ? props.modelValue : true),
+  set: value => emit("update:modelValue", value),
+})
 </script>
 
 <template>
-  <v-navigation-drawer permanent width="400">
-    <v-card title="任务列表" class="pa-3"></v-card>
+  <v-navigation-drawer
+    v-model="drawerValue"
+    :permanent="!temporary"
+    :temporary="temporary"
+    :scrim="temporary"
+    :width="width"
+    :class="['task_drawer', { 'task_drawer--instant': disableTransition }]"
+  >
+    <v-card class="task_drawer__title_card">
+      <div class="task_drawer__title">任务列表</div>
+    </v-card>
     <v-divider/>
 
-    <v-expansion-panels variant="accordion">
-      <v-expansion-panel
-        v-for="(task, task_name) in app_store.task_list"
-        :key="task_name"
-        elevation="1"
-      >
-        <v-expansion-panel-title>
-          <v-icon
-            :color="statusMap[task.status]?.color || 'grey'"
-            :icon="statusMap[task.status]?.icon || 'mdi-help-circle'"
-            :class="`mr-2 task_${task.status}`"
-          />
-          <span class="font-medium">{{ task.description }}</span>
-          <template v-slot:actions>
-            <v-chip
-              v-if="task.manual_only"
-              size="small"
-              class="ml-2">
-              仅手动
-            </v-chip>
-            <v-chip
-              size="small"
-              :color="statusMap[task.status]?.color"
-              text-color="white"
-              class="ml-2"
-            >
-              {{ statusMap[task.status]?.label }}
-            </v-chip>
-          </template>
-        </v-expansion-panel-title>
-
-        <v-expansion-panel-text>
-          <div class="pa-2">
-            <p class="text-body-2">任务名：<b>{{ task_name }}</b></p>
-            <p class="text-body-2">启用：{{ task.enable ? "是" : "否" }}</p>
-            <p class="text-body-2">
-              上次运行时间：
-              <span :title="formatAbsoluteTime(task.last_run_time)">
-                {{ formatRelativeTime(task.last_run_time) }}
-              </span>
-            </p>
-
-            <div class="d-flex mt-3" style="gap: 8px">
-              <v-btn
-                :disabled="task.status === 'RUNNING'"
-                color="primary"
-                variant="outlined"
-                @click="apis.run_task(task_name)"
-              >
-                执行
-              </v-btn>
-              <v-btn
-                v-if="task.enable"
-                color="red"
-                variant="tonal"
-                @click="apis.disable_task(task_name)"
-              >
-                禁用
-              </v-btn>
-              <v-btn
-                v-else
-                color="green"
-                variant="tonal"
-                @click="apis.enable_task(task_name)"
-              >
-                启用
-              </v-btn>
-            </div>
-          </div>
-          <div v-if="settingComponents[task_name]" class="mt-4">
-            <h4>任务设置</h4>
-            <component
-              :is="settingComponents[task_name]"
-              :task="task"
-              :task_name="task_name"
+    <div class="task_panels">
+      <v-expansion-panels variant="accordion">
+        <v-expansion-panel
+          v-for="(task, task_name) in app_store.task_list"
+          :key="task_name"
+          elevation="1"
+        >
+          <v-expansion-panel-title>
+            <v-icon
+              :color="statusMap[task.status]?.color || 'grey'"
+              :icon="statusMap[task.status]?.icon || 'mdi-help-circle'"
+              :class="`mr-2 task_${task.status}`"
             />
-          </div>
-        </v-expansion-panel-text>
-      </v-expansion-panel>
-    </v-expansion-panels>
+            <span class="font-medium">{{ task.description }}</span>
+            <template v-slot:actions>
+              <v-chip
+                v-if="task.manual_only"
+                size="small"
+                class="ml-2">
+                仅手动
+              </v-chip>
+              <v-chip
+                size="small"
+                :color="statusMap[task.status]?.color"
+                text-color="white"
+                class="ml-2"
+              >
+                {{ statusMap[task.status]?.label }}
+              </v-chip>
+            </template>
+          </v-expansion-panel-title>
+
+          <v-expansion-panel-text>
+            <div class="pa-2">
+              <p class="text-body-2">任务名：<b>{{ task_name }}</b></p>
+              <p class="text-body-2">启用：{{ task.enable ? "是" : "否" }}</p>
+              <p class="text-body-2">
+                上次运行时间：
+                <span :title="formatAbsoluteTime(task.last_run_time)">
+                  {{ formatRelativeTime(task.last_run_time) }}
+                </span>
+              </p>
+
+              <div class="task_actions mt-3">
+                <v-btn
+                  :disabled="task.status === 'RUNNING'"
+                  color="primary"
+                  variant="outlined"
+                  @click="apis.run_task(task_name)"
+                >
+                  执行
+                </v-btn>
+                <v-btn
+                  v-if="task.enable"
+                  color="red"
+                  variant="tonal"
+                  @click="apis.disable_task(task_name)"
+                >
+                  禁用
+                </v-btn>
+                <v-btn
+                  v-else
+                  color="green"
+                  variant="tonal"
+                  @click="apis.enable_task(task_name)"
+                >
+                  启用
+                </v-btn>
+              </div>
+            </div>
+            <div v-if="settingComponents[task_name]" class="mt-4">
+              <h4>任务设置</h4>
+              <component
+                :is="settingComponents[task_name]"
+                :task="task"
+                :task_name="task_name"
+              />
+            </div>
+          </v-expansion-panel-text>
+        </v-expansion-panel>
+      </v-expansion-panels>
+    </div>
   </v-navigation-drawer>
 </template>
 
 
 <style scoped>
-.task_tools_bar {
-  margin-top: 10px;
-  display: flex;
+.task_drawer {
+  max-width: 100%;
+}
 
-  .v-btn:not(:last-child) {
-    margin-right: 5px;
-  }
+.task_drawer :deep(.v-navigation-drawer__content) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.task_drawer--instant {
+  transition: none !important;
+}
+
+.task_drawer--instant :deep(.v-navigation-drawer__content) {
+  transition: none !important;
+}
+
+.task_drawer__title_card {
+  flex: 0 0 auto;
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+}
+
+.task_drawer__title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.task_panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.task_actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.task_actions :deep(.v-btn) {
+  margin-right: 0 !important;
 }
 
 .task_RUNNING {
@@ -172,6 +248,13 @@ function formatRelativeTime(ts) {
   }
   100% {
     transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 599px) {
+  .task_actions :deep(.v-btn) {
+    flex: 1 1 calc(50% - 4px);
+    min-width: 0;
   }
 }
 </style>

@@ -37,8 +37,8 @@ const props = defineProps({
   <v-list-item>
     <v-select
       label="ADB截图方式"
-      hint="DroidCast>ADB"
-      :items="['DroidCast', 'ADB']"
+      hint="scrcpy / DroidCast 的延迟通常优于 ADB 截图；scrcpy 需要将官方 Releases 的 scrcpy-server 放到 bin"
+      :items="['scrcpy', 'DroidCast', 'ADB']"
       :item-color="app.config.globalProperties.$theme.color"
       v-model="props.data.base.android_screen_capture_service.value"
       persistent-hint
@@ -47,8 +47,8 @@ const props = defineProps({
   <v-list-item>
     <v-select
       label="ADB点击屏幕方式"
-      hint="部分点击服务可能存在兼容性问题，如遇到问题请回退到ADB"
-      :items="['ADB']"
+      hint="可选 MaaTouch / minitouch / scrcpy；MaaTouch 需放入官方构建产物到 bin/maatouch 或用 workflow 生成，minitouch 需放入官方构建产物到 bin/minitouch 且当前只支持 Android 9 及以下"
+      :items="['maatouch', 'minitouch', 'scrcpy', 'ADB']"
       :item-color="app.config.globalProperties.$theme.color"
       v-model="props.data.base.android_touch_service.value"
       persistent-hint

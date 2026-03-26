@@ -12,6 +12,9 @@ export const WS_ACTION = {
   ShowMessage_Error: 'show_msg:error',
   ShowMessage_Success: 'show_msg:success',
 
+  ResourceUpdateStatusChanged: 'resource_update:status_changed',
+  DeviceStatusChanged: 'device:status_changed',
+
   BroadcastLog: 'broadcast_log',
   Ping: 'ping',
   Pong: 'pong',

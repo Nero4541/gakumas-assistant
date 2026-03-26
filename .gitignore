@@ -12,3 +12,16 @@ dist/
 /.idea/
 **/__pycache__/
 *.pyc
+*/.claude/
+*/*cache/
+*/.gakumas_rl_cache/
+/train/gakumas_rl/docs/help_content_pages/
+/train/gakumas_rl/trajectories/
+/.cache/
+/.chrome-headless/
+/.claude/
+/.jbeval/
+/tmp_refs/
+/train/gakumas_rl/.claude/
+/train/gakumas_rl/.gakumas_rl_cache/
+/nuitka-crash-report.xml

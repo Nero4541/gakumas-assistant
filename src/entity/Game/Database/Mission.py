@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Mission:
     id: str = None
     missionGroupId: str = None
@@ -28,7 +28,7 @@ class Mission:
     order: int = None
     localization: MissionLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MissionLocalization:
     id: str = None
     name: str = None

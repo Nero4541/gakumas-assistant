@@ -15,6 +15,7 @@ from src.core.web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
 
 from src.entity.Config import Config
+from src.utils.adb_runtime import describe_adb_error
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
 from src.utils.opencv_tools import get_black_image
@@ -54,7 +55,10 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.get("/api/task/start")
     def start_task_queue():
         """启动任务队列"""
-        processor.exec_task()
+        if not processor.ensure_device_ready(restart_inference=True):
+            return _api_return(False, processor.get_device_status().get("message", "当前设备不可用"))
+        if not processor.exec_task():
+            return _api_return(False, "任务队列启动失败")
         return _api_return(True, "OK")
 
     @app.get("/api/task/start/{task_name:str}")
@@ -64,7 +68,10 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         :param task_name: 任务名
         :return:
         """
-        processor.exec_task(task_name)
+        if not processor.ensure_device_ready(restart_inference=True):
+            return _api_return(False, processor.get_device_status().get("message", "当前设备不可用"))
+        if not processor.exec_task(task_name):
+            return _api_return(False, "任务启动失败")
         return _api_return(True, "OK")
 
     @app.get("/api/task/suspend")
@@ -111,6 +118,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
             'platform': processor.config_service().base.run_mode.value.lower(),
             'yolo': processor.yolo_engine.running,
             'task': processor.task_queue.queue_status(),
+            'device': processor.get_device_status(),
             'game': {
                 'current_location': processor.game_status_manager.current_location,
                 'player': {
@@ -245,21 +253,59 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         else:
             return _api_return(False, "error", {f"{e.section}.{e.field}": e.message for e in errors})
 
+    @app.get("/api/resource_update/status")
+    def get_resource_update_status():
+        """获取资源仓库更新状态"""
+        return _api_return(True, "OK", processor.resource_update_service.get_status())
+
+    @app.post("/api/resource_update/check")
+    def check_resource_updates():
+        """手动检查资源仓库更新"""
+        status, message, data = processor.resource_update_service.manual_check_updates()
+        return _api_return(status, message, data)
+
+    @app.post("/api/resource_update/apply")
+    def apply_resource_updates():
+        """更新资源仓库并重新加载游戏数据库"""
+        status, message, data = processor.resource_update_service.apply_updates()
+        return _api_return(status, message, data)
+
     @app.get("/api/adb/devices")
     def get_adb_devices():
         """获取所有ADB设备"""
-        return _api_return(True, 'OK', {
-            "devices": [s.serial for s in adbutils.adb.device_list()],
-        })
+        try:
+            devices = [s.serial for s in adbutils.adb.device_list()]
+            return _api_return(True, 'OK', {
+                "devices": devices,
+                "available": True,
+                "message": "",
+            })
+        except Exception as exc:
+            _, reason = describe_adb_error(exc)
+            return _api_return(True, 'OK', {
+                "devices": [],
+                "available": False,
+                "message": reason,
+            })
 
     @app.get("/api/adb/devices/usb")
     def get_adb_usb_serial_list():
         """获取使用USB连接的ADB设备"""
-        serial_list = adbutils.adb.device_list()
-        serial_list = [s.serial for s in serial_list if ":" not in str(s.serial)]
-        return _api_return(True, 'OK', {
-            "devices": serial_list,
-        })
+        try:
+            serial_list = adbutils.adb.device_list()
+            serial_list = [s.serial for s in serial_list if ":" not in str(s.serial)]
+            return _api_return(True, 'OK', {
+                "devices": serial_list,
+                "available": True,
+                "message": "",
+            })
+        except Exception as exc:
+            _, reason = describe_adb_error(exc, connect_mode="USB")
+            return _api_return(True, 'OK', {
+                "devices": [],
+                "available": False,
+                "message": reason,
+            })
 
     @app.get("/api/item/list")
     def get_all_items():

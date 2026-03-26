@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateConfigStagesItem:
     stageType: str = None
     planType: str = None
@@ -20,7 +20,7 @@ class PvpRateConfigStagesItem:
     startTimelineAssetId: str = None
     examTimelineAssetId: str = None
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateConfig:
     id: str = None
     description: str = None
@@ -38,7 +38,7 @@ class PvpRateConfig:
     stages: List[PvpRateConfigStagesItem] = field(default_factory=list)
     localization: PvpRateConfigLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class PvpRateConfigLocalization:
     id: str = None
     description: str = None

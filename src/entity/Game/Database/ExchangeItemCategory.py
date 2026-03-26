@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ExchangeItemCategory:
     exchangeId: str = None
     number: int = None
@@ -18,7 +18,7 @@ class ExchangeItemCategory:
     itemType: str = None
     localization: ExchangeItemCategoryLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ExchangeItemCategoryLocalization:
     exchangeId: str = None
     number: int = None

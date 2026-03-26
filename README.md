@@ -44,34 +44,44 @@
 > - 自动P卡
 
 ## 注意事项
-> 大部分测试都是在 `Windows` 系统上测试的，因此其他操作系统若有运行问题，请提 issues 或加群讨论。  
+> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`，`macOS / Linux` 默认使用 `Phone / ADB` 模式。  
 
 > 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件上传并截图进行反馈。
 
 > 汉化版本暂不支持，请关闭汉化插件后使用
 
-> 本项目使用 `Yolov11n` 模型进行图像识别，请确保电脑有显卡且支持[DirectML](https://learn.microsoft.com/zh-cn/windows/ai/directml/dml)，否则将会回退到CPU推理，可能会导致效率低下。
+> 本项目使用 `Yolov11n` 模型进行图像识别。Windows 会优先尝试 `DirectML`，macOS 会优先尝试 `CoreML`，其余平台会自动回退到 `CPUExecutionProvider`。
 
 ## 安装
 ### Plan1: 以打包的方式安装
 前往 [Releases](https://github.com/Pigeon-Server/gakumas-assistant/releases) 下载打包后的文件   
-运行 `Gakumas Assistant.exe`  
+运行压缩包内的主程序（Windows 为 `Gakumas Assistant.exe`，macOS / Linux 为 `Gakumas Assistant`）  
 更多使用说明参见 [使用手册](./docs/use_script.md)  
 
 ### Plan2: 手动安装
 克隆及安装项目:
 ```bash
 git clone https://github.com/Pigeon-Server/gakumas-assistant
+cd gakumas-assistant
 git submodule init
 git submodule update --init
-python -m venv venv
-./venv/Scripts/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+```
+Windows 可将激活命令替换为：
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 运行项目:
 ```bash
 python app.py
 ```
+说明：
+- Windows 安装依赖时会自动安装 `pywin32`，用于 `PC / DMM` 模式。
+- macOS / Linux 首次启动会默认进入 `Phone / ADB` 模式；若本机 `pywebview` 后端不可用，程序会自动回退到浏览器模式。
+- macOS 上主 ONNX 模型与 OCR 模型都会优先尝试 `CoreMLExecutionProvider`；运行时会在用户缓存目录中保存 ONNX Runtime / CoreML 缓存，若该目录不可写则自动回退到项目内 `.cache`。
+- 若环境中尚未缓存 RapidOCR 模型，程序会在首次实际调用 OCR 时按 RapidOCR 默认机制准备模型；执行 `build_app.py` 时也会自动补齐并打包这些模型。
 
 ## 免责声明
 **请在使用本项目前仔细阅读以下内容。使用本脚本将带来包括但不限于账号被封禁的风险。**
@@ -145,10 +155,14 @@ git submodule update --init
 python ./devtools/model_export.py
 ```
 ### 打包项目:
-本项目使用nuitka进行打包,打包后的应用程序会输出到out/app.dist中
+本项目使用 `Nuitka` 进行打包，支持 `Windows`、`macOS`、`Linux`。打包后的应用程序会输出到 `out/app.dist` 中。
 ```bash
 python build_app.py
 ```
+说明：
+- Windows 输出主程序为 `out/app.dist/Gakumas Assistant.exe`
+- macOS / Linux 输出主程序为 `out/app.dist/Gakumas Assistant`
+- 若当前环境未安装 `upx`，打包脚本会自动跳过 UPX 压缩
 
 ## 许可证
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.
@@ -160,7 +174,7 @@ https://www.gnu.org/licenses/gpl-3.0.html
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
 ### 致谢
-本项目主要用到了以下开源项目，感谢各位开发者的付出：
+本项目主要用到了以下开源项目与社区资源，感谢各位作者和维护者的付出：
 - **[GkmasObjectManager](https://github.com/AllenHeartcore/GkmasObjectManager)**  
 游戏资源提取器
 - **[campus](https://github.com/vertesan/campus)**  
@@ -171,3 +185,17 @@ Unless required by applicable law or agreed to in writing, software distributed 
 游戏文本翻译
 - **[Gakumas_Launcher](https://github.com/a4nqi3n/Gakumas_Launcher)**  
 脱离DMMPlayer启动游戏
+- **[Ultralytics](https://github.com/ultralytics/ultralytics)**  
+YOLO 训练、导出与推理工具链
+- **[RapidOCR](https://github.com/RapidAI/RapidOCR)**  
+OCR 能力与模型封装
+- **[ONNX Runtime](https://github.com/microsoft/onnxruntime)**  
+模型推理引擎
+- **[adbutils](https://github.com/openatx/adbutils)** 与 **[uiautomator2](https://github.com/openatx/uiautomator2)**  
+Android 设备通信与自动化控制
+- **[scrcpy](https://github.com/Genymobile/scrcpy)**、**[MaaTouch](https://github.com/MaaAssistantArknights/MaaTouch)**、**[minitouch](https://github.com/openstf/minitouch)**、**[DroidCast](https://github.com/rayworks/DroidCast)**  
+Android 控制、触控与投屏相关能力
+- **[Vue](https://github.com/vuejs/core)**、**[Vuetify](https://github.com/vuetifyjs/vuetify)** 与 **[Vite](https://github.com/vitejs/vite)**  
+Web UI 基础设施
+
+随包分发的二进制依赖来源与版权说明见 [bin/THIRD_PARTY_NOTICES.md](./bin/THIRD_PARTY_NOTICES.md)。

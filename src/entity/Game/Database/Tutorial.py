@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Tutorial:
     tutorialType: str = None
     idolCardId: str = None
@@ -23,7 +23,7 @@ class Tutorial:
     tutorialProduceCommandType: str = None
     localization: TutorialLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class TutorialLocalization:
     tutorialType: str = None
     step: int = None

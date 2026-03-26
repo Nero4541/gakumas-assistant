@@ -1,15 +1,25 @@
 import cv2
 import numpy as np
 
-img = cv2.imread("skill_card_list__error1.png")
+from src.utils.opencv_tools import filter_by_rectangle_shape, get_mask_contours
+
+img = cv2.imread(r"E:\Projects\gkmas-auto\logs\debug\images\NoValidSkillCardInfo\guide_page0_0.png")
 img_w, img_h = img.shape[:2]
 
 
 hsv_img = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 # 信息边框颜色
-lower_color = np.array([0, 0, 180])
-upper_color = np.array([0, 0, 220])
-mask = cv2.inRange(hsv_img, lower_color, upper_color)
+lower_color1 = np.array([51,0,100])
+upper_color1 = np.array([179,85,230])
+
+lower_color2 = np.array([0,0,0])
+upper_color2 = np.array([0,0,230])
+
+
+mask1 = cv2.inRange(hsv_img, lower_color1, upper_color1)
+mask2 = cv2.inRange(hsv_img, lower_color2, upper_color2)
+mask = cv2.bitwise_or(mask1, mask2)
+cv2.imshow("mask", mask)
 # 查找轮廓
 contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 # 技能卡边框颜色

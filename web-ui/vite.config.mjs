@@ -13,9 +13,11 @@ import { defineConfig } from 'vite'
 import { fileURLToPath, URL } from 'node:url'
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
     plugins: [
-        VueRouter(),
+        VueRouter({
+            watch: command === 'serve',
+        }),
         Layouts(),
         Vue({
             template: { transformAssetUrls },
@@ -101,4 +103,4 @@ export default defineConfig({
             },
         },
     },
-})
+}))

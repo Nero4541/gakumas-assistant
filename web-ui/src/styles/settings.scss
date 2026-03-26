@@ -12,7 +12,70 @@
   padding-top: 10px;
 }
 
-html {
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border-radius: 20px;
+}
+
+html,
+body {
   overflow: hidden;
 }
 
+:root {
+  --app-scrollbar-size: 8px;
+  --app-scrollbar-thumb: rgba(255, 255, 255, 0.18);
+  --app-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --app-scrollbar-track: rgba(255, 255, 255, 0.04);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-scrollbar-thumb) var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar {
+  width: var(--app-scrollbar-size);
+  height: var(--app-scrollbar-size);
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--app-scrollbar-track);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--app-scrollbar-thumb);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--app-scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+#app {
+  background: #1e1e1e;
+}
+
+#app > .v-application,
+#app > .v-application > .v-application__wrap {
+  background: transparent;
+}
+
+#app > .v-application {
+  border-radius: 20px;
+}
+
+body.window-host-shell #app > .v-application {
+  border-radius: 0;
+}

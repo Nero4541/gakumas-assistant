@@ -9,8 +9,6 @@ from typing import Callable, List
 
 import config
 from src.constants.yolo.model_type import YoloModelType
-from src.core.device.Android.app import Android_App
-from src.core.device.Windows.app import Windows_App
 from src.core.inference.ONNX import YoloModelFromONNX
 from src.entity.BaseDevice import BaseDevice
 from src.entity.WebSocketData import WebSocketData
@@ -27,6 +25,7 @@ class YoloInferenceEngine:
     _pause_capture_frame: bool = False
     _capture_thread: Thread
     _infer_callback_list: List[Callable]
+    _capture_failure_callback_list: List[Callable]
     # Flags
     __flag_loop: bool = False  # 主循环
     __flag_pause: bool = False  # 暂停
@@ -38,6 +37,7 @@ class YoloInferenceEngine:
     def __init__(self, device: BaseDevice):
         self._device = device
         self._infer_callback_list = []
+        self._capture_failure_callback_list = []
         self.__action_lock = threading.Lock()
         self.__result_write_lock = threading.Lock()
         self.load_model()
@@ -153,6 +153,14 @@ class YoloInferenceEngine:
             else:
                 logger.error(f"Inference callback already registered: {func}")
 
+    def register_capture_failure_callback(self, func: Callable):
+        with self.__action_lock:
+            if func not in self._capture_failure_callback_list:
+                logger.debug(f"Register capture failure callback: {func.__name__}")
+                self._capture_failure_callback_list.append(func)
+            else:
+                logger.error(f"Capture failure callback already registered: {func}")
+
 
     def _exec_infer_callback(self):
         for callback in self._infer_callback_list:
@@ -160,6 +168,13 @@ class YoloInferenceEngine:
                 callback(self.latest_frame, self.latest_results)
             except Exception as e:
                 logger.error(f"Inference callback failed: {e}")
+
+    def _exec_capture_failure_callback(self, exc: Exception):
+        for callback in self._capture_failure_callback_list:
+            try:
+                callback(exc)
+            except Exception as callback_exc:
+                logger.error(f"Capture failure callback failed: {callback_exc}")
 
     def _inference_loop(self):
         """
@@ -172,8 +187,13 @@ class YoloInferenceEngine:
             try:
                 frame = self._device.capture()
             except Exception as e:
-                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
-                logger.error(f"Inference loop failed: \n{tb_str}")
+                self._exec_capture_failure_callback(e)
+                reason_getter = getattr(self._device, "get_unavailable_reason", None)
+                if not self._device and callable(reason_getter):
+                    logger.warning(f"Inference loop stopped: {reason_getter()}")
+                else:
+                    tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
+                    logger.error(f"Inference loop failed: \n{tb_str}")
                 self.__flag_pause = False
                 self.__flag_loop = False
                 return

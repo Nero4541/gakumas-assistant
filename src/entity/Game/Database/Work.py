@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Work:
     type: str = None
     name: str = None
@@ -17,7 +17,7 @@ class Work:
     rewardResourceId: str = None
     localization: WorkLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class WorkLocalization:
     type: str = None
     name: str = None

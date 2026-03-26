@@ -6,13 +6,13 @@ from src.entity.Game.Database.ProduceCard import ProduceCard
 from src.entity.Game.Database.ProduceItem import ProduceItem
 
 
-@dataclass
+@dataclass(slots=True)
 class IdolCardLocalization:
     id: str
     name: str
 
 
-@dataclass
+@dataclass(slots=True)
 class IdolCard:
     id: str
     characterId: str

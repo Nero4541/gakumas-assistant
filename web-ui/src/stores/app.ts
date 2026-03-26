@@ -4,9 +4,13 @@ import apis from '@/scripts/apis'
 import {TaskStatus, WS_ACTION} from '@/scripts/constants'
 import { wsService } from "@/scripts/utils/websocket";
 import message from "@/scripts/utils/message";
-import {AppStatus} from "@/scripts/entity/status";
+import dialogs from "@/scripts/utils/dialogs.js";
+import {AppStatus, DeviceStatus} from "@/scripts/entity/status";
 import {TaskItem} from "@/scripts/entity/task";
 import {ConfigItem} from "@/scripts/entity/config";
+import {ResourceUpdateStatus} from "@/scripts/entity/resourceUpdate";
+
+let statusRefreshTimer: number | null = null
 
 /** Store State */
 export interface AppState {
@@ -14,17 +18,27 @@ export interface AppState {
   task_list: Record<string, TaskItem>
   current_task: string | undefined
   config: Record<string, Record<string, ConfigItem>>
+  resource_update_status: ResourceUpdateStatus | null
+  resource_update_latest_event: string
+  resource_update_latest_event_type: 'success' | 'warning' | 'info'
+  last_prompted_resource_update_signature: string
+  resource_update_prompt_open: boolean
 }
 
 export const useAppStore = defineStore('app', {
   state: (): AppState => ({
-    status: {
-      platform: '',
-      yolo: false,
-      task: false,
-      game: {
-        current_location: '',
-        player: {
+      status: {
+        platform: '',
+        yolo: false,
+        task: false,
+        device: {
+          available: false,
+          code: "initializing",
+          message: "正在初始化设备...",
+        },
+        game: {
+          current_location: '',
+          player: {
           level: 0,
           gem: 0,
           stamina: 0
@@ -33,11 +47,17 @@ export const useAppStore = defineStore('app', {
     },
     task_list: {},
     current_task: "",
-    config: {}
+    config: {},
+    resource_update_status: null,
+    resource_update_latest_event: "",
+    resource_update_latest_event_type: "info",
+    last_prompted_resource_update_signature: "",
+    resource_update_prompt_open: false,
   }),
   actions: {
     async init() {
       await this.refresh_all_data()
+      this.ensure_status_polling()
       wsService.on(WS_ACTION.TaskStatusUpdate, (data) => {
         const task: TaskItem = this.get_task_by_id(data.id)
         if (!task) {
@@ -58,6 +78,12 @@ export const useAppStore = defineStore('app', {
       wsService.on(WS_ACTION.UpdateCurrentTask, (data) => {
         this.current_task = data.task_id
       })
+      wsService.on(WS_ACTION.ResourceUpdateStatusChanged, (data) => {
+        this.handle_resource_update_status(data)
+      })
+      wsService.on(WS_ACTION.DeviceStatusChanged, (data) => {
+        this.apply_device_status(data)
+      })
       wsService.onEvent("reconnect", async () => {
         await this.refresh_all_data()
       })
@@ -66,6 +92,7 @@ export const useAppStore = defineStore('app', {
       await this.refresh_task_list()
       await this.refresh_app_status()
       await this.load_config()
+      await this.refresh_resource_update_status()
     },
     async refresh_task_list() {
       const response = await apis.get_registered_tasks()
@@ -73,16 +100,157 @@ export const useAppStore = defineStore('app', {
     },
     async refresh_app_status() {
       const response = await apis.get_status()
-      this.status = response.data
+      this.apply_app_status(response.data)
+    },
+    ensure_status_polling() {
+      if (statusRefreshTimer !== null) {
+        return
+      }
+      statusRefreshTimer = window.setInterval(() => {
+        this.refresh_app_status().catch((err) => {
+          console.debug("refresh_app_status failed", err)
+        })
+      }, 5000)
     },
     async load_config() {
       const response = await apis.get_config()
       this.config = response.data
     },
+    async refresh_resource_update_status() {
+      const response = await apis.get_resource_update_status()
+      this.handle_resource_update_status(response.data)
+    },
     async save_config() {
       await apis.save_config(this.config).then((response) => {
         this.config = response.data
         message.showSuccess("设置保存成功")
+      })
+    },
+    notify_device_status_change(previousDevice?: DeviceStatus, currentDevice?: DeviceStatus) {
+      if (!previousDevice || !currentDevice) {
+        return
+      }
+      if (
+        previousDevice.available === currentDevice.available
+        && previousDevice.code === currentDevice.code
+        && previousDevice.message === currentDevice.message
+      ) {
+        return
+      }
+      if (previousDevice.code === "initializing") {
+        return
+      }
+      if (!previousDevice.available && currentDevice.available) {
+        message.showSuccess("已自动识别到可用设备")
+        return
+      }
+      if (previousDevice.available && !currentDevice.available) {
+        message.showWarning(currentDevice.message || "设备连接已断开")
+      }
+    },
+    apply_app_status(status: AppStatus) {
+      const previousDevice = this.status?.device
+      this.status = status
+      this.notify_device_status_change(previousDevice, status?.device)
+    },
+    apply_device_status(deviceStatus: DeviceStatus) {
+      const previousDevice = this.status?.device
+      this.status.device = deviceStatus
+      this.notify_device_status_change(previousDevice, deviceStatus)
+    },
+    handle_resource_update_status(status: ResourceUpdateStatus) {
+      const previousStatus = this.resource_update_status
+      this.resource_update_status = status
+      if (previousStatus?.updating && !status.updating) {
+        if (status.last_error) {
+          this.resource_update_latest_event = `资源更新失败：${status.last_error}`
+          this.resource_update_latest_event_type = "warning"
+        } else {
+          const successMessage = "资源仓库更新完成，游戏数据库已重新加载"
+          this.resource_update_latest_event = successMessage
+          this.resource_update_latest_event_type = "success"
+          message.showSuccess(successMessage)
+        }
+      }
+      this.maybe_prompt_resource_update(status)
+    },
+    build_resource_update_status_text(status: ResourceUpdateStatus | null) {
+      if (!status) {
+        return "尚未执行资源仓库检查"
+      }
+      const parts: string[] = []
+      if (status.checking) {
+        parts.push("正在检查资源仓库更新")
+      } else if (status.updating) {
+        parts.push("正在更新资源仓库")
+      } else if (status.last_checked_at) {
+        parts.push(`上次检查：${status.last_checked_at.replace("T", " ")}`)
+      } else {
+        parts.push("尚未执行资源仓库检查")
+      }
+      if (status.next_check_at) {
+        parts.push(`下次定时检查：${status.next_check_at.replace("T", " ")}`)
+      }
+      return parts.join(" / ")
+    },
+    build_resource_update_prompt(status: ResourceUpdateStatus) {
+      const repositories = status.repositories
+        .filter(repo => repo.has_update && !repo.error)
+        .map(repo => `${repo.name}（${repo.local_commit_short} -> ${repo.remote_commit_short}）`)
+      if (!repositories.length) {
+        return "检测到资源仓库有更新，是否现在更新并重新加载游戏数据库？"
+      }
+      return `检测到资源仓库有更新：${repositories.join("、")}。是否现在更新并重新加载游戏数据库？`
+    },
+    async maybe_prompt_resource_update(status: ResourceUpdateStatus | null) {
+      if (!status?.has_update || status.updating || !status.update_signature) {
+        return
+      }
+      if (this.resource_update_prompt_open) {
+        return
+      }
+      if (this.last_prompted_resource_update_signature === status.update_signature) {
+        return
+      }
+      this.resource_update_prompt_open = true
+      this.last_prompted_resource_update_signature = status.update_signature
+      try {
+        await dialogs.confirm(
+          "发现资源仓库更新",
+          this.build_resource_update_prompt(status),
+          "立即更新",
+          "稍后处理",
+        )
+        await this.apply_resource_updates()
+      } catch (err) {
+        this.last_prompted_resource_update_signature = ""
+        console.debug("resource update prompt dismissed", err)
+      } finally {
+        this.resource_update_prompt_open = false
+      }
+    },
+    async check_resource_updates() {
+      this.last_prompted_resource_update_signature = ""
+      await apis.check_resource_updates().then((response) => {
+        this.handle_resource_update_status(response.data)
+        if (response.data?.last_error) {
+          this.resource_update_latest_event = response.message || response.data.last_error
+          this.resource_update_latest_event_type = "warning"
+          message.showWarning(response.message || response.data.last_error)
+          return
+        }
+        this.resource_update_latest_event = response.message || "资源仓库检查完成"
+        this.resource_update_latest_event_type = "success"
+        if (!response.data?.has_update) {
+          message.showSuccess(response.message || "资源仓库检查完成")
+        }
+      })
+    },
+    async apply_resource_updates() {
+      this.resource_update_latest_event = "正在更新资源仓库..."
+      this.resource_update_latest_event_type = "info"
+      await apis.apply_resource_updates().then((response) => {
+        this.handle_resource_update_status(response.data)
       })
     },
     get_task_config(task_name: string) {

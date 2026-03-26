@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionExamEffect:
     type: str = None
     name: str = None
@@ -20,7 +20,7 @@ class ProduceDescriptionExamEffect:
     noReference: bool = None
     localization: ProduceDescriptionExamEffectLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionExamEffectLocalization:
     type: str = None
     name: str = None

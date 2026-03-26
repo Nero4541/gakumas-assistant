@@ -36,7 +36,6 @@ function filter(value, queryText, item) {
     <template v-slot:item="{ item, props }">
       <v-list-item
         v-bind="props"
-        width="400"
         :title="item.raw.translation?.name || item.raw.name"
         :subtitle="item.raw.translation?.name ? item.raw.name : ''"
         :key="item.raw.id" class="select_item">
@@ -82,21 +81,25 @@ function filter(value, queryText, item) {
 
 <style scoped>
 .select_item {
+  width: 100%;
+  max-width: min(400px, calc(100vw - 96px));
+  box-sizing: border-box;
   display: flex;
-  align-items: flex-start; /* 顶部对齐文字和图片 */
+  align-items: flex-start;
   padding: 8px 12px;
-  gap: 12px; /* 图片与文字间距 */
+  gap: 12px;
 }
 
 .item-image {
-  flex: 0 0 auto; /* 固定图片大小 */
+  flex: 0 0 auto;
 }
 
 .item-content {
-  flex: 1; /* 文字区域自适应剩余宽度 */
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px; /* 文字行间距 */
+  gap: 4px;
 }
 
 .item-title {
@@ -115,12 +118,22 @@ function filter(value, queryText, item) {
   font-size: 13px;
   color: rgba(255, 255, 255, 0.75);
   line-height: 1.3;
+  word-break: break-word;
 }
 
 .item-route {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.55);
   line-height: 1.2;
+  word-break: break-word;
+}
+
+@media (max-width: 599px) {
+  .select_item {
+    max-width: calc(100vw - 72px);
+    padding: 8px 10px;
+    gap: 10px;
+  }
 }
 
 </style>

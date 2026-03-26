@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceStepEventDetailProduceDescriptionsItem:
     produceDescriptionType: str = None
     examDescriptionType: str = None
@@ -34,7 +34,7 @@ class ProduceStepEventDetailProduceDescriptionsItem:
     isOnlyOutGame: bool = None
     changeColor: bool = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceStepEventDetail:
     id: str = None
     suggestionType: str = None
@@ -49,7 +49,7 @@ class ProduceStepEventDetail:
     produceDescriptions: List[ProduceStepEventDetailProduceDescriptionsItem] = field(default_factory=list)
     localization: ProduceStepEventDetailLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceStepEventDetailLocalization:
     id: str = None
     produceDescriptions: List[Any] = field(default_factory=list)

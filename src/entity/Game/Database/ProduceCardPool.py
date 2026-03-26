@@ -8,13 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardPoolProduceCardRatiosItem:
     id: str = None
     upgradeCount: int = None
     ratio: int = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardPool:
     id: str = None
     produceCardRatios: List[ProduceCardPoolProduceCardRatiosItem] = field(default_factory=list)

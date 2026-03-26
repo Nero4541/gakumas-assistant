@@ -8,14 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class EventLabel:
     eventType: str = None
     name: str = None
     color: str = None
     localization: EventLabelLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class EventLabelLocalization:
     eventType: str = None
     name: str = None

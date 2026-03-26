@@ -2,13 +2,13 @@ from dataclasses import dataclass
 from typing import List
 
 
-@dataclass
+@dataclass(slots=True)
 class EffectGroupLocalization:
     id: str
     name: str
 
 
-@dataclass
+@dataclass(slots=True)
 class EffectGroup:
     id: str
     name: str

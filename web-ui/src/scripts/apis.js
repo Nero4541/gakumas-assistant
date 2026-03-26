@@ -121,6 +121,27 @@ function refresh_ddm_player_token() {
 }
 
 /**
+ * 获取资源仓库更新状态
+ */
+function get_resource_update_status() {
+  return axiosplus.get("/api/resource_update/status");
+}
+
+/**
+ * 手动检查资源仓库更新
+ */
+function check_resource_updates() {
+  return axiosplus.post("/api/resource_update/check");
+}
+
+/**
+ * 应用资源仓库更新
+ */
+function apply_resource_updates() {
+  return axiosplus.post("/api/resource_update/apply");
+}
+
+/**
  * 重置所有配置项
  */
 
@@ -143,5 +164,8 @@ export default {
   get_all_adb_device,
   get_all_item,
   refresh_ddm_player_token,
+  get_resource_update_status,
+  check_resource_updates,
+  apply_resource_updates,
   reset_config,
 }

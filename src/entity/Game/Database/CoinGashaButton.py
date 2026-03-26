@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class CoinGashaButton:
     id: str = None
     name: str = None
@@ -19,7 +19,7 @@ class CoinGashaButton:
     maxDrawCount: int = None
     localization: CoinGashaButtonLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class CoinGashaButtonLocalization:
     id: str = None
     name: str = None

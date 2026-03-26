@@ -5,10 +5,49 @@ from PIL import Image, ImageDraw, ImageFont
 
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
 
 from src.entity.GeneralResult import GeneralResult__Threshold
 from src.utils.logger import logger
+
+
+def compute_ssim_score(first: np.ndarray, second: np.ndarray) -> float:
+    """
+    使用 OpenCV/Numpy 计算灰度 SSIM，避免引入 skimage/scipy 体积。
+    """
+    if first is None or second is None:
+        return 0.0
+    if first.size == 0 or second.size == 0:
+        return 0.0
+    if first.shape != second.shape:
+        return 0.0
+
+    if first.ndim == 3:
+        first = cv2.cvtColor(first, cv2.COLOR_BGR2GRAY)
+    if second.ndim == 3:
+        second = cv2.cvtColor(second, cv2.COLOR_BGR2GRAY)
+
+    first = first.astype(np.float64)
+    second = second.astype(np.float64)
+
+    c1 = (0.01 * 255) ** 2
+    c2 = (0.03 * 255) ** 2
+
+    mu1 = cv2.GaussianBlur(first, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT)
+    mu2 = cv2.GaussianBlur(second, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT)
+
+    mu1_sq = mu1 * mu1
+    mu2_sq = mu2 * mu2
+    mu1_mu2 = mu1 * mu2
+
+    sigma1_sq = cv2.GaussianBlur(first * first, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT) - mu1_sq
+    sigma2_sq = cv2.GaussianBlur(second * second, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT) - mu2_sq
+    sigma12 = cv2.GaussianBlur(first * second, (11, 11), 1.5, borderType=cv2.BORDER_REFLECT) - mu1_mu2
+
+    numerator = (2 * mu1_mu2 + c1) * (2 * sigma12 + c2)
+    denominator = (mu1_sq + mu2_sq + c1) * (sigma1_sq + sigma2_sq + c2)
+    denominator = np.where(denominator == 0, 1e-12, denominator)
+
+    return float((numerator / denominator).mean())
 
 
 def gen_color_mask(img, lower_color, upper_color):
@@ -384,7 +423,5 @@ def check_frame_change(prev: np.ndarray, curr: np.ndarray, threshold: float = 0.
     :param threshold: 阈值
     :return:
     """
-    prev_gray = cv2.cvtColor(prev, cv2.COLOR_BGR2GRAY)
-    curr_gray = cv2.cvtColor(curr, cv2.COLOR_BGR2GRAY)
-    score, _ = ssim(prev_gray, curr_gray, full=True)
+    score = compute_ssim_score(prev, curr)
     return score > threshold

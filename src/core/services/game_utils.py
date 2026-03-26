@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING, Optional
 
 import cv2
 import numpy as np
-from skimage.metrics import structural_similarity as ssim
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
@@ -13,6 +12,7 @@ from src.entity.Yolo import Yolo_Box
 from src.utils.debug_tools import DebugTools
 from src.utils.game_tools import get_current_location, get_modal
 from src.utils.logger import logger
+from src.utils.opencv_tools import compute_ssim_score
 from src.utils.performance_tools import timeit
 from src.utils.string_tools import string_match, MatchConfig
 
@@ -222,7 +222,7 @@ class GameUtils:
                 wait_time += 0.1
                 sleep(0.1)
                 continue
-            score, diff = ssim(last_frame, current_frame, full=True)
+            score = compute_ssim_score(last_frame, current_frame)
             if score > threshold:
                 count += 1
                 if count >= 3:
@@ -380,10 +380,7 @@ class GameUtils:
                 prev_frame = curr_frame.copy()
                 sleep(0.05)
                 continue
-            prev_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
-            curr_gray = cv2.cvtColor(curr_frame, cv2.COLOR_BGR2GRAY)
-
-            score, _ = ssim(prev_gray, curr_gray, full=True)
+            score = compute_ssim_score(prev_frame, curr_frame)
             logger.debug(f"SSIM: {score}")
             if score >= threshold:
                 stable_times += 1

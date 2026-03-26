@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class MissionPanelSheetGroup:
     id: str = None
     name: str = None
@@ -17,7 +17,7 @@ class MissionPanelSheetGroup:
     dearnessCharacterId: str = None
     localization: MissionPanelSheetGroupLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MissionPanelSheetGroupLocalization:
     id: str = None
     name: str = None

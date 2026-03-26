@@ -18,12 +18,12 @@ const responseSuccess = result => {
   const res = result.data
   let reject = null
   if (res.status === false) {
-    message.showApiErrorMsg(res.msg ?? '操作错误').then(r => {})
+    message.showApiErrorMsg(res.msg ?? res.message ?? '操作错误').then(r => {})
     reject = Promise.reject(result)
     return reject
   }
-  result.data = result.data?.data
-  result.message = result.data?.message
+  result.message = res.message
+  result.data = res?.data
   return result
 }
 

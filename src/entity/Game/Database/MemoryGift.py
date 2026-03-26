@@ -8,24 +8,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class MemoryGiftProduceCard:
     id: str = None
     upgradeCount: int = None
     customizes: List[Any] = field(default_factory=list)
 
-@dataclass
+@dataclass(slots=True)
 class MemoryGiftMemoryAbilitiesItem:
     id: str = None
     level: int = None
 
-@dataclass
+@dataclass(slots=True)
 class MemoryGiftExamBattleProduceCardsItem:
     id: str = None
     upgradeCount: int = None
     customizes: List[Any] = field(default_factory=list)
 
-@dataclass
+@dataclass(slots=True)
 class MemoryGift:
     id: str = None
     name: str = None
@@ -45,7 +45,7 @@ class MemoryGift:
     examBattleProduceItemIds: List[str] = field(default_factory=list)
     localization: MemoryGiftLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MemoryGiftLocalization:
     id: str = None
     name: str = None

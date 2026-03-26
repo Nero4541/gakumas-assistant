@@ -22,8 +22,120 @@ permissions:
   contents: write  # 允许创建 release
 
 jobs:
+  prepare-android-touch-resources:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: maatouch
+            repo_url: https://github.com/MaaAssistantArknights/MaaTouch.git
+            repo_ref: master
+            remote_ref: refs/heads/master
+            output_dir: out/maatouch-package
+            artifact_name: android-touch-resource-maatouch
+          - name: minitouch
+            repo_url: https://github.com/openstf/minitouch.git
+            repo_ref: master
+            remote_ref: refs/heads/master
+            output_dir: out/minitouch-package
+            artifact_name: android-touch-resource-minitouch
+            android_ndk_version: r14b
+            android_ndk_download_url: https://dl.google.com/android/repository/android-ndk-r14b-linux-x86_64.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream commit
+        id: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit="$(git ls-remote "${{ matrix.repo_url }}" "${{ matrix.remote_ref }}" | awk 'NR==1 { print $1 }')"
+          if [[ -z "${commit}" ]]; then
+            echo "Failed to resolve upstream commit for ${{ matrix.name }}" >&2
+            exit 1
+          fi
+          echo "commit=${commit}" >> "${GITHUB_OUTPUT}"
+
+      - name: Restore cached artifact
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ matrix.output_dir }}
+          key: ${{ runner.os }}-${{ matrix.name }}-${{ steps.upstream.outputs.commit }}-${{ hashFiles('scripts/build_maatouch.sh', 'scripts/build_minitouch.sh', 'bin/THIRD_PARTY_NOTICES.md', 'bin/maatouch/README.md', 'bin/minitouch/README.md') }}
+
+      - name: Setup Java
+        if: matrix.name == 'maatouch' && steps.cache.outputs.cache-hit != 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Download Android NDK
+        if: matrix.name == 'minitouch' && steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ndk_root="${RUNNER_TEMP}/android-ndk"
+          mkdir -p "${ndk_root}"
+          curl -L "${{ matrix.android_ndk_download_url }}" -o "${ndk_root}/android-ndk.zip"
+          unzip -q "${ndk_root}/android-ndk.zip" -d "${ndk_root}"
+          echo "ANDROID_NDK_HOME=${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}" >> "${GITHUB_ENV}"
+          echo "NDK_BUILD=${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}/ndk-build" >> "${GITHUB_ENV}"
+          echo "${ndk_root}/android-ndk-${{ matrix.android_ndk_version }}" >> "${GITHUB_PATH}"
+
+      - name: Build MaaTouch artifact
+        if: matrix.name == 'maatouch' && steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          MAATOUCH_REPO_URL: ${{ matrix.repo_url }}
+          MAATOUCH_REF: ${{ matrix.repo_ref }}
+          MAATOUCH_OUTPUT_DIR: ${{ github.workspace }}/${{ matrix.output_dir }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/build_maatouch.sh
+
+      - name: Build minitouch artifact
+        if: matrix.name == 'minitouch' && steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          MINITOUCH_REPO_URL: ${{ matrix.repo_url }}
+          MINITOUCH_REF: ${{ matrix.repo_ref }}
+          MINITOUCH_OUTPUT_DIR: ${{ github.workspace }}/${{ matrix.output_dir }}
+        run: |
+          set -euo pipefail
+          bash ./scripts/build_minitouch.sh
+
+      - name: Show packaged files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "${{ matrix.output_dir }}" -type f | sort
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.output_dir }}
+          if-no-files-found: error
+          retention-days: 1
+
   build:
-    runs-on: windows-latest
+    needs: prepare-android-touch-resources
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform_slug: windows
+          - runner: ubuntu-latest
+            platform_slug: linux
+          - runner: macos-latest
+            platform_slug: macos
     steps:
       - name: checkout
         uses: actions/checkout@v4
@@ -34,7 +146,23 @@ jobs:
         env:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download Android touch artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: android-touch-resource-*
+          merge-multiple: true
+          path: ${{ github.workspace }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y patchelf
+
       - name: Install UPX
+        if: runner.os == 'Windows'
         run: |
           choco install upx -y
 
@@ -49,60 +177,76 @@ jobs:
         with:
           node-version: 20
           cache: 'npm'
-          cache-dependency-path: web-ui/package.json
+          cache-dependency-path: web-ui/package-lock.json
 
       - name: Install requirements
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
+          pip install -r requirements.txt
           pip install nuitka
-          pip install -r requirements.dev.txt
-
-      - name: Export Model
-        run: |
-          python ./devtools/model_export.py
 
       - name: Get Cache Build
         id: cache-build
         uses: actions/cache@v3
         with:
           path: out/app.build
-          key: ${{ runner.os }}-nuitka-build-${{ hashFiles('**/build_app.py') }}
+          key: ${{ runner.os }}-nuitka-build-${{ hashFiles('build_app.py', 'requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-nuitka-build-
 
       - name: Build app
+        shell: bash
         run: |
+          set -euo pipefail
           python build_app.py
         env:
           GITHUB_ACTIONS: "True"
 
       - name: Compress Output
-        shell: pwsh
+        shell: bash
+        env:
+          VERSION: ${{ github.event.inputs.version != '' && github.event.inputs.version || github.ref_name }}
+          PLATFORM_SLUG: ${{ matrix.platform_slug }}
         run: |
-          $OutDir = "${{ github.workspace }}\out\app.dist"
-      
-          $Version = if ("${{ github.event.inputs.version }}" -ne "") {
-            "${{ github.event.inputs.version }}"
-          } else {
-            "${{ github.ref_name }}"
-          }
-      
-          $Date = Get-Date -Format "yyyyMMdd"
-          $Commit = "${{ github.sha }}".Substring(0, 8)
-      
-          $ZipName = "gakumas-assistant_${Version}_Windows_amd64_${Date}_${Commit}.zip"
-          $ZipPath = "${{ github.workspace }}\$ZipName"
-      
-          & "C:\Program Files\7-Zip\7z.exe" a `
-            -tzip `
-            -mx=9 `
-            "$ZipPath" `
-            "$OutDir\*"
-      
-          echo "ZIP_NAME=$ZipName" >> $env:GITHUB_ENV
+          set -euo pipefail
+          OUT_DIR="${GITHUB_WORKSPACE}/out/app.dist"
+          DATE="$(date +%Y%m%d)"
+          COMMIT="${GITHUB_SHA::8}"
+          ARCH="$(python -c 'import os; mapping = {"X64": "amd64", "AMD64": "amd64", "ARM64": "arm64", "X86": "x86"}; arch = os.environ.get("RUNNER_ARCH", "").upper(); print(mapping.get(arch, arch.lower() or "unknown"))')"
+          ZIP_NAME="gakumas-assistant_${VERSION}_${PLATFORM_SLUG}_${ARCH}_${DATE}_${COMMIT}.zip"
+          ZIP_PATH="${GITHUB_WORKSPACE}/${ZIP_NAME}"
+          export OUT_DIR ZIP_PATH
+          python -c 'import os, shutil; out_dir = os.environ["OUT_DIR"]; zip_path = os.environ["ZIP_PATH"]; base_name = zip_path[:-4] if zip_path.endswith(".zip") else zip_path; shutil.make_archive(base_name, "zip", out_dir)'
+          echo "ZIP_NAME=${ZIP_NAME}" >> "${GITHUB_ENV}"
+          echo "ZIP_PATH=${ZIP_PATH}" >> "${GITHUB_ENV}"
 
-      - name: Generate Checksum
-        run: sha256sum ${{ env.ZIP_NAME }} > checksums.txt
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ZIP_NAME }}
+          path: ${{ env.ZIP_PATH }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gakumas-assistant_*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd release-assets
+          sha256sum *.zip > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -112,9 +256,8 @@ jobs:
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
           generate_release_notes: true
           files: |
-            ${{ env.ZIP_NAME }}
-            checksums.txt
+            release-assets/*.zip
+            release-assets/checksums.txt
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

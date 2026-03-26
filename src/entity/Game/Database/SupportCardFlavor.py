@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardFlavor:
     supportCardId: str = None
     number: int = None
@@ -17,7 +17,7 @@ class SupportCardFlavor:
     voiceAssetId: str = None
     localization: SupportCardFlavorLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardFlavorLocalization:
     supportCardId: str = None
     number: int = None

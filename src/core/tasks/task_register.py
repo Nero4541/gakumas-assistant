@@ -11,7 +11,7 @@ from src.constants.game.text.modal_text import ModalText
 from src.constants.path.debug_path import DebugPath
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
-from src.core.device.Windows.app import Windows_App
+from src.core.device.windows_compat import is_windows_device
 from src.core.inference.ocr_engine import OCRService, OCR_ResultList
 from src.core.tasks.base_ui.auto_contest import action__check_and_collect_rewards, \
     action__loop_challenge_contest
@@ -117,7 +117,7 @@ def register_tasks(processor: "AppProcessor"):
             # 将游戏切换到前台
             if not processor.device.is_app_focused():
                 logger.debug(f"Game switch to front......")
-                if isinstance(processor.device, Windows_App):
+                if is_windows_device(processor.device):
                     processor.device.bring_to_front()
                 else:
                     processor.device.start_game()

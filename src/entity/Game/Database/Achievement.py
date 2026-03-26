@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Achievement:
     id: str = None
     category: str = None
@@ -29,7 +29,7 @@ class Achievement:
     order: int = None
     localization: AchievementLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class AchievementLocalization:
     id: str = None
     name: str = None

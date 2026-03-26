@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import List
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionItem:
     """介绍"""
     # 介绍类型 -> ProduceDescriptionType
@@ -36,7 +36,7 @@ class ProduceDescriptionItem:
     isOnlyOutGame: bool
     changeColor: bool
 
-@dataclass
+@dataclass(slots=True)
 class ProduceDescriptionLocalizationItem:
     produceDescriptionType: str = ""
     examDescriptionType: str = ""
@@ -47,7 +47,7 @@ class ProduceDescriptionLocalizationItem:
     targetId: str = ""
     text: str = ""
 
-@dataclass
+@dataclass(slots=True)
 class GeneralProduceDescriptionsLocalization:
     id: str
     produceDescriptions: List[ProduceDescriptionLocalizationItem]

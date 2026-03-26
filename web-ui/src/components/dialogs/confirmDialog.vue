@@ -46,9 +46,9 @@ export default {
   <v-dialog
     v-model="flag"
     activator="parent"
-    min-width="400px"
     :persistent="persistent"
-    width="auto"
+    width="calc(100vw - 24px)"
+    max-width="400"
     @close="close()"
   >
     <v-card>

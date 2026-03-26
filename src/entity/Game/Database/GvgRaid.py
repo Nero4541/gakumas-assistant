@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class GvgRaid:
     id: str = None
     name: str = None
@@ -19,7 +19,7 @@ class GvgRaid:
     order: int = None
     localization: GvgRaidLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class GvgRaidLocalization:
     id: str = None
     order: int = None

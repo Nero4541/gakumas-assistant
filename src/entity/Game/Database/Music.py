@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Music:
     id: str = None
     title: str = None
@@ -31,7 +31,7 @@ class Music:
     order: int = None
     localization: MusicLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class MusicLocalization:
     id: str = None
     title: str = None

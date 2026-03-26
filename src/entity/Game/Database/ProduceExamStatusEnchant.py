@@ -6,13 +6,13 @@ from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamStatusEnchantLocalization:
     id: str
     produceDescriptions: List[ProduceDescriptionLocalizationItem]
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamStatusEnchant:
     id: str
     assetId: str

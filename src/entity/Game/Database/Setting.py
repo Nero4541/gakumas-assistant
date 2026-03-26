@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class Setting:
     id: str = None
     giftDefaultLimitCount: int = None
@@ -232,7 +232,7 @@ class Setting:
     webStoreShopBannerAndroidAssetID: str = None
     localization: SettingLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class SettingLocalization:
     id: str = None
     initialUserName: str = None

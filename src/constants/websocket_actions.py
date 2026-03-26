@@ -13,6 +13,12 @@ class WebsocketActions:
         TaskQueueStop = "task:stop"
         TaskQueueSuspend = "task:suspend"
 
+    class ResourceUpdate:
+        StatusChanged = "resource_update:status_changed"
+
+    class Device:
+        StatusChanged = "device:status_changed"
+
     class Message:
         ShowMessage_Info = "show_msg:info"
         ShowMessage_Warning = "show_msg:warning"

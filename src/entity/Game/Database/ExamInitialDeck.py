@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ExamInitialDeck:
     id: str = None
     produceCardIds: List[str] = field(default_factory=list)

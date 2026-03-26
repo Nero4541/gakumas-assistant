@@ -5,21 +5,21 @@ from src.entity.Game.Database.General import ProduceDescriptionItem, ProduceDesc
 from src.entity.Game.Database.ProduceCardSearch import ProduceCardSearch
 
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardExchangeReward:
     resourceType: str
     resourceId: str
     quantity: int
 
 
-@dataclass
+@dataclass(slots=True)
 class SupportCardLocalization:
     id: str
     name: str
     upgradeProduceCardProduceDescriptions: List[ProduceDescriptionLocalizationItem]
 
 
-@dataclass
+@dataclass(slots=True)
 class SupportCard:
     id: str
     characterIds: List[str]

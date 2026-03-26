@@ -7,7 +7,7 @@ from src.entity.Game.Database.ProduceExamEffect import ProduceExamEffect
 from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardPlayEffects:
     produceExamTriggerId: str
     produceExamEffectId: str
@@ -15,14 +15,14 @@ class ProduceCardPlayEffects:
     produceExamEffectCls: ProduceExamEffect = None
     hideIcon: bool = False
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardLocalization:
     id: str
     name: str
     upgradeCount: int
     produceDescriptions: List[ProduceDescriptionLocalizationItem]
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCard:
     """技能卡"""
     id: str

@@ -8,14 +8,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class ProduceNavigation:
     id: str = None
     number: int = None
     description: str = None
     localization: ProduceNavigationLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class ProduceNavigationLocalization:
     id: str = None
     number: int = None

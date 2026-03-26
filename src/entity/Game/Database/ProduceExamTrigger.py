@@ -4,7 +4,7 @@ from typing import List
 from src.entity.Game.Database.General import ProduceDescriptionItem
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceExamTrigger:
     """考试触发器"""
     # 触发器ID

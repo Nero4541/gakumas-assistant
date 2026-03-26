@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from typing import List
 
 
-@dataclass
+@dataclass(slots=True)
 class CharacterLocalization:
     id: str
     lastName: str
     firstName: str
 
 
-@dataclass
+@dataclass(slots=True)
 class Character:
     id: str
     lastName: str

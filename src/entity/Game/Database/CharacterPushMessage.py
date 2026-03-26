@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List
 
-@dataclass
+@dataclass(slots=True)
 class CharacterPushMessage:
     characterId: str = None
     type: str = None
@@ -17,7 +17,7 @@ class CharacterPushMessage:
     message: str = None
     localization: CharacterPushMessageLocalization = None
 
-@dataclass
+@dataclass(slots=True)
 class CharacterPushMessageLocalization:
     characterId: str = None
     type: str = None

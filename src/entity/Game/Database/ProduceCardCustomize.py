@@ -4,14 +4,14 @@ from typing import List
 from src.entity.Game.Database.ProduceCardGrowEffect import ProduceCardGrowEffect
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardCustomizeLocalization:
     id: str
     customizeCount: int
     description: str
 
 
-@dataclass
+@dataclass(slots=True)
 class ProduceCardCustomize:
     id: str
     customizeCount: int
