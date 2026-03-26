@@ -1,0 +1,50 @@
+name: Build MaaTouch
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: "MaaAssistantArknights/MaaTouch branch or tag"
+        required: false
+        default: "master"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      MAATOUCH_REPO_URL: https://github.com/MaaAssistantArknights/MaaTouch.git
+      MAATOUCH_REF: ${{ github.event.inputs.source_ref || 'master' }}
+      MAATOUCH_OUTPUT_DIR: ${{ github.workspace }}/out/maatouch-package
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Build MaaTouch artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash ./scripts/build_maatouch.sh
+
+      - name: Show packaged files
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "${MAATOUCH_OUTPUT_DIR}" -type f | sort
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: maatouch-official-artifact
+          path: out/maatouch-package
+          if-no-files-found: error
+          retention-days: 7
