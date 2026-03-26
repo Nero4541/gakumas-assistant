@@ -1,4 +1,5 @@
 opencv-python
+imageio
 onnxruntime-directml; platform_system == "Windows"
 onnxruntime
 pyautogui
