@@ -2,10 +2,12 @@ import io
 import json
 import os
 import platform
+import plistlib
 import shutil
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +19,7 @@ PROJECT_NAME = "Gakumas Assistant"
 TARGET_PLATFORM = platform.system()
 NUITKA_OUTPUT_DIR = PROJECT_ROOT / "out"
 APP_DIST_DIR = NUITKA_OUTPUT_DIR / "app.dist"
+APP_BUNDLE_DIR = NUITKA_OUTPUT_DIR / f"{PROJECT_NAME}.app"
 LOGO = PROJECT_ROOT / "assets" / "images" / "gakumas_logo.png"
 NUITKA_REPORT_PATH = PROJECT_ROOT / ".cache" / "nuitka-compilation-report.xml"
 WEBUI_DIST_DIR = PROJECT_ROOT / "dist"
@@ -287,6 +290,7 @@ def _prepare_nuitka_output_paths():
     if os.getenv("NUITKA_CLEAN_BUILD"):
         _remove_existing_path(NUITKA_OUTPUT_DIR / "app.build")
     _remove_existing_path(APP_DIST_DIR)
+    _remove_existing_path(APP_BUNDLE_DIR)
     _remove_existing_path(NUITKA_OUTPUT_DIR / _get_output_filename())
 
 
@@ -457,6 +461,140 @@ def _copy_runtime_files(app_dist_path: Path):
             webview_loader_path.unlink()
 
 
+def _copy_directory_contents(source: Path, target: Path):
+    if not source.exists():
+        raise FileNotFoundError(source)
+    target.mkdir(parents=True, exist_ok=True)
+    for child in source.iterdir():
+        target_child = target / child.name
+        if child.is_dir():
+            shutil.copytree(child, target_child, dirs_exist_ok=True, ignore=ignore_unnecessary)
+        else:
+            shutil.copy2(child, target_child)
+
+
+def _get_macos_bundle_versions() -> tuple[str, str]:
+    ref_name = os.getenv("GITHUB_REF_NAME", "").strip()
+    short_version = "0.0.0"
+    if ref_name.startswith("v") and any(char.isdigit() for char in ref_name):
+        short_version = ref_name[1:]
+
+    build_version = os.getenv("GITHUB_SHA", "").strip()[:12]
+    if not build_version:
+        git_version = _read_git_version(PROJECT_ROOT) or {}
+        build_version = git_version.get("commit", "")[:12]
+    if not build_version:
+        build_version = datetime.now().strftime("%Y%m%d%H%M%S")
+
+    return short_version, build_version
+
+
+def _generate_macos_bundle_icon(resources_dir: Path) -> Path | None:
+    if not LOGO.exists():
+        return None
+    if not shutil.which("sips") or not shutil.which("iconutil"):
+        return None
+
+    icon_specs = {
+        "icon_16x16.png": 16,
+        "icon_16x16@2x.png": 32,
+        "icon_32x32.png": 32,
+        "icon_32x32@2x.png": 64,
+        "icon_128x128.png": 128,
+        "icon_128x128@2x.png": 256,
+        "icon_256x256.png": 256,
+        "icon_256x256@2x.png": 512,
+        "icon_512x512.png": 512,
+        "icon_512x512@2x.png": 1024,
+    }
+    icns_path = resources_dir / "AppIcon.icns"
+
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            iconset_dir = Path(temp_dir) / "AppIcon.iconset"
+            iconset_dir.mkdir(parents=True, exist_ok=True)
+            for file_name, size in icon_specs.items():
+                subprocess.run(
+                    [
+                        "sips",
+                        "-z",
+                        str(size),
+                        str(size),
+                        str(LOGO),
+                        "--out",
+                        str(iconset_dir / file_name),
+                    ],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            subprocess.run(
+                ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(icns_path)],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        if icns_path.exists():
+            icns_path.unlink()
+        return None
+
+    return icns_path
+
+
+def _write_macos_bundle_metadata(bundle_dir: Path, icon_file: Path | None):
+    short_version, build_version = _get_macos_bundle_versions()
+    plist_data = {
+        "CFBundleDisplayName": PROJECT_NAME,
+        "CFBundleExecutable": PROJECT_NAME,
+        "CFBundleIdentifier": "com.pigeonserver.gakumasassistant",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleName": PROJECT_NAME,
+        "CFBundlePackageType": "APPL",
+        "CFBundleShortVersionString": short_version,
+        "CFBundleVersion": build_version,
+        "NSHighResolutionCapable": True,
+    }
+    if icon_file is not None:
+        plist_data["CFBundleIconFile"] = icon_file.name
+
+    info_plist_path = bundle_dir / "Contents" / "Info.plist"
+    info_plist_path.parent.mkdir(parents=True, exist_ok=True)
+    with info_plist_path.open("wb") as file_obj:
+        plistlib.dump(plist_data, file_obj)
+
+
+def _create_macos_bundle_launcher(macos_dir: Path):
+    binary_path = macos_dir / PROJECT_NAME
+    if not binary_path.exists():
+        raise FileNotFoundError(binary_path)
+
+    bundled_binary_path = macos_dir / f"{PROJECT_NAME}-bin"
+    binary_path.rename(bundled_binary_path)
+
+    launcher_script = f"""#!/bin/sh
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR" || exit 1
+exec "$SCRIPT_DIR/{bundled_binary_path.name}" "$@"
+"""
+    binary_path.write_text(launcher_script, encoding="utf-8")
+    binary_path.chmod(0o755)
+
+
+def _create_macos_app_bundle(app_dist_path: Path):
+    bundle_dir = APP_BUNDLE_DIR
+    macos_dir = bundle_dir / "Contents" / "MacOS"
+    resources_dir = bundle_dir / "Contents" / "Resources"
+
+    _remove_existing_path(bundle_dir)
+    _copy_directory_contents(app_dist_path, macos_dir)
+    resources_dir.mkdir(parents=True, exist_ok=True)
+
+    icon_file = _generate_macos_bundle_icon(resources_dir)
+    _write_macos_bundle_metadata(bundle_dir, icon_file)
+    _create_macos_bundle_launcher(macos_dir)
+
+
 def build_project():
     if os.getenv("GITHUB_ACTIONS"):
         update_game_database()
@@ -485,6 +623,8 @@ def build_project():
         check=True,
     )
     _copy_runtime_files(APP_DIST_DIR)
+    if TARGET_PLATFORM == "Darwin":
+        _create_macos_app_bundle(APP_DIST_DIR)
 
 
 if __name__ == "__main__":

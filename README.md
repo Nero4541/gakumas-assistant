@@ -55,7 +55,10 @@
 ## 安装
 ### Plan1: 以打包的方式安装
 前往 [Releases](https://github.com/Pigeon-Server/gakumas-assistant/releases) 下载打包后的文件   
-运行压缩包内的主程序（Windows 为 `Gakumas Assistant.exe`，macOS / Linux 为 `Gakumas Assistant`）  
+运行压缩包内的主程序:
+- Windows 为 `Gakumas Assistant.exe`
+- macOS 为 `Gakumas Assistant.app`
+- Linux 为 `Gakumas Assistant`
 更多使用说明参见 [使用手册](./docs/use_script.md)  
 
 ### Plan2: 手动安装
@@ -157,14 +160,15 @@ git submodule update --init
 python ./devtools/model_export.py
 ```
 ### 打包项目:
-本项目使用 `Nuitka` 进行打包，支持 `Windows`、`macOS`、`Linux`。打包后的应用程序会输出到 `out/app.dist` 中。
+本项目使用 `Nuitka` 进行打包，支持 `Windows`、`macOS`、`Linux`。打包后的应用程序会输出到 `out/` 中。
 ```bash
 pip install -r requirements.build.txt
 python build_app.py
 ```
 说明：
 - Windows 输出主程序为 `out/app.dist/Gakumas Assistant.exe`
-- macOS / Linux 输出主程序为 `out/app.dist/Gakumas Assistant`
+- macOS 输出应用包为 `out/Gakumas Assistant.app`
+- Linux 输出主程序为 `out/app.dist/Gakumas Assistant`
 - 若当前环境未安装 `upx`，打包脚本会自动跳过 UPX 压缩
 
 ## 许可证
