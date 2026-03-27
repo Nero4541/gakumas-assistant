@@ -294,7 +294,6 @@ def _get_nuitka_platform_options() -> list[str]:
     nuitka_cmd = [
         "--standalone",
         "--enable-plugin=no-qt",
-        "--disable-cache=ccache",
         "--module-parameter=torch-disable-jit=no",
         f"--output-filename={_get_output_filename()}",
         f"--output-dir={NUITKA_OUTPUT_DIR}",

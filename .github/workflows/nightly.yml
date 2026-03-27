@@ -156,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y patchelf
+          sudo apt-get install -y patchelf ccache
 
       - name: Install UPX
         if: runner.os == 'Windows'
@@ -181,11 +181,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.build.txt
 
-      - name: Get Cache Build
+      - name: Restore build caches
         id: cache-build
         uses: actions/cache@v3
         with:
-          path: out/app.build
+          path: |
+            out/app.build
+            .cache/nuitka
+            .cache/ccache
           key: ${{ runner.os }}-nuitka-build-${{ hashFiles('build_app.py', 'requirements.txt', 'requirements.build.txt') }}
           restore-keys: |
             ${{ runner.os }}-nuitka-build-
@@ -197,6 +200,8 @@ jobs:
           python build_app.py
         env:
           GITHUB_ACTIONS: "True"
+          NUITKA_CACHE_DIR: ${{ github.workspace }}/.cache/nuitka
+          CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
 
       - name: Compress Output
         shell: bash
