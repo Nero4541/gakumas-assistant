@@ -305,10 +305,6 @@ def _get_nuitka_platform_options() -> list[str]:
         nuitka_cmd.append("--enable-plugin=upx")
 
     if TARGET_PLATFORM == "Windows":
-        # app.py imports pywebview dynamically, so keep the package entrypoint.
-        # Do not include the whole package here: Nuitka's pywebview plugin
-        # already selects the matching webview.platforms backend per OS.
-        nuitka_cmd.append("--include-module=webview")
         nuitka_cmd.append(f"--windows-icon-from-ico={LOGO}")
         nuitka_cmd.append("--windows-console-mode=attach")
     elif TARGET_PLATFORM == "Linux":

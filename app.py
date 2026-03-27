@@ -1,5 +1,4 @@
 import asyncio
-import importlib
 import os.path
 import platform
 import sys
@@ -17,8 +16,14 @@ from src.utils.logger import logger
 from src.utils.args import args
 from src.main import AppProcessor
 
-WEBVIEW_MODULE = None
-WEBVIEW_IMPORT_ERROR = None
+try:
+    import webview as WEBVIEW_MODULE
+except Exception as exc:
+    WEBVIEW_MODULE = None
+    WEBVIEW_IMPORT_ERROR = exc
+else:
+    WEBVIEW_IMPORT_ERROR = None
+
 PYWEBVIEW_WINDOW_BRIDGE = None
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
@@ -110,13 +115,7 @@ def start_webapp(core_processor: AppProcessor):
 
 
 def _start_native_webview(url: str):
-    global WEBVIEW_MODULE, WEBVIEW_IMPORT_ERROR, PYWEBVIEW_WINDOW_BRIDGE
-    if WEBVIEW_MODULE is None and WEBVIEW_IMPORT_ERROR is None:
-        try:
-            WEBVIEW_MODULE = importlib.import_module("webview")
-        except Exception as exc:
-            WEBVIEW_IMPORT_ERROR = exc
-
+    global PYWEBVIEW_WINDOW_BRIDGE
     if WEBVIEW_MODULE is None:
         raise RuntimeError("pywebview is unavailable") from WEBVIEW_IMPORT_ERROR
 
