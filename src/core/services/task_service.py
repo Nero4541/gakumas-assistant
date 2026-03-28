@@ -26,6 +26,7 @@ from src.entity.Task import Task
 from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_runtime_str
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -129,6 +130,9 @@ class TaskService:
     def start_queue(self, task_id: str = None):
         """启动任务队列"""
         if self._queue_status:
+            return False
+        if not self._app.is_resource_ready():
+            logger.warning("Task queue start rejected: required game resources are not ready")
             return False
         if not self._app.ensure_device_ready(restart_inference=True):
             logger.warning(f"Task queue start rejected: {self._app.get_device_status().get('message', 'device unavailable')}")
@@ -320,7 +324,7 @@ class TaskService:
     # ========== 内部实现 ==========
 
     # 项目 src 目录的绝对路径，用于 trace 白名单过滤
-    _src_path: str = os.path.join(os.getcwd(), "src")
+    _src_path: str = resolve_runtime_str("src")
     _self_file: str = os.path.abspath(__file__)
 
     MIDDLEWARE_WHITELIST = [

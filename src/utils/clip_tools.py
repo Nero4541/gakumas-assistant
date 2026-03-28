@@ -11,6 +11,7 @@ from typing import Optional, Any
 from src.core.inference.ONNX import CLIPModelFromONNX
 from src.models.clip import CLIPMemory
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_data_str
 
 @dataclass
 class CLIPRetrieveData:
@@ -25,7 +26,7 @@ class CLIPTools(abc.ABC):
     def __init__(self, model_session: CLIPModelFromONNX, clip_name: str):
         self._engine = model_session
         self._clip_name = clip_name
-        self._image_file_path = os.path.join(os.getcwd(), "data/CLIP", clip_name)
+        self._image_file_path = resolve_data_str("CLIP", clip_name)
         os.makedirs(self._image_file_path, exist_ok=True)
 
     @ staticmethod

@@ -34,6 +34,14 @@ function get_status() {
 }
 
 /**
+ * 退出应用
+ * @return {Promise<AxiosResponse<any, any>>}
+ */
+function shutdown_app() {
+  return axiosplus.post("/api/app/shutdown");
+}
+
+/**
  * 获取所有已注册的任务
  * @return {Promise<AxiosResponse<any, any>>}
  */
@@ -154,6 +162,7 @@ export default {
   stop_task_queue,
   run_task,
   get_status,
+  shutdown_app,
   get_registered_tasks,
   disable_task,
   enable_task,

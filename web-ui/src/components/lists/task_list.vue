@@ -79,6 +79,10 @@ function formatRelativeTime(ts) {
   return `${Math.floor(diff / 86400)}天前`
 }
 
+const taskExecutionBlocked = computed(() => (
+  app_store.resource_update_status?.required_resources_ready === false
+))
+
 const drawerValue = computed({
   get: () => (props.temporary ? props.modelValue : true),
   set: value => emit("update:modelValue", value),
@@ -95,7 +99,12 @@ const drawerValue = computed({
     :class="['task_drawer', { 'task_drawer--instant': disableTransition }]"
   >
     <v-card class="task_drawer__title_card">
-      <div class="task_drawer__title">任务列表</div>
+      <div>
+        <div class="task_drawer__title">任务列表</div>
+        <div v-if="taskExecutionBlocked" class="task_drawer__hint">
+          资源下载完成前可先查看任务和配置，暂不可执行。
+        </div>
+      </div>
     </v-card>
     <v-divider/>
 
@@ -144,7 +153,7 @@ const drawerValue = computed({
 
               <div class="task_actions mt-3">
                 <v-btn
-                  :disabled="task.status === 'RUNNING'"
+                  :disabled="task.status === 'RUNNING' || taskExecutionBlocked"
                   color="primary"
                   variant="outlined"
                   @click="apis.run_task(task_name)"
@@ -217,6 +226,13 @@ const drawerValue = computed({
   font-weight: 700;
   line-height: 1.2;
   text-align: left;
+}
+
+.task_drawer__hint {
+  margin-top: 6px;
+  font-size: 0.84rem;
+  line-height: 1.4;
+  color: rgba(0, 0, 0, 0.64);
 }
 
 .task_panels {

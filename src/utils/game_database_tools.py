@@ -9,7 +9,6 @@ from typing import Any, Dict, List, TextIO
 
 import yaml
 
-from src.constants.path.data_path import DataPath
 from src.entity.Game.Database.Character import Character, CharacterLocalization
 from src.entity.Game.Database.EffectGroup import EffectGroup, EffectGroupLocalization
 from src.entity.Game.Database.General import GeneralProduceDescriptionsLocalization
@@ -41,9 +40,10 @@ from src.entity.Game.Database.ProduceSkill import ProduceSkill, ProduceSkillLoca
 from src.entity.Game.Database.SupportCard import SupportCard, SupportCardLocalization
 from src.utils.data_converter import DataConverter
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_cache_str, resolve_existing_resource_path
 from src.utils.string_tools import string_match
 
-_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", ".cache", "yaml_db")
+_CACHE_DIR = resolve_cache_str("yaml_db")
 
 
 class _SingletonByFileMeta(type):
@@ -52,7 +52,7 @@ class _SingletonByFileMeta(type):
 
     def __call__(cls, data_file=None, *args, **kwargs):
         if data_file is None:
-            data_file = cls.__init__.__defaults__[0]
+            data_file = cls._get_default_data_file()
         key = (cls, os.path.abspath(data_file))
         if key not in cls._instances:
             with cls._lock:
@@ -64,6 +64,7 @@ class _SingletonByFileMeta(type):
 class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
     data_cls = None
     loc_cls = None
+    default_data_file_parts: tuple[str, ...] = ()
     _diff_file: str = None
     _data: List[Any] = None
     _map: Dict[str, Any] = None
@@ -76,6 +77,12 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
         self._load_database()
 
     @classmethod
+    def _get_default_data_file(cls):
+        if not cls.default_data_file_parts:
+            raise ValueError(f"{cls.__name__} does not define a default data file")
+        return str(resolve_existing_resource_path(*cls.default_data_file_parts))
+
+    @classmethod
     def _preprocess_yaml_data(cls, f: TextIO) -> str:
         content = f.read()
         content = re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F]", "", content)
@@ -84,9 +91,14 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
 
     @classmethod
     def _load_localization(cls, data_file_path, data_entity):
-        loc_file = os.path.join(
-            DataPath.GakumasTranslationData.BASE,
-            f"{os.path.splitext(os.path.basename(data_file_path))[0]}.json",
+        loc_file = str(
+            resolve_existing_resource_path(
+                "assets",
+                "GakumasTranslationData",
+                "local-files",
+                "masterTrans",
+                f"{os.path.splitext(os.path.basename(data_file_path))[0]}.json",
+            )
         )
         if not os.path.exists(loc_file):
             return []
@@ -219,8 +231,9 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
 class GakumasDatabase_ItemDataUtils(_BaseYamlDatabase):
     data_cls = Item
     loc_cls = ItemLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "Item.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.ITEM):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def search(self, ocr_result, match_config=None):
@@ -230,40 +243,45 @@ class GakumasDatabase_ItemDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_CharacterDataUtils(_BaseYamlDatabase):
     data_cls = Character
     loc_cls = CharacterLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "Character.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.CHARACTER):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
 
 class GakumasDatabase_EffectGroupDataUtils(_BaseYamlDatabase):
     data_cls = EffectGroup
     loc_cls = EffectGroupLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "EffectGroup.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.EFFECT_GROUP):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
 
 class GakumasDatabase_ExamTriggerDataUtils(_BaseYamlDatabase):
     data_cls = ProduceExamTrigger
     loc_cls = GeneralProduceDescriptionsLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceExamTrigger.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.EXAM_TRIGGER):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
 
 class GakumasDatabase_ExamEffectDataUtils(_BaseYamlDatabase):
     data_cls = ProduceExamEffect
     loc_cls = GeneralProduceDescriptionsLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceExamEffect.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.EXAM_EFFECT):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
 
 class GakumasDatabase_GrowEffectDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCardGrowEffect
     loc_cls = None
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceCardGrowEffect.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.GROW_EFFECT):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -290,8 +308,9 @@ class GakumasDatabase_GrowEffectDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceCardSearchDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCardSearch
     loc_cls = ProduceCardSearchLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceCardSearch.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_CARD_SEARCH):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -305,8 +324,9 @@ class GakumasDatabase_ProduceCardSearchDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_CardStatusEnchantDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCardStatusEnchant
     loc_cls = ProduceCardStatusEnchantLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceCardStatusEnchant.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_CARD_STATUS_ENCHANT):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -325,8 +345,9 @@ class GakumasDatabase_CardStatusEnchantDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ExamStatusEnchantDataUtils(_BaseYamlDatabase):
     data_cls = ProduceExamStatusEnchant
     loc_cls = ProduceExamStatusEnchantLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceExamStatusEnchant.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_EXAM_STATUS_ENCHANT):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -345,8 +366,9 @@ class GakumasDatabase_ExamStatusEnchantDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceCardCustomizeDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCardCustomize
     loc_cls = ProduceCardCustomizeLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceCardCustomize.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_CARD_CUSTOMIZE):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _build_map_key(self, obj):
@@ -368,8 +390,9 @@ class GakumasDatabase_ProduceCardCustomizeDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceCardDataUtils(_BaseYamlDatabase):
     data_cls = ProduceCard
     loc_cls = ProduceCardLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceCard.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_CARD):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _build_map_key(self, card):
@@ -421,8 +444,9 @@ class GakumasDatabase_ProduceCardDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceItemDataUtils(_BaseYamlDatabase):
     data_cls = ProduceItem
     loc_cls = ProduceItemLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceItem.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_ITEM):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -439,8 +463,9 @@ class GakumasDatabase_ProduceItemDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceDrinkDataUtils(_BaseYamlDatabase):
     data_cls = ProduceDrink
     loc_cls = ProduceDrinkLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceDrink.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_DRINK):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -457,8 +482,9 @@ class GakumasDatabase_ProduceDrinkDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_ProduceSkillDataUtils(_BaseYamlDatabase):
     data_cls = ProduceSkill
     loc_cls = ProduceSkillLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "ProduceSkill.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.PRODUCE_SKILL):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _build_map_key(self, obj):
@@ -471,8 +497,9 @@ class GakumasDatabase_ProduceSkillDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_IdolCardDataUtils(_BaseYamlDatabase):
     data_cls = IdolCard
     loc_cls = IdolCardLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "IdolCard.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.IDOL_CARD):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -504,8 +531,9 @@ class GakumasDatabase_IdolCardDataUtils(_BaseYamlDatabase):
 class GakumasDatabase_SupportCardDataUtils(_BaseYamlDatabase):
     data_cls = SupportCard
     loc_cls = SupportCardLocalization
+    default_data_file_parts = ("assets", "gakumasu-diff", "SupportCard.yaml")
 
-    def __init__(self, data_file=DataPath.GakumasuDiffData.SUPPORT_CARD):
+    def __init__(self, data_file=None):
         super().__init__(data_file)
 
     def _load_database(self):
@@ -675,10 +703,13 @@ _SPECIALIZED_TABLE_UTILS = {
 
 
 def list_available_game_database_tables() -> List[str]:
+    base_path = resolve_existing_resource_path("assets", "gakumasu-diff")
+    if not base_path.exists():
+        return []
     return sorted(
         [
             os.path.splitext(name)[0]
-            for name in os.listdir(DataPath.GakumasuDiffData.BASE)
+            for name in os.listdir(base_path)
             if name.endswith(".yaml")
         ]
     )
@@ -693,9 +724,9 @@ def _build_dynamic_table_loader_cls(table_name: str):
     if class_name in globals():
         return globals()[class_name]
 
-    default_file = os.path.join(DataPath.GakumasuDiffData.BASE, f"{table_name}.yaml")
-
-    def __init__(self, data_file=default_file, _table_name=table_name):
+    def __init__(self, data_file=None, _table_name=table_name):
+        if data_file is None:
+            data_file = str(resolve_existing_resource_path("assets", "gakumasu-diff", f"{table_name}.yaml"))
         GakumasDatabase_AutoDataUtils.__init__(
             self, data_file=data_file, table_name=_table_name
         )

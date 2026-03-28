@@ -1,5 +1,6 @@
 // Utilities
 import { defineStore } from 'pinia'
+import { toRef } from 'vue'
 import apis from '@/scripts/apis'
 import {TaskStatus, WS_ACTION} from '@/scripts/constants'
 import { wsService } from "@/scripts/utils/websocket";
@@ -23,6 +24,9 @@ export interface AppState {
   resource_update_latest_event_type: 'success' | 'warning' | 'info'
   last_prompted_resource_update_signature: string
   resource_update_prompt_open: boolean
+  resource_bootstrap_prompt_open: boolean
+  resource_bootstrap_prompt_dismissed: boolean
+  resource_update_request_pending: boolean
 }
 
 export const useAppStore = defineStore('app', {
@@ -53,6 +57,9 @@ export const useAppStore = defineStore('app', {
     resource_update_latest_event_type: "info",
     last_prompted_resource_update_signature: "",
     resource_update_prompt_open: false,
+    resource_bootstrap_prompt_open: false,
+    resource_bootstrap_prompt_dismissed: false,
+    resource_update_request_pending: false,
   }),
   actions: {
     async init() {
@@ -158,15 +165,81 @@ export const useAppStore = defineStore('app', {
       this.status.device = deviceStatus
       this.notify_device_status_change(previousDevice, deviceStatus)
     },
+    format_bytes(value: number) {
+      if (!Number.isFinite(value) || value <= 0) {
+        return "0 B"
+      }
+      const units = ["B", "KB", "MB", "GB"]
+      let size = value
+      let unitIndex = 0
+      while (size >= 1024 && unitIndex < units.length - 1) {
+        size /= 1024
+        unitIndex += 1
+      }
+      const precision = size >= 100 || unitIndex === 0 ? 0 : 1
+      return `${size.toFixed(precision)} ${units[unitIndex]}`
+    },
+    build_resource_progress_text(status: ResourceUpdateStatus | null) {
+      const progress = status?.progress
+      if (!progress?.active) {
+        return ""
+      }
+      const parts: string[] = []
+      if (progress.current_step && progress.total_steps) {
+        parts.push(`步骤 ${progress.current_step}/${progress.total_steps}`)
+      }
+      if (progress.repository) {
+        parts.push(progress.repository)
+      }
+      if (progress.bytes_total > 0) {
+        parts.push(`${this.format_bytes(progress.bytes_downloaded)} / ${this.format_bytes(progress.bytes_total)}`)
+      } else if (progress.percent > 0) {
+        parts.push(`${progress.percent.toFixed(1)}%`)
+      }
+      if (progress.attempt > 0) {
+        parts.push(`尝试 ${progress.attempt}/${progress.max_attempts}`)
+      }
+      if (progress.retry_wait_seconds > 0) {
+        parts.push(`${progress.retry_wait_seconds}s 后重试`)
+      }
+      return parts.join(" / ")
+    },
     handle_resource_update_status(status: ResourceUpdateStatus) {
       const previousStatus = this.resource_update_status
       this.resource_update_status = status
+      if (status.updating || !status.bootstrap_required || status.required_resources_ready) {
+        this.resource_update_request_pending = false
+      }
+      if (status.required_resources_ready) {
+        this.resource_bootstrap_prompt_dismissed = false
+      }
+      if (status.checking && !status.updating) {
+        this.resource_update_latest_event = ""
+        this.resource_update_latest_event_type = "info"
+      } else if (status.progress?.active && status.progress?.message) {
+        this.resource_update_latest_event = status.progress.message
+        this.resource_update_latest_event_type = "info"
+      }
+      if (previousStatus?.checking && !status.checking && !previousStatus?.updating) {
+        if (status.last_error) {
+          this.resource_update_latest_event = `资源检查失败：${status.last_error}`
+          this.resource_update_latest_event_type = "warning"
+        } else if (status.has_update) {
+          this.resource_update_latest_event = "检测到资源仓库更新，可立即更新"
+          this.resource_update_latest_event_type = "info"
+        } else {
+          this.resource_update_latest_event = "资源仓库已经是最新版本"
+          this.resource_update_latest_event_type = "success"
+        }
+      }
       if (previousStatus?.updating && !status.updating) {
         if (status.last_error) {
           this.resource_update_latest_event = `资源更新失败：${status.last_error}`
           this.resource_update_latest_event_type = "warning"
         } else {
-          const successMessage = "资源仓库更新完成，游戏数据库已重新加载"
+          const successMessage = previousStatus?.bootstrap_required || !previousStatus?.required_resources_ready
+            ? "首次启动所需资源下载完成，游戏数据库已重新加载"
+            : "资源仓库更新完成，游戏数据库已重新加载"
           this.resource_update_latest_event = successMessage
           this.resource_update_latest_event_type = "success"
           message.showSuccess(successMessage)
@@ -179,7 +252,9 @@ export const useAppStore = defineStore('app', {
         return "尚未执行资源仓库检查"
       }
       const parts: string[] = []
-      if (status.checking) {
+      if (status.bootstrap_required && !status.required_resources_ready) {
+        parts.push("首次启动需要下载游戏数据库和本地化资源")
+      } else if (status.checking) {
         parts.push("正在检查资源仓库更新")
       } else if (status.updating) {
         parts.push("正在更新资源仓库")
@@ -188,10 +263,22 @@ export const useAppStore = defineStore('app', {
       } else {
         parts.push("尚未执行资源仓库检查")
       }
+      const progressText = this.build_resource_progress_text(status)
+      if (progressText) {
+        parts.push(progressText)
+      }
       if (status.next_check_at) {
         parts.push(`下次定时检查：${status.next_check_at.replace("T", " ")}`)
       }
       return parts.join(" / ")
+    },
+    build_required_resource_prompt(status: ResourceUpdateStatus) {
+      const repositories = status.missing_required_resources
+        .map(item => `${item.name}（缺少 ${item.missing_count}/${item.required_count} 个文件）`)
+      if (!repositories.length) {
+        return "首次启动需要下载游戏数据库和本地化资源。下载过程中会显示进度，失败会自动重试。是否现在开始下载？"
+      }
+      return `首次启动需要下载以下资源：${repositories.join("、")}。下载过程中会显示进度，失败会自动重试。是否现在开始下载？`
     },
     build_resource_update_prompt(status: ResourceUpdateStatus) {
       const repositories = status.repositories
@@ -203,6 +290,9 @@ export const useAppStore = defineStore('app', {
       return `检测到资源仓库有更新：${repositories.join("、")}。是否现在更新并重新加载游戏数据库？`
     },
     async maybe_prompt_resource_update(status: ResourceUpdateStatus | null) {
+      if (status?.bootstrap_required) {
+        return
+      }
       if (!status?.has_update || status.updating || !status.update_signature) {
         return
       }
@@ -229,8 +319,18 @@ export const useAppStore = defineStore('app', {
         this.resource_update_prompt_open = false
       }
     },
+    dismiss_required_resource_download_prompt() {
+      this.resource_bootstrap_prompt_dismissed = true
+    },
+    async start_required_resource_download() {
+      this.resource_bootstrap_prompt_dismissed = true
+      this.resource_update_request_pending = true
+      await this.apply_resource_updates()
+    },
     async check_resource_updates() {
       this.last_prompted_resource_update_signature = ""
+      this.resource_update_latest_event = ""
+      this.resource_update_latest_event_type = "info"
       await apis.check_resource_updates().then((response) => {
         this.handle_resource_update_status(response.data)
         if (response.data?.last_error) {
@@ -247,11 +347,18 @@ export const useAppStore = defineStore('app', {
       })
     },
     async apply_resource_updates() {
-      this.resource_update_latest_event = "正在更新资源仓库..."
+      const isBootstrap = Boolean(this.resource_update_status?.bootstrap_required || !this.resource_update_status?.required_resources_ready)
+      this.resource_update_latest_event = isBootstrap ? "正在下载首次启动所需资源..." : "正在更新资源仓库..."
       this.resource_update_latest_event_type = "info"
-      await apis.apply_resource_updates().then((response) => {
-        this.handle_resource_update_status(response.data)
-      })
+      try {
+        await apis.apply_resource_updates().then((response) => {
+          this.handle_resource_update_status(response.data)
+        })
+      } finally {
+        if (!this.resource_update_status?.updating) {
+          this.resource_update_request_pending = false
+        }
+      }
     },
     get_task_config(task_name: string) {
       console.log(`task__${task_name}`,this.config?.[`task__${task_name}`])

@@ -71,6 +71,49 @@
       :width="sidePanelWidth"
     />
 
+    <v-dialog
+      :model-value="showResourceBootstrapDialog"
+      :persistent="showResourceProgressDialog"
+      max-width="760"
+      width="calc(100vw - 32px)"
+    >
+      <v-card class="resource-progress-dialog">
+        <template v-if="showResourceProgressDialog">
+          <div class="resource-progress-dialog__title">{{ resourceProgressTitle }}</div>
+          <div class="resource-progress-dialog__description">{{ resourceProgressDescription }}</div>
+          <v-progress-linear
+            :model-value="resourceBootstrapProgressValue"
+            :indeterminate="resourceBootstrapProgressIndeterminate"
+            color="primary"
+            rounded
+            height="12"
+          />
+          <div class="resource-progress-dialog__meta">{{ resourceProgressMeta }}</div>
+        </template>
+        <template v-else>
+          <div class="resource-progress-dialog__title">首次启动需要下载运行资源</div>
+          <div class="resource-progress-dialog__description">{{ bootstrapPromptDescription }}</div>
+          <div class="resource-progress-dialog__meta">{{ bootstrapPromptMeta }}</div>
+          <div class="resource-progress-dialog__actions">
+            <v-btn
+              color="primary"
+              prepend-icon="md:download"
+              @click="appStore.start_required_resource_download()"
+            >
+              同意并开始下载
+            </v-btn>
+            <v-btn
+              variant="text"
+              color="warning"
+              @click="appStore.dismiss_required_resource_download_prompt()"
+            >
+              稍后处理
+            </v-btn>
+          </div>
+        </template>
+      </v-card>
+    </v-dialog>
+
     <v-main class="page_main d-flex align-center justify-center">
       <v-container class="page_container">
         <WebSocketToolsBar/>
@@ -90,6 +133,7 @@
   import WebSocketView from "@/components/WebSocketView.vue";
   import WebSocketToolsBar from "@/components/WebSocketToolsBar.vue";
   import SettingsPanel from "@/components/lists/settings.vue";
+  import { useAppStore } from "@/stores/app.ts";
   import {
     addWindowHostReadyListener,
     getWindowHostApi,
@@ -100,6 +144,7 @@
   import app from "@/main.js";
 
   const display = useDisplay();
+  const appStore = useAppStore();
   const DEFAULT_SECTION = "tasks";
   const WINDOW_DRAG_THRESHOLD = 6;
   const tabbar_model = ref([DEFAULT_SECTION]);
@@ -132,6 +177,54 @@
 
     return 400;
   });
+  const showResourceProgressDialog = computed(() => Boolean(
+    appStore.resource_update_request_pending
+    || (appStore.resource_update_status?.updating && appStore.resource_update_status?.progress?.active),
+  ));
+  const showResourceBootstrapConfirmDialog = computed(() => {
+    const status = appStore.resource_update_status;
+    if (!status) {
+      return false;
+    }
+    return Boolean(
+      status.bootstrap_required
+      && !status.required_resources_ready
+      && !showResourceProgressDialog.value
+      && !appStore.resource_bootstrap_prompt_dismissed
+    );
+  });
+  const showResourceBootstrapDialog = computed(() => (
+    showResourceProgressDialog.value || showResourceBootstrapConfirmDialog.value
+  ));
+  const resourceBootstrapProgressValue = computed(() => {
+    const progress = appStore.resource_update_status?.progress;
+    if (!progress?.active) {
+      return 0;
+    }
+    return progress.bytes_total > 0 ? progress.percent : progress.percent || progress.step_percent;
+  });
+  const resourceBootstrapProgressIndeterminate = computed(() => {
+    const progress = appStore.resource_update_status?.progress;
+    if (!progress?.active) {
+      return false;
+    }
+    return !progress.bytes_total && !(progress.percent > 0 || progress.step_percent > 0);
+  });
+  const bootstrapPromptDescription = computed(() => (
+    "当前安装包不再内置游戏数据库和本地化资源。确认后将自动下载，完成后程序会继续初始化。"
+  ));
+  const bootstrapPromptMeta = computed(() => {
+    const status = appStore.resource_update_status;
+    if (!status?.missing_required_resources?.length) {
+      return "首次启动需要下载游戏数据库和本地化资源。";
+    }
+    return status.missing_required_resources
+      .map(item => `${item.name}（缺少 ${item.missing_count}/${item.required_count} 个文件）`)
+      .join(" / ");
+  });
+  const resourceProgressTitle = computed(() => appStore.resource_update_status?.progress?.title || "正在下载资源");
+  const resourceProgressDescription = computed(() => appStore.resource_update_status?.progress?.message || "正在同步资源，请稍候。");
+  const resourceProgressMeta = computed(() => appStore.build_resource_update_status_text(appStore.resource_update_status));
 
   watch(showOverlayPanel, value => {
     sidePanelOpen.value = !value;
@@ -293,6 +386,34 @@
   gap: 4px;
 }
 
+.resource-progress-dialog {
+  display: grid;
+  gap: 14px;
+  padding: 24px;
+  border-radius: 24px;
+}
+
+.resource-progress-dialog__title {
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.resource-progress-dialog__description {
+  color: rgba(255, 255, 255, 0.82);
+  line-height: 1.6;
+}
+
+.resource-progress-dialog__meta {
+  color: rgba(255, 255, 255, 0.72);
+  line-height: 1.6;
+}
+
+.resource-progress-dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .page_body {
   position: relative;
   width: 100%;
@@ -349,6 +470,10 @@
         padding: 12px;
       }
     }
+  }
+
+  .resource-progress-dialog {
+    padding: 20px;
   }
 }
 

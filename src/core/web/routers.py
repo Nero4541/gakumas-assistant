@@ -8,7 +8,6 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from src.constants.path.data_path import DataPath
 from src.constants.task_status import TaskStatus
 from src.constants.websocket_actions import WebsocketActions
 from src.core.web.websocket import WebSocketManager
@@ -20,6 +19,7 @@ from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
 from src.utils.opencv_tools import get_black_image
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_data_str, resolve_runtime_str
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -32,7 +32,14 @@ def _api_return(status: bool, message: str = '', data: dict | list = None):
     }
 
 def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSocketManager):
-    item_db = GakumasDatabase_ItemDataUtils(DataPath.GakumasuDiffData.ITEM)
+    def _resource_not_ready_response():
+        return _api_return(False, "首次启动需要先下载游戏数据库和本地化资源，请在 WebUI 中确认下载。")
+
+    def _get_item_db():
+        if not processor.is_resource_ready():
+            raise RuntimeError("游戏数据库资源尚未就绪")
+        return GakumasDatabase_ItemDataUtils()
+
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await ws_manager.connect(websocket)
@@ -48,13 +55,17 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
                 if action == WebsocketActions.BaseActionFlag + ":" + WebsocketActions.WebsocketHeartBeat.Ping:
                     await ws_manager.send_action(websocket, WebsocketActions.WebsocketHeartBeat.Pong)
         except WebSocketDisconnect:
-            ws_manager.disconnect(websocket)
+            pass
         except Exception as e:
             logger.error(f"Websocket Error: {e}")
+        finally:
+            ws_manager.disconnect(websocket)
 
     @app.get("/api/task/start")
     def start_task_queue():
         """启动任务队列"""
+        if not processor.is_resource_ready():
+            return _resource_not_ready_response()
         if not processor.ensure_device_ready(restart_inference=True):
             return _api_return(False, processor.get_device_status().get("message", "当前设备不可用"))
         if not processor.exec_task():
@@ -68,6 +79,8 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         :param task_name: 任务名
         :return:
         """
+        if not processor.is_resource_ready():
+            return _resource_not_ready_response()
         if not processor.ensure_device_ready(restart_inference=True):
             return _api_return(False, processor.get_device_status().get("message", "当前设备不可用"))
         if not processor.exec_task(task_name):
@@ -128,6 +141,11 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
                 }
             }
         })
+
+    @app.post("/api/app/shutdown")
+    def shutdown_app():
+        processor.request_app_shutdown()
+        return _api_return(True, "应用正在退出")
 
     @app.get("/api/task/get_registered_tasks")
     def get_registered_tasks():
@@ -310,7 +328,10 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.get("/api/item/list")
     def get_all_items():
         """获取所有物品列表"""
-        items = item_db.get_all_item()
+        try:
+            items = _get_item_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
         all_items = []
         for item in items:
             all_items.append({
@@ -327,9 +348,19 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
             })
         return _api_return(True, "OK", all_items)
 
-    app.mount("/assets", StaticFiles(directory="dist/assets", html=True), name="static")
-    app.mount("/api/clip_image", StaticFiles(directory="data/CLIP", html=False), name="clip_images")
+    app.mount(
+        "/assets",
+        StaticFiles(directory=resolve_runtime_str("dist", "assets"), html=True),
+        name="static",
+    )
+    clip_image_dir = resolve_data_str("CLIP")
+    os.makedirs(clip_image_dir, exist_ok=True)
+    app.mount(
+        "/api/clip_image",
+        StaticFiles(directory=clip_image_dir, html=False),
+        name="clip_images",
+    )
 
     @app.get("/")
     def read_index():
-        return FileResponse("dist/index.html")
+        return FileResponse(resolve_runtime_str("dist", "index.html"))

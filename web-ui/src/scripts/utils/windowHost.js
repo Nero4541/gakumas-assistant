@@ -10,7 +10,7 @@ export function getWindowHostApi() {
 
 export function getWindowHostKind() {
   if (getNativeWindowHost()) {
-    return getNativeWindowHost().kind ?? "native-webview2";
+    return getNativeWindowHost().kind ?? "pywebview";
   }
 
   if (window.pywebview?.api) {

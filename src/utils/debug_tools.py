@@ -10,6 +10,7 @@ import numpy as np
 
 from src.entity.Base import SingletonMeta
 from src.utils.opencv_tools import draw_text
+from src.utils.runtime_paths import resolve_runtime_str
 
 @dataclass
 class DebugElement(ABC):
@@ -68,7 +69,7 @@ class DebugBox(DebugElement):
         cv2.rectangle(final_img, self.top_left, self.bottom_right, self.color, self.thickness)
 
         if self.label:
-            font_path = os.path.join(os.getcwd(), "assets/NotoSerifCJKsc-Medium.otf")
+            font_path = resolve_runtime_str("assets", "NotoSerifCJKsc-Medium.otf")
             x, y = self.top_left
             final_img[:] = draw_text(
                 final_img,

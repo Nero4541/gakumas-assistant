@@ -16,5 +16,7 @@ rapidocr==3.2.0
 peewee
 openai
 pyyaml
-pywebview
+pywebview; platform_system == "Windows"
+pywebview; platform_system == "Darwin"
+pywebview[pyside6]; platform_system == "Linux"
 requests

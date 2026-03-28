@@ -7,6 +7,7 @@ from pathlib import Path
 import onnxruntime as ort
 
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_cache_path
 
 class DMLManager:
     _lock = threading.Lock()
@@ -44,20 +45,13 @@ class DMLManager:
         if custom_cache_dir := os.environ.get("GAKUMAS_CACHE_DIR"):
             candidates.append(Path(custom_cache_dir))
 
-        if platform.system() == "Darwin":
-            candidates.append(Path.home() / "Library" / "Caches" / "gakumas-assistant")
-        else:
-            candidates.append(
-                Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "gakumas-assistant"
-            )
-
-        candidates.append(Path.cwd() / ".cache" / "gakumas-assistant")
+        candidates.append(resolve_cache_path("onnxruntime"))
         candidates.append(Path(tempfile.gettempdir()) / "gakumas-assistant")
 
         for base_dir in candidates:
             try:
                 base_dir.mkdir(parents=True, exist_ok=True)
-                return base_dir / "onnxruntime"
+                return base_dir
             except OSError:
                 continue
 

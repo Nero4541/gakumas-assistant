@@ -2,12 +2,10 @@ import os
 import platform
 import shutil
 import threading
-import webbrowser
+from typing import TYPE_CHECKING
 
 import cv2
-
 import config
-from fastapi import FastAPI
 from time import sleep
 
 from src.constants.path.data_path import DataPath
@@ -19,25 +17,25 @@ from src.core.device.Android.app import Android_App
 from src.core.device.unavailable_device import UnavailableDevice
 from src.core.inference.yolo_engine import YoloInferenceEngine
 from src.core.services.task_service import TaskService
-from src.core.services.clip_services import CLIPServiceManager
 from src.core.services.resource_update_service import ResourceUpdateService
-from src.core.web.routers import register_routes
 from src.core.web.websocket import WebSocketManager
 from src.core.device.windows_compat import (
     create_windows_device,
     get_windows_unavailability_reason,
     windows_pc_mode_is_available,
 )
-from src.core.services.game_utils import GameUtils
-from src.core.tasks.middlewares.middleware_register import register_middlewares
 from src.core.services.config_service import ConfigService
-from src.core.tasks.task_register import register_tasks
 from src.entity.BaseDevice import BaseDevice
 from src.entity.Game.Game_Info import GameStatusManager
 from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_data_str
+
+if TYPE_CHECKING:
+    from src.core.services.clip_services import CLIPServiceManager
+    from src.core.services.game_utils import GameUtils
 
 class AppProcessor:
     data_path: str
@@ -52,11 +50,11 @@ class AppProcessor:
     # 图像debug工具
     debug_tools: DebugTools
     # 游戏实用工具
-    game_utils: GameUtils
+    game_utils: "GameUtils | None"
     # 游戏状态管理器
     game_status_manager: GameStatusManager
     # 图像记忆管理器
-    clip_manager: CLIPServiceManager
+    clip_manager: "CLIPServiceManager | None"
     # Websocket Session管理器
     ws_manager: WebSocketManager
     # 资源仓库更新检查服务
@@ -64,6 +62,10 @@ class AppProcessor:
 
     def __init__(self):
         self._device_state_lock = threading.RLock()
+        self._resource_state_lock = threading.RLock()
+        self._resource_ready = False
+        self._task_services_registered = False
+        self._shutdown_requested = threading.Event()
         self._device_status = {
             "available": False,
             "code": "initializing",
@@ -75,27 +77,40 @@ class AppProcessor:
         logger.debug(self.config_service())
         self.device = self.create_device_instance()
         self.yolo_engine = YoloInferenceEngine(self.device)
-        self.clip_manager = CLIPServiceManager()
         self.debug_tools = DebugTools()
         self.yolo_engine.register_infer_callback(self._send_frame_to_clients)
         self.yolo_engine.register_capture_failure_callback(self._handle_device_capture_failure)
         self.task_queue = TaskService(self)
         self.game_status_manager = GameStatusManager()
-        self.game_utils = GameUtils(self)
         self.ws_manager = WebSocketManager()
         self.resource_update_service = ResourceUpdateService(self)
+        self.clip_manager = None
+        self.game_utils = None
+        self._register_task_services()
+        self._register_config_listening()
+        if self.resource_update_service.has_required_resources():
+            self.ensure_resource_dependencies_initialized()
+        else:
+            logger.warning("游戏数据库资源尚未就绪，等待用户确认后下载。")
+            logger.success("Application Started In Bootstrap Mode")
+
+    def _register_task_services(self):
+        if self._task_services_registered:
+            return
+        from src.core.tasks.middlewares.middleware_register import register_middlewares
+        from src.core.tasks.task_register import register_tasks
+
         register_tasks(self)
         register_middlewares(self)
-        self._register_config_listening()
-        self._load_game_database()
-        logger.success("Application Initialized")
+        self._task_services_registered = True
 
     def _init_environment(self):
         """
         初始化环境
         """
-        self.data_path = os.path.join(os.getcwd(), "data")
+        self.data_path = resolve_data_str()
         os.makedirs(self.data_path, exist_ok=True)
+        os.makedirs(resolve_data_str("CLIP"), exist_ok=True)
         if os.path.exists(DebugPath.BasePath()):
             shutil.rmtree(DebugPath.BasePath())
         os.makedirs(DebugPath.BasePath(), exist_ok=True)
@@ -139,10 +154,58 @@ class AppProcessor:
         logger.success("Load game database successfully")
 
     def reload_game_database(self):
-        self._load_game_database(force_reload=True)
+        self.ensure_resource_dependencies_initialized(force_reload=True)
+
+    def is_resource_ready(self) -> bool:
+        with self._resource_state_lock:
+            return self._resource_ready
+
+    def has_required_resources(self) -> bool:
+        return self.resource_update_service.has_required_resources()
+
+    def ensure_resource_dependencies_initialized(self, force_reload: bool = False) -> bool:
+        with self._resource_state_lock:
+            if not self.resource_update_service.has_required_resources():
+                self._resource_ready = False
+                return False
+
+            self._load_game_database(force_reload=force_reload)
+
+            if self.clip_manager is None:
+                from src.core.services.clip_services import CLIPServiceManager
+
+                self.clip_manager = CLIPServiceManager()
+
+            if self.game_utils is None:
+                from src.core.services.game_utils import GameUtils
+
+                self.game_utils = GameUtils(self)
+
+            self._resource_ready = True
+
+        self.start_inference_if_possible()
+        logger.success("Application Initialized")
+        return True
 
     def start_background_services(self):
         self.resource_update_service.start()
+
+    def request_app_shutdown(self):
+        self._shutdown_requested.set()
+
+    def is_shutdown_requested(self) -> bool:
+        return self._shutdown_requested.is_set()
+
+    def shutdown(self):
+        self._shutdown_requested.set()
+        try:
+            self.task_queue.stop()
+        except Exception as exc:
+            logger.debug(f"Skip task queue stop during shutdown: {exc}")
+        try:
+            self.yolo_engine.stop()
+        except Exception as exc:
+            logger.debug(f"Skip inference stop during shutdown: {exc}")
 
     def _describe_device_state(self, device: BaseDevice) -> dict:
         if bool(device):
@@ -194,6 +257,8 @@ class AppProcessor:
         self._update_device_state(self.device)
 
     def start_inference_if_possible(self) -> bool:
+        if not self.is_resource_ready():
+            return False
         if not self.device:
             return False
         if self.yolo_engine.running:

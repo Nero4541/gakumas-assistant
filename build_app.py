@@ -1,4 +1,5 @@
 import io
+import importlib.util
 import json
 import os
 import platform
@@ -11,6 +12,17 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+from src.constants.resource_repositories import (
+    GAKUMAS_DIFF_FILES,
+    RESOURCE_REPOSITORIES,
+    TRANSLATION_FILES,
+)
+from src.utils.runtime_paths import (
+    RUNTIME_METADATA_FILE_NAME,
+    STORAGE_MODE_MERGED,
+    STORAGE_MODE_PORTABLE,
+)
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -18,8 +30,9 @@ WEBUI_DIR = PROJECT_ROOT / "web-ui"
 PROJECT_NAME = "Gakumas Assistant"
 TARGET_PLATFORM = platform.system()
 NUITKA_OUTPUT_DIR = PROJECT_ROOT / "out"
-APP_DIST_DIR = NUITKA_OUTPUT_DIR / "app.dist"
+APP_DIST_DIR = NUITKA_OUTPUT_DIR / f"{PROJECT_NAME}.dist"
 APP_BUNDLE_DIR = NUITKA_OUTPUT_DIR / f"{PROJECT_NAME}.app"
+MACOS_PORTABLE_DIR = NUITKA_OUTPUT_DIR / PROJECT_NAME
 LOGO = PROJECT_ROOT / "assets" / "images" / "gakumas_logo.png"
 NUITKA_REPORT_PATH = PROJECT_ROOT / ".cache" / "nuitka-compilation-report.xml"
 WEBUI_DIST_DIR = PROJECT_ROOT / "dist"
@@ -33,25 +46,6 @@ WEBUI_BUILD_INPUTS = (
     WEBUI_DIR / "eslint.config.js",
 )
 
-GAKUMAS_DIFF_FILES = [
-    "Item.yaml",
-    "Character.yaml",
-    "IdolCard.yaml",
-    "SupportCard.yaml",
-    "ProduceCard.yaml",
-    "ProduceCardCustomize.yaml",
-    "ProduceCardSearch.yaml",
-    "ProduceCardStatusEnchant.yaml",
-    "EffectGroup.yaml",
-    "ProduceExamEffect.yaml",
-    "ProduceExamTrigger.yaml",
-    "ProduceCardGrowEffect.yaml",
-    "ProduceExamStatusEnchant.yaml",
-    "ProduceItem.yaml",
-    "ProduceDrink.yaml",
-    "ProduceSkill.yaml",
-]
-TRANSLATION_FILES = [Path(name).with_suffix(".json").name for name in GAKUMAS_DIFF_FILES]
 MODEL_FILES = [
     "base_ui.onnx",
     "base_ui_meta.json",
@@ -66,20 +60,52 @@ RAPIDOCR_DATA_FILES = [
     "rapidocr/models/ch_ppocr_mobile_v2.0_cls_infer.onnx",
     "rapidocr/models/japan_PP-OCRv4_rec_infer.onnx",
 ]
-RESOURCE_REPOSITORIES = (
-    {
-        "name": "gakumasu-diff",
-        "path": Path("assets") / "gakumasu-diff",
-        "owner": "vertesan",
-        "repo": "gakumasu-diff",
-    },
-    {
-        "name": "GakumasTranslationData",
-        "path": Path("assets") / "GakumasTranslationData",
-        "owner": "chinosk6",
-        "repo": "GakumasTranslationData",
-    },
-)
+PYWEBVIEW_DATA_DIRECTORIES = [
+    "js",
+    "lib",
+]
+DEFAULT_PACKAGE_STORAGE_MODE = STORAGE_MODE_PORTABLE
+VALID_PACKAGE_STORAGE_MODES = {STORAGE_MODE_PORTABLE, STORAGE_MODE_MERGED}
+
+
+def _detect_qt_plugin_name() -> str | None:
+    for package_name, plugin_name in (
+        ("PySide6", "pyside6"),
+        ("PyQt6", "pyqt6"),
+        ("PySide2", "pyside2"),
+        ("PyQt5", "pyqt5"),
+    ):
+        if importlib.util.find_spec(package_name):
+            return plugin_name
+    return None
+
+
+def _normalize_package_storage_mode(value: str | None) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"portable", "bundled", "local"}:
+        return STORAGE_MODE_PORTABLE
+    if normalized in {"merged", "managed", "user", "userdata"}:
+        return STORAGE_MODE_MERGED
+    return None
+
+
+def _get_package_storage_mode(argv: list[str] | None = None) -> str:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    raw_mode = os.getenv("GAKUMAS_PACKAGE_STORAGE_MODE", DEFAULT_PACKAGE_STORAGE_MODE)
+
+    for arg in argv:
+        if arg in {"--portable", "--storage-mode=portable"}:
+            raw_mode = STORAGE_MODE_PORTABLE
+        elif arg in {"--merged", "--storage-mode=merged"}:
+            raw_mode = STORAGE_MODE_MERGED
+        elif arg.startswith("--storage-mode="):
+            raw_mode = arg.split("=", 1)[1]
+
+    normalized_mode = _normalize_package_storage_mode(raw_mode)
+    if normalized_mode is None:
+        valid_modes = ", ".join(sorted(VALID_PACKAGE_STORAGE_MODES))
+        raise SystemExit(f"Invalid storage mode: {raw_mode!r}. Expected one of: {valid_modes}")
+    return normalized_mode
 
 
 def ignore_unnecessary(_dir, files):
@@ -190,7 +216,7 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
         nuitka_cmd.append(f"--include-data-files={source_path}={relative_path}")
 
 
-def _add_nuitka_dependency_pruning(nuitka_cmd: list[str]):
+def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
     # Uvicorn standard extras pull in optional reload/runtime helpers that this app does not use.
     nofollow_modules = [
         "tkinter",
@@ -206,10 +232,29 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str]):
         "uvloop",
         "dotenv",
     ]
-    if TARGET_PLATFORM != "Windows":
+    if TARGET_PLATFORM == "Darwin":
         nofollow_modules.extend(
             [
-                "webview",
+                "PySide6",
+                "shiboken6",
+                "qtpy",
+                "webview.platforms.qt",
+            ]
+        )
+        if not _use_embedded_webview(storage_mode):
+            nofollow_modules.extend(
+                [
+                    "Foundation",
+                    "AppKit",
+                    "Cocoa",
+                    "objc",
+                    "WebKit",
+                    "webview.platforms.cocoa",
+                ]
+            )
+    if TARGET_PLATFORM == "Linux":
+        nofollow_modules.extend(
+            [
                 "Foundation",
                 "AppKit",
                 "Cocoa",
@@ -239,6 +284,22 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str]):
     ]
     for pattern in noinclude_data_patterns:
         nuitka_cmd.append(f"--noinclude-data-files={pattern}")
+    if _use_embedded_webview(storage_mode):
+        nuitka_cmd.append("--include-package=webview")
+    if TARGET_PLATFORM == "Linux":
+        qt_plugin_name = _detect_qt_plugin_name()
+        if qt_plugin_name is None:
+            raise RuntimeError(
+                "No supported Qt binding is installed. Install pywebview[qt] or another supported Qt extra before packaging."
+        )
+        nuitka_cmd.append(f"--enable-plugin={qt_plugin_name}")
+        nuitka_cmd.append("--disable-plugin=pywebview")
+        nuitka_cmd.append("--include-module=webview.platforms.qt")
+    elif TARGET_PLATFORM == "Darwin":
+        nuitka_cmd.append("--disable-plugin=pywebview")
+        if _use_macos_app_bundle(storage_mode):
+            nuitka_cmd.append("--include-module=webview.platforms.cocoa")
+
 
 
 def _add_optional_nuitka_report(nuitka_cmd: list[str]):
@@ -289,29 +350,62 @@ def _remove_existing_path(path: Path):
 def _prepare_nuitka_output_paths():
     if os.getenv("NUITKA_CLEAN_BUILD"):
         _remove_existing_path(NUITKA_OUTPUT_DIR / "app.build")
+    _remove_existing_path(NUITKA_OUTPUT_DIR / "app.build")
+    _remove_existing_path(NUITKA_OUTPUT_DIR / "app.dist")
     _remove_existing_path(APP_DIST_DIR)
     _remove_existing_path(APP_BUNDLE_DIR)
+    _remove_existing_path(MACOS_PORTABLE_DIR)
     _remove_existing_path(NUITKA_OUTPUT_DIR / _get_output_filename())
 
 
-def _get_nuitka_platform_options() -> list[str]:
+def _use_macos_app_bundle(storage_mode: str) -> bool:
+    return TARGET_PLATFORM == "Darwin" and storage_mode == STORAGE_MODE_MERGED
+
+
+def _use_embedded_webview(storage_mode: str) -> bool:
+    return not (TARGET_PLATFORM == "Darwin" and storage_mode == STORAGE_MODE_PORTABLE)
+
+
+def _get_nuitka_platform_options(storage_mode: str) -> list[str]:
+    compilation_mode = "--standalone"
+    nuitka_cmd = []
+    if _use_macos_app_bundle(storage_mode):
+        compilation_mode = "--mode=app"
+        nuitka_cmd.extend(
+            [
+                f"--output-folder-name={PROJECT_NAME}",
+                f"--macos-app-name={PROJECT_NAME}",
+            ]
+        )
+    elif TARGET_PLATFORM == "Darwin":
+        nuitka_cmd.append(f"--output-folder-name={PROJECT_NAME}")
+
     nuitka_cmd = [
-        "--standalone",
-        "--enable-plugin=no-qt",
+        compilation_mode,
         "--module-parameter=torch-disable-jit=no",
         f"--output-filename={_get_output_filename()}",
         f"--output-dir={NUITKA_OUTPUT_DIR}",
         "--no-deployment-flag=self-execution",
+        *nuitka_cmd,
     ]
+    if TARGET_PLATFORM == "Windows":
+        nuitka_cmd.append("--enable-plugin=no-qt")
 
     if shutil.which("upx"):
         nuitka_cmd.append("--enable-plugin=upx")
 
     if TARGET_PLATFORM == "Windows":
         nuitka_cmd.append(f"--windows-icon-from-ico={LOGO}")
-        nuitka_cmd.append("--windows-console-mode=attach")
+        console_mode = "attach" if storage_mode == STORAGE_MODE_PORTABLE else "disable"
+        nuitka_cmd.append(f"--windows-console-mode={console_mode}")
     elif TARGET_PLATFORM == "Linux":
         nuitka_cmd.append(f"--linux-icon={LOGO}")
+    elif _use_macos_app_bundle(storage_mode):
+        if LOGO.exists():
+            nuitka_cmd.append(f"--macos-app-icon={LOGO}")
+        else:
+            nuitka_cmd.append("--macos-app-icon=none")
+        nuitka_cmd.append("--macos-app-console-mode=disable")
 
     return nuitka_cmd
 
@@ -376,12 +470,12 @@ def _read_git_version(repo_path: Path) -> dict[str, str] | None:
     }
 
 
-def _load_repository_metadata(repository: dict) -> dict[str, str]:
+def _load_repository_metadata(repository) -> dict[str, str]:
     source_metadata_path = (
         PROJECT_ROOT
         / "data"
         / "resource_repository_versions"
-        / f"{repository['name']}.json"
+        / f"{repository.name}.json"
     )
     if source_metadata_path.exists():
         with source_metadata_path.open("r", encoding="utf-8") as file_obj:
@@ -389,23 +483,23 @@ def _load_repository_metadata(repository: dict) -> dict[str, str]:
         metadata.setdefault("source", "metadata")
         return metadata
 
-    git_version = _read_git_version(PROJECT_ROOT / repository["path"])
+    git_version = _read_git_version(PROJECT_ROOT / repository.path)
     if git_version is not None:
         return {
-            "name": repository["name"],
-            "path": str(repository["path"]).replace("\\", "/"),
-            "owner": repository["owner"],
-            "repo": repository["repo"],
+            "name": repository.name,
+            "path": repository.path.replace("\\", "/"),
+            "owner": repository.owner,
+            "repo": repository.repo,
             "commit": git_version.get("commit", ""),
             "branch": git_version.get("branch", ""),
             "source": git_version.get("source", "git"),
         }
 
     return {
-        "name": repository["name"],
-        "path": str(repository["path"]).replace("\\", "/"),
-        "owner": repository["owner"],
-        "repo": repository["repo"],
+        "name": repository.name,
+        "path": repository.path.replace("\\", "/"),
+        "owner": repository.owner,
+        "repo": repository.repo,
         "commit": "",
         "branch": "",
         "source": "build",
@@ -420,19 +514,20 @@ def _write_resource_repository_versions(app_dist_path: Path):
         metadata = _load_repository_metadata(repository)
         metadata.update(
             {
-                "name": repository["name"],
-                "path": str(repository["path"]).replace("\\", "/"),
-                "owner": repository["owner"],
-                "repo": repository["repo"],
+                "name": repository.name,
+                "path": repository.path.replace("\\", "/"),
+                "owner": repository.owner,
+                "repo": repository.repo,
                 "updated_at": updated_at,
             }
         )
-        target_path = target_dir / f"{repository['name']}.json"
+        target_path = target_dir / f"{repository.name}.json"
         with target_path.open("w", encoding="utf-8") as file_obj:
             json.dump(metadata, file_obj, ensure_ascii=False, indent=2)
 
 
-def _copy_runtime_files(app_dist_path: Path):
+def _copy_runtime_files(app_dist_path: Path, storage_mode: str):
+    purelib_dir = Path(sysconfig.get_paths()["purelib"])
     _copy_file(
         PROJECT_ROOT / "assets" / "images" / "gakumas_logo.png",
         app_dist_path / "assets" / "images" / "gakumas_logo.png",
@@ -441,24 +536,39 @@ def _copy_runtime_files(app_dist_path: Path):
         PROJECT_ROOT / "assets" / "NotoSerifCJKsc-Medium.otf",
         app_dist_path / "assets" / "NotoSerifCJKsc-Medium.otf",
     )
-    _copy_selected_files(
-        PROJECT_ROOT / "assets" / "gakumasu-diff",
-        app_dist_path / "assets" / "gakumasu-diff",
-        GAKUMAS_DIFF_FILES,
-    )
-    _copy_selected_files(
-        PROJECT_ROOT / "assets" / "GakumasTranslationData" / "local-files" / "masterTrans",
-        app_dist_path / "assets" / "GakumasTranslationData" / "local-files" / "masterTrans",
-        TRANSLATION_FILES,
-    )
+    include_repository_assets = os.getenv("INCLUDE_GAME_RESOURCE_REPOSITORIES", "").lower() in {"1", "true", "yes"}
+    if include_repository_assets:
+        _copy_selected_files(
+            PROJECT_ROOT / "assets" / "gakumasu-diff",
+            app_dist_path / "assets" / "gakumasu-diff",
+            list(GAKUMAS_DIFF_FILES),
+        )
+        _copy_selected_files(
+            PROJECT_ROOT / "assets" / "GakumasTranslationData" / "local-files" / "masterTrans",
+            app_dist_path / "assets" / "GakumasTranslationData" / "local-files" / "masterTrans",
+            list(TRANSLATION_FILES),
+        )
+    else:
+        print("Skipping bundled game database and localization resources; they will be downloaded on first launch")
     _copy_directory(PROJECT_ROOT / "bin", app_dist_path / "bin")
     _copy_directory(PROJECT_ROOT / "dist", app_dist_path / "dist")
     _copy_selected_files(PROJECT_ROOT / "model", app_dist_path / "model", MODEL_FILES)
+    if _use_embedded_webview(storage_mode):
+        for directory_name in PYWEBVIEW_DATA_DIRECTORIES:
+            source_dir = purelib_dir / "webview" / directory_name
+            if source_dir.exists():
+                _copy_directory(source_dir, app_dist_path / "webview" / directory_name)
     _write_resource_repository_versions(app_dist_path)
-    if TARGET_PLATFORM != "Windows":
-        webview_loader_path = app_dist_path / "bin" / "WebView2Loader.dll"
-        if webview_loader_path.exists():
-            webview_loader_path.unlink()
+
+
+def _write_runtime_metadata(runtime_root: Path, storage_mode: str):
+    metadata_path = runtime_root / RUNTIME_METADATA_FILE_NAME
+    metadata = {
+        "storage_mode": storage_mode,
+        "embedded_webview": _use_embedded_webview(storage_mode),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _copy_directory_contents(source: Path, target: Path):
@@ -492,6 +602,22 @@ def _get_macos_bundle_versions() -> tuple[str, str]:
 def _generate_macos_bundle_icon(resources_dir: Path) -> Path | None:
     if not LOGO.exists():
         return None
+    icns_path = resources_dir / "AppIcon.icns"
+
+    try:
+        from PIL import Image
+
+        with Image.open(LOGO) as icon_image:
+            icon_image.convert("RGBA").save(
+                icns_path,
+                format="ICNS",
+                sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
+            )
+        return icns_path
+    except Exception:
+        if icns_path.exists():
+            icns_path.unlink()
+
     if not shutil.which("sips") or not shutil.which("iconutil"):
         return None
 
@@ -507,8 +633,6 @@ def _generate_macos_bundle_icon(resources_dir: Path) -> Path | None:
         "icon_512x512.png": 512,
         "icon_512x512@2x.png": 1024,
     }
-    icns_path = resources_dir / "AppIcon.icns"
-
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             iconset_dir = Path(temp_dir) / "AppIcon.iconset"
@@ -544,24 +668,48 @@ def _generate_macos_bundle_icon(resources_dir: Path) -> Path | None:
 
 def _write_macos_bundle_metadata(bundle_dir: Path, icon_file: Path | None):
     short_version, build_version = _get_macos_bundle_versions()
-    plist_data = {
-        "CFBundleDisplayName": PROJECT_NAME,
-        "CFBundleExecutable": PROJECT_NAME,
-        "CFBundleIdentifier": "com.pigeonserver.gakumasassistant",
-        "CFBundleInfoDictionaryVersion": "6.0",
-        "CFBundleName": PROJECT_NAME,
-        "CFBundlePackageType": "APPL",
-        "CFBundleShortVersionString": short_version,
-        "CFBundleVersion": build_version,
-        "NSHighResolutionCapable": True,
-    }
+    info_plist_path = bundle_dir / "Contents" / "Info.plist"
+    plist_data = {}
+    if info_plist_path.exists():
+        with info_plist_path.open("rb") as file_obj:
+            plist_data = plistlib.load(file_obj)
+
+    plist_data.update(
+        {
+            "CFBundleDisplayName": PROJECT_NAME,
+            "CFBundleExecutable": PROJECT_NAME,
+            "CFBundleIdentifier": "com.pigeonserver.gakumasassistant",
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "CFBundleName": PROJECT_NAME,
+            "CFBundlePackageType": "APPL",
+            "CFBundleShortVersionString": short_version,
+            "CFBundleVersion": build_version,
+            "NSHighResolutionCapable": True,
+        }
+    )
     if icon_file is not None:
         plist_data["CFBundleIconFile"] = icon_file.name
 
-    info_plist_path = bundle_dir / "Contents" / "Info.plist"
     info_plist_path.parent.mkdir(parents=True, exist_ok=True)
     with info_plist_path.open("wb") as file_obj:
         plistlib.dump(plist_data, file_obj)
+
+
+def _finalize_macos_bundle(bundle_dir: Path):
+    if not bundle_dir.exists():
+        raise FileNotFoundError(bundle_dir)
+    resources_dir = bundle_dir / "Contents" / "Resources"
+    resources_dir.mkdir(parents=True, exist_ok=True)
+    icon_file = _generate_macos_bundle_icon(resources_dir)
+    _write_macos_bundle_metadata(bundle_dir, icon_file)
+
+
+def _finalize_macos_portable_output() -> Path:
+    if not APP_DIST_DIR.exists():
+        raise FileNotFoundError(APP_DIST_DIR)
+    _remove_existing_path(MACOS_PORTABLE_DIR)
+    APP_DIST_DIR.rename(MACOS_PORTABLE_DIR)
+    return MACOS_PORTABLE_DIR
 
 
 def _create_macos_bundle_launcher(macos_dir: Path):
@@ -595,7 +743,7 @@ def _create_macos_app_bundle(app_dist_path: Path):
     _create_macos_bundle_launcher(macos_dir)
 
 
-def build_project():
+def build_project(storage_mode: str = DEFAULT_PACKAGE_STORAGE_MODE):
     if os.getenv("GITHUB_ACTIONS"):
         update_game_database()
 
@@ -604,7 +752,7 @@ def build_project():
     build_webui()
     _prepare_nuitka_output_paths()
 
-    nuitka_cmd = _get_nuitka_platform_options()
+    nuitka_cmd = _get_nuitka_platform_options(storage_mode)
 
     if os.getenv("GITHUB_ACTIONS") and TARGET_PLATFORM == "Windows":
         nuitka_cmd.append("--mingw64")
@@ -613,7 +761,7 @@ def build_project():
     if os.getenv("NUITKA_SHOW_PROGRESS"):
         nuitka_cmd.append("--show-progress")
 
-    _add_nuitka_dependency_pruning(nuitka_cmd)
+    _add_nuitka_dependency_pruning(nuitka_cmd, storage_mode)
     _add_optional_nuitka_report(nuitka_cmd)
     _add_rapidocr_data_files(nuitka_cmd)
 
@@ -622,10 +770,20 @@ def build_project():
         cwd=PROJECT_ROOT,
         check=True,
     )
-    _copy_runtime_files(APP_DIST_DIR)
-    if TARGET_PLATFORM == "Darwin":
-        _create_macos_app_bundle(APP_DIST_DIR)
+    runtime_target_dir = APP_DIST_DIR
+    if _use_macos_app_bundle(storage_mode):
+        runtime_target_dir = APP_BUNDLE_DIR / "Contents" / "MacOS"
+    _copy_runtime_files(runtime_target_dir, storage_mode)
+    _write_runtime_metadata(runtime_target_dir, storage_mode)
+    final_output_path = APP_DIST_DIR
+    if _use_macos_app_bundle(storage_mode):
+        _finalize_macos_bundle(APP_BUNDLE_DIR)
+        final_output_path = APP_BUNDLE_DIR
+    elif TARGET_PLATFORM == "Darwin":
+        final_output_path = _finalize_macos_portable_output()
+    print(f"Packaged runtime storage mode: {storage_mode}")
+    print(f"Final packaged output: {final_output_path}")
 
 
 if __name__ == "__main__":
-    build_project()
+    build_project(storage_mode=_get_package_storage_mode())

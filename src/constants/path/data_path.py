@@ -1,11 +1,13 @@
 import os
 
+from src.utils.runtime_paths import resolve_data_str, resolve_existing_resource_str
+
 
 class DataPath:
     DMMPlayerDLL_Log = os.path.expandvars(r"%APPDATA%\dmmgameplayer5\logs\dll.log")
-    DATABASE = os.path.join(os.getcwd(), 'data/db.sqlite3')
+    DATABASE = resolve_data_str("db.sqlite3")
     class GakumasuDiffData:
-        BASE = os.path.join(os.getcwd(), "assets/gakumasu-diff")
+        BASE = resolve_existing_resource_str("assets", "gakumasu-diff")
         ITEM = os.path.join(BASE, "Item.yaml")
         CHARACTER = os.path.join(BASE, "Character.yaml")
         IDOL_CARD = os.path.join(BASE, "IdolCard.yaml")
@@ -28,5 +30,5 @@ class DataPath:
         PRODUCE_SKILL = os.path.join(BASE, "ProduceSkill.yaml")
 
     class GakumasTranslationData:
-        BASE = os.path.join(os.getcwd(), "assets/GakumasTranslationData/local-files/masterTrans")
+        BASE = resolve_existing_resource_str("assets", "GakumasTranslationData", "local-files", "masterTrans")
         ITEM = os.path.join(BASE, "Item.json")

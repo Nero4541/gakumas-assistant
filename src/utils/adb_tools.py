@@ -9,6 +9,7 @@ from adbutils import AdbDevice
 
 from src.constants.device.adb import ADBOperation
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_runtime_str
 
 class ADBShell:
     __shell: adbutils.AdbConnection = None
@@ -81,7 +82,7 @@ def start_DroidCast(adb_device: AdbDevice) -> Tuple[bool, Optional[ADBShell]]:
         if "could not find class 'com.rayworks.droidcast.Main'" in msg:
             DC_CLASSPATH_ERROR = True
 
-    droidcast_apk = os.path.join(os.getcwd(), ADBOperation.ScreenCaptureService.Bin.DroidCast)
+    droidcast_apk = resolve_runtime_str(ADBOperation.ScreenCaptureService.Bin.DroidCast)
     try:
         adb_device.sync.push(droidcast_apk, "/data/local/tmp")
         adb_device.install_remote(f"/data/local/tmp/{os.path.basename(ADBOperation.ScreenCaptureService.Bin.DroidCast)}")

@@ -1,8 +1,10 @@
 import os
 
+from src.utils.runtime_paths import resolve_log_str
+
 
 class DebugPath:
-    __base = os.path.join(os.getcwd(), "logs", "debug")
+    __base = resolve_log_str("debug")
     __base_image = os.path.join(__base, "images")
 
     @classmethod

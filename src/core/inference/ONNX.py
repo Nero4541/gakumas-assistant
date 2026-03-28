@@ -13,6 +13,7 @@ import onnxruntime as ort
 from src.utils.dml_manager import DMLManager
 from src.utils.logger import logger
 from src.utils.opencv_tools import letterbox, center_crop
+from src.utils.runtime_paths import resolve_runtime_str
 
 
 @dataclass
@@ -312,7 +313,7 @@ class CLIPModelFromONNX:
 
     def __init__(self, model_path: str=None):
         if not model_path or not os.path.exists(model_path):
-            model_path = os.path.join(os.getcwd(), "model", "clip_visual.onnx")
+            model_path = resolve_runtime_str("model", "clip_visual.onnx")
         self.session = DMLManager.create_dml_session(model_path)
         self._input_name = self.session.get_inputs()[0].name
         self._lock = threading.Lock()

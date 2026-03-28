@@ -57,11 +57,40 @@ const settingEntries = computed(() => {
 const showDmmRefresh = computed(() => appStore.config?.base?.run_mode?.value === "PC")
 const showResourceUpdateTools = computed(() => Boolean(appStore.config?.base))
 const resourceUpdateBusy = computed(() => Boolean(appStore.resource_update_status?.checking || appStore.resource_update_status?.updating))
+const resourceUpdateChecking = computed(() => Boolean(appStore.resource_update_status?.checking && !appStore.resource_update_status?.updating))
 const resourceUpdateStatusText = computed(() => appStore.build_resource_update_status_text(appStore.resource_update_status))
-const resourceUpdateHasUpdate = computed(() => Boolean(appStore.resource_update_status?.has_update))
+const resourceUpdateHasAction = computed(() => {
+  const status = appStore.resource_update_status
+  return Boolean(status?.bootstrap_required || status?.has_update)
+})
 const resourceUpdateLastError = computed(() => appStore.resource_update_status?.last_error || "")
+const resourceUpdateProgress = computed(() => appStore.resource_update_status?.progress)
+const resourceUpdateProgressActive = computed(() => Boolean(resourceUpdateProgress.value?.active))
+const resourceUpdateProgressValue = computed(() => {
+  const progress = resourceUpdateProgress.value
+  if (!progress?.active) {
+    return 0
+  }
+  return progress.bytes_total > 0 ? progress.percent : progress.percent || progress.step_percent
+})
+const resourceUpdateProgressIndeterminate = computed(() => {
+  const progress = resourceUpdateProgress.value
+  if (!progress?.active) {
+    return false
+  }
+  return !progress.bytes_total && !(progress.percent > 0 || progress.step_percent > 0)
+})
+const resourceUpdateActionLabel = computed(() => (
+  appStore.resource_update_status?.bootstrap_required ? "下载所需资源" : "立即更新"
+))
+const resourceUpdateCheckLabel = computed(() => (
+  resourceUpdateChecking.value ? "检查中" : "检查更新"
+))
 const resourceUpdateStateLabel = computed(() => {
   const status = appStore.resource_update_status
+  if (status?.bootstrap_required && !status?.required_resources_ready) {
+    return status?.updating ? "下载中" : "待下载"
+  }
   if (status?.updating) {
     return "更新中"
   }
@@ -81,6 +110,9 @@ const resourceUpdateStateLabel = computed(() => {
 })
 const resourceUpdateStateColor = computed(() => {
   const status = appStore.resource_update_status
+  if (status?.bootstrap_required && !status?.required_resources_ready) {
+    return status?.updating ? "primary" : "warning"
+  }
   if (status?.updating || status?.checking) {
     return "primary"
   }
@@ -94,6 +126,11 @@ const resourceUpdateStateColor = computed(() => {
 })
 const resourceUpdateHeadline = computed(() => {
   const status = appStore.resource_update_status
+  if (status?.bootstrap_required && !status?.required_resources_ready) {
+    return status?.updating
+      ? "正在下载首次启动所需的游戏数据库和本地化资源"
+      : "当前安装包不再内置游戏数据库和本地化资源，首次启动需要先下载"
+  }
   if (status?.updating) {
     return "正在同步资源仓库并重新加载游戏数据库"
   }
@@ -158,6 +195,14 @@ async function applyResourceUpdates() {
   await appStore.apply_resource_updates()
 }
 
+async function triggerResourceAction() {
+  if (appStore.resource_update_status?.bootstrap_required) {
+    await appStore.start_required_resource_download()
+    return
+  }
+  await applyResourceUpdates()
+}
+
 function reset() {
   dialogs.confirm("是否要重置所有设置项", "请谨慎操作，该操作回导致所有设置项恢复默认（包括任务设置）").then(() => {
     appStore.reset_config();
@@ -209,6 +254,28 @@ const drawerValue = computed({
           </div>
           <div class="resource-update-panel__meta">{{ resourceUpdateStatusText }}</div>
           <div
+            v-if="appStore.resource_update_status?.bootstrap_required && !appStore.resource_update_status?.required_resources_ready"
+            class="resource-update-panel__notice resource-update-panel__notice--info"
+          >
+            首次启动前需要先下载游戏数据库和本地化资源。下载失败会自动重试，完成后程序会自动继续初始化。
+          </div>
+          <div v-if="resourceUpdateProgressActive" class="resource-update-panel__progress">
+            <div class="resource-update-panel__progress-head">
+              <span>{{ resourceUpdateProgress?.title || "正在处理资源" }}</span>
+              <span>{{ resourceUpdateProgressValue.toFixed(1) }}%</span>
+            </div>
+            <v-progress-linear
+              :model-value="resourceUpdateProgressValue"
+              :indeterminate="resourceUpdateProgressIndeterminate"
+              color="primary"
+              rounded
+              height="10"
+            />
+            <div class="resource-update-panel__progress-meta">
+              {{ resourceUpdateProgress?.message || resourceUpdateStatusText }}
+            </div>
+          </div>
+          <div
             v-if="resourceUpdateLastError"
             class="resource-update-panel__notice resource-update-panel__notice--warning"
           >
@@ -226,19 +293,19 @@ const drawerValue = computed({
               :disabled="resourceUpdateBusy"
               @click="checkResourceUpdates"
             >
-              检查更新
+              {{ resourceUpdateCheckLabel }}
             </v-btn>
             <v-btn
-              v-if="resourceUpdateHasUpdate"
+              v-if="resourceUpdateHasAction"
               class="resource-update-panel__button"
-              color="success"
+              :color="appStore.resource_update_status?.bootstrap_required ? 'primary' : 'success'"
               variant="tonal"
-              prepend-icon="md:system_update_alt"
+              :prepend-icon="appStore.resource_update_status?.bootstrap_required ? 'md:download' : 'md:system_update_alt'"
               :loading="Boolean(appStore.resource_update_status?.updating)"
               :disabled="resourceUpdateBusy"
-              @click="applyResourceUpdates"
+              @click="triggerResourceAction"
             >
-              立即更新
+              {{ resourceUpdateActionLabel }}
             </v-btn>
           </div>
         </div>
@@ -407,6 +474,25 @@ const drawerValue = computed({
 .resource-update-panel__notice--info {
   background: rgba(66, 165, 245, 0.14);
   color: #bbdefb;
+}
+
+.resource-update-panel__progress {
+  display: grid;
+  gap: 8px;
+}
+
+.resource-update-panel__progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.resource-update-panel__progress-meta {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .resource-update-panel__actions {

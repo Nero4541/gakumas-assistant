@@ -11,6 +11,32 @@ export interface ResourceRepositoryStatus {
   error: string
 }
 
+export interface ResourceBootstrapMissingResource {
+  name: string
+  path: string
+  required_count: number
+  missing_count: number
+  missing_paths: string[]
+}
+
+export interface ResourceUpdateProgress {
+  active: boolean
+  phase: string
+  title: string
+  message: string
+  repository: string
+  repository_path: string
+  current_step: number
+  total_steps: number
+  step_percent: number
+  percent: number
+  bytes_downloaded: number
+  bytes_total: number
+  attempt: number
+  max_attempts: number
+  retry_wait_seconds: number
+}
+
 export interface ResourceUpdateStatus {
   enabled: boolean
   check_on_startup: boolean
@@ -23,5 +49,9 @@ export interface ResourceUpdateStatus {
   next_check_at: string | null
   last_error: string
   update_signature: string
+  required_resources_ready: boolean
+  bootstrap_required: boolean
+  missing_required_resources: ResourceBootstrapMissingResource[]
+  progress: ResourceUpdateProgress
   repositories: ResourceRepositoryStatus[]
 }

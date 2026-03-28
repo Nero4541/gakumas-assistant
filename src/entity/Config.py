@@ -362,7 +362,7 @@ class _Base(_BaseConfigGroup):
     )
     # 是否启用资源仓库更新检查
     enabled_check_resource_updates = ConfigItem(
-        default_value=False,
+        default_value=True,
         data_type=bool,
         ui=ConfigItemUI(
             label="定时检查资源仓库更新",
@@ -373,7 +373,7 @@ class _Base(_BaseConfigGroup):
     )
     # 启动时检查资源仓库更新
     check_resource_updates_on_startup = ConfigItem(
-        default_value=False,
+        default_value=True,
         data_type=bool,
         ui=ConfigItemUI(
             label="启动时检查资源仓库更新",
@@ -399,6 +399,30 @@ class _Base(_BaseConfigGroup):
             ],
             visible_if={"base.enabled_check_resource_updates": True},
             order=137,
+        )
+    )
+    gakumasu_diff_repository_url = ConfigItem(
+        default_value="https://github.com/vertesan/gakumasu-diff.git",
+        data_type=str,
+        verify=r"(?:(?:https?|ssh|git)://\S+|git@[^:]+:\S+)",
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="gakumasu-diff 仓库 URL",
+            hint="资源下载与更新使用的仓库地址。修改后会立即重新检查更新状态。（如果你不知道这是什么，请不要更改）",
+            resettable=True,
+            order=138,
+        )
+    )
+    gakumas_translation_data_repository_url = ConfigItem(
+        default_value="https://github.com/chinosk6/GakumasTranslationData.git",
+        data_type=str,
+        verify=r"(?:(?:https?|ssh|git)://\S+|git@[^:]+:\S+)",
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="GakumasTranslationData 仓库 URL",
+            hint="资源下载与更新使用的仓库地址。修改后会立即重新检查更新状态。（如果你不知道这是什么，请不要更改）",
+            resettable=True,
+            order=139,
         )
     )
 

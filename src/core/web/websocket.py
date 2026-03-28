@@ -43,7 +43,8 @@ class WebSocketManager(metaclass=SingletonMeta):
 
     def disconnect(self, websocket: WebSocket):
         """移除 WebSocket 连接"""
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     @staticmethod
     async def send_message(data: WebSocketData, websocket: WebSocket):

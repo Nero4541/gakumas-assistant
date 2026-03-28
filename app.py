@@ -1,5 +1,6 @@
 import asyncio
-import os.path
+import importlib
+import os
 import platform
 import sys
 import threading
@@ -11,18 +12,24 @@ from time import sleep
 import uvicorn
 from fastapi import FastAPI
 
+from src.utils.runtime_paths import embedded_webview_enabled, get_runtime_root, resolve_runtime_str
+
+# Normalize the process working directory early so legacy relative paths
+# resolve against the packaged runtime root instead of the caller's shell cwd.
+os.chdir(str(get_runtime_root()))
+
+if platform.system() == "Linux":
+    os.environ.setdefault("QT_API", "pyside6")
+    os.environ.setdefault("FORCE_QT_API", "1")
+    os.environ.setdefault("PYWEBVIEW_GUI", "qt")
+
 from src.core.web.routers import register_routes
 from src.utils.logger import logger
 from src.utils.args import args
 from src.main import AppProcessor
 
-try:
-    import webview as WEBVIEW_MODULE
-except Exception as exc:
-    WEBVIEW_MODULE = None
-    WEBVIEW_IMPORT_ERROR = exc
-else:
-    WEBVIEW_IMPORT_ERROR = None
+WEBVIEW_MODULE = None
+WEBVIEW_IMPORT_ERROR = None
 
 PYWEBVIEW_WINDOW_BRIDGE = None
 
@@ -114,10 +121,36 @@ def start_webapp(core_processor: AppProcessor):
     )
 
 
-def _start_native_webview(url: str):
-    global PYWEBVIEW_WINDOW_BRIDGE
-    if WEBVIEW_MODULE is None:
+def _webview_enabled_for_build() -> bool:
+    return embedded_webview_enabled()
+
+
+def _load_pywebview_module():
+    global WEBVIEW_MODULE, WEBVIEW_IMPORT_ERROR
+    if WEBVIEW_MODULE is not None:
+        return WEBVIEW_MODULE
+    if WEBVIEW_IMPORT_ERROR is not None:
         raise RuntimeError("pywebview is unavailable") from WEBVIEW_IMPORT_ERROR
+    if not _webview_enabled_for_build():
+        WEBVIEW_IMPORT_ERROR = RuntimeError("Embedded WebView is disabled for this build.")
+        raise RuntimeError("Embedded WebView is disabled for this build.") from WEBVIEW_IMPORT_ERROR
+
+    try:
+        if platform.system() == "Linux":
+            importlib.import_module("webview.platforms.qt")
+        elif platform.system() == "Darwin":
+            os.environ.setdefault("PYWEBVIEW_GUI", "cocoa")
+            importlib.import_module("webview.platforms.cocoa")
+        WEBVIEW_MODULE = importlib.import_module("webview")
+        return WEBVIEW_MODULE
+    except Exception as exc:
+        WEBVIEW_IMPORT_ERROR = exc
+        raise RuntimeError("pywebview is unavailable") from exc
+
+
+def _start_pywebview(url: str):
+    global PYWEBVIEW_WINDOW_BRIDGE
+    webview_module = _load_pywebview_module()
 
     window_options = {
         "width": 1200,
@@ -138,16 +171,31 @@ def _start_native_webview(url: str):
     PYWEBVIEW_WINDOW_BRIDGE = PyWebviewWindowBridge()
     window_options["js_api"] = PYWEBVIEW_WINDOW_BRIDGE
 
-    window = WEBVIEW_MODULE.create_window("Gakumas Assistant", url, **window_options)
+    window = webview_module.create_window("Gakumas Assistant", url, **window_options)
     PYWEBVIEW_WINDOW_BRIDGE.bind_window(window)
-    icon_path = os.path.join(os.getcwd(), "assets", "images", "gakumas_logo.png")
+    icon_path = resolve_runtime_str("assets", "images", "gakumas_logo.png")
     start_kwargs = {}
     if os.path.exists(icon_path):
         start_kwargs["icon"] = icon_path
-    WEBVIEW_MODULE.start(**start_kwargs)
+    if platform.system() == "Linux":
+        start_kwargs["gui"] = "qt"
+    elif platform.system() == "Darwin":
+        start_kwargs["gui"] = "cocoa"
+    webview_module.start(**start_kwargs)
 
 
-def _run_server_forever(url: str, processor: AppProcessor, open_browser: bool = False):
+def _shutdown_processor(processor: AppProcessor):
+    try:
+        processor.shutdown()
+    except Exception as exc:
+        logger.warning(f"Shutdown processor failed: {exc}")
+
+
+def _run_server_forever(
+    url: str,
+    processor: AppProcessor,
+    open_browser: bool = False,
+):
     if open_browser:
         try:
             webbrowser.open(url)
@@ -157,9 +205,14 @@ def _run_server_forever(url: str, processor: AppProcessor, open_browser: bool = 
     try:
         while True:
             sleep(0.1)
+            if processor.is_shutdown_requested():
+                logger.info("Shutdown requested from browser mode. Shutting down.")
+                break
     except KeyboardInterrupt:
-        processor.yolo_engine.stop()
-        raise SystemExit(0)
+        logger.info("Received keyboard interrupt. Shutting down.")
+    finally:
+        _shutdown_processor(processor)
+    raise SystemExit(0)
 
 if __name__ == "__main__":
     processor = AppProcessor()
@@ -167,13 +220,16 @@ if __name__ == "__main__":
     webapp_thread.start()
     processor.start_inference_if_possible()
     server_url = f"http://{args.host}:{args.port}"
-    if not args.not_use_webview:
+    use_embedded_webview = _webview_enabled_for_build() and not args.not_use_webview
+    if use_embedded_webview:
         try:
-            _start_native_webview(server_url)
-            processor.yolo_engine.stop()
+            _start_pywebview(server_url)
+            _shutdown_processor(processor)
             raise SystemExit(0)
         except Exception as exc:
-            logger.warning(f"Native webview unavailable, fallback to browser mode: {exc}")
+            logger.warning(f"PyWebView unavailable, fallback to browser mode: {exc}")
             _run_server_forever(server_url, processor, open_browser=True)
     else:
-        _run_server_forever(server_url, processor)
+        if not _webview_enabled_for_build():
+            logger.info("Embedded WebView is disabled for this build. Launching in browser mode.")
+        _run_server_forever(server_url, processor, open_browser=not args.not_use_webview)

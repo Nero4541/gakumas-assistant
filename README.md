@@ -44,11 +44,11 @@
 > - 自动P卡
 
 ## 注意事项
-> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`，`macOS / Linux` 默认使用 `Phone / ADB` 模式。  
+> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`，`macOS / Linux` 仅支持 `Phone / ADB` 模式。  
 
 > 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件上传并截图进行反馈。
 
-> 汉化版本暂不支持，请关闭汉化插件后使用
+> 汉化插件暂不支持，请关闭汉化插件后使用
 
 > 本项目使用 `Yolov11n` 模型进行图像识别。Windows 会优先尝试 `DirectML`，macOS 会优先尝试 `CoreML`，其余平台会自动回退到 `CPUExecutionProvider`。
 
@@ -165,11 +165,21 @@ python ./devtools/model_export.py
 pip install -r requirements.build.txt
 python build_app.py
 ```
+如需切换运行时可写目录位置，可在打包时指定存储模式：
+```bash
+python build_app.py --portable
+python build_app.py --merged
+```
 说明：
-- Windows 输出主程序为 `out/app.dist/Gakumas Assistant.exe`
-- macOS 输出应用包为 `out/Gakumas Assistant.app`
-- Linux 输出主程序为 `out/app.dist/Gakumas Assistant`
+- Windows 输出主程序为 `out/Gakumas Assistant.dist/Gakumas Assistant.exe`
+- macOS `--portable` 输出文件夹为 `out/Gakumas Assistant`
+- macOS `--merged` 输出应用包为 `out/Gakumas Assistant.app`
+- Linux 输出主程序为 `out/Gakumas Assistant.dist/Gakumas Assistant`
 - 若当前环境未安装 `upx`，打包脚本会自动跳过 UPX 压缩
+- `--portable` 会把 `.cache`、`assets`、`data`、`logs` 放在程序同目录
+- `--merged` 会把上述目录放到用户主目录下的 `.gakumas-assistant/`
+- Windows 下：`--portable` 产物带控制台，`--merged` 默认不带控制台
+- macOS 下：`--portable` 为浏览器版，不内置 WebView，输出普通文件夹；`--merged` 继续输出原生 `.app`
 
 ## 许可证
 Copyright © 2020-2025 Pigeon Server Team, All rights reserved.

@@ -1,5 +1,4 @@
 import re
-import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ from src.entity.Base import SingletonMeta
 from src.entity.Yolo import Yolo_Box
 from src.utils.dml_manager import DMLManager
 from src.utils.logger import logger
+from src.utils.runtime_paths import resolve_runtime_path
 
 from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
 
@@ -29,8 +29,7 @@ class OCRLoader(metaclass=SingletonMeta):
     def _resolve_resource_path(relative_path: str) -> str | None:
         relative = Path(relative_path)
         candidates = [
-            Path.cwd() / "rapidocr" / relative,
-            Path(sys.argv[0]).resolve().parent / "rapidocr" / relative,
+            resolve_runtime_path("rapidocr") / relative,
             Path(rapidocr_package.__file__).resolve().parent / relative,
         ]
         for candidate in candidates:
