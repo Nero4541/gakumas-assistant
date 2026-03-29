@@ -142,7 +142,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/clip
-          key: clip-vit-b-32-${{ hashFiles('devtools/export_clip_visual.py', 'requirements.dev.txt') }}
+          key: clip-vit-b-32-${{ hashFiles('.github/workflows/nightly.yml', 'requirements.dev.txt') }}
           restore-keys: |
             clip-vit-b-32-
 
@@ -151,13 +151,37 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install torch torchvision git+https://github.com/openai/CLIP.git
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple torch torchvision
+          pip install onnx onnxscript git+https://github.com/openai/CLIP.git
 
       - name: Export clip_visual.onnx
         shell: bash
         run: |
           set -euo pipefail
-          python devtools/export_clip_visual.py --output model/clip_visual.onnx --download-root ~/.cache/clip
+          python - <<'PY'
+          from pathlib import Path
+          import clip
+          import torch
+          output_path = Path("model/clip_visual.onnx").resolve()
+          output_path.parent.mkdir(parents=True, exist_ok=True)
+          download_root = Path.home() / ".cache" / "clip"
+          download_root.mkdir(parents=True, exist_ok=True)
+          model, _ = clip.load("ViT-B/32", device="cpu", download_root=str(download_root))
+          visual_model = model.visual.eval().float()
+          dummy_input = torch.randn(1, 3, 224, 224)
+          torch.onnx.export(
+              visual_model,
+              dummy_input,
+              output_path,
+              input_names=["input"],
+              output_names=["image_features"],
+              dynamic_axes={"input": {0: "batch_size"}, "image_features": {0: "batch_size"}},
+              do_constant_folding=True,
+              dynamo=False,
+          )
+          print(f"exported: {output_path}")
+          print(f"size_bytes: {output_path.stat().st_size}")
+          PY
 
       - name: Upload clip model artifact
         uses: actions/upload-artifact@v4
