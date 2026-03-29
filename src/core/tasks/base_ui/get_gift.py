@@ -23,7 +23,10 @@ def action__collect_all_gifts(app: "AppProcessor"):
     如果弹窗未出现则抛出超时异常。
     """
     ButtonList(app.latest_results).get_button_by_text(ButtonText.COLLECT_ALL)
-    app.device.click_element(app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first())
+    target_button = app.latest_results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first()
+    if not app.game_utils.click_element_and_wait_trigger(target_button, retries=3, timeout=2.5):
+        logger.warning("Gift collect-all button did not trigger any UI change")
+        return False
     sleep(1)
     modal = app.game_utils.wait_for_modal(ModalText.TITLE.RECEIPT_COMPLETED, 15, True)
     if not modal:

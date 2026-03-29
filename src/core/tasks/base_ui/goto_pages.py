@@ -14,7 +14,13 @@ def _back_home(app: "AppProcessor"):
     if app.game_utils.update_current_location() != GamePageTypes.MAIN_MENU__HOME:
         app.game_utils.go_home()
         app.game_utils.wait_loading()
-        app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__HOME)
+        try:
+            app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__HOME)
+        except TimeoutError:
+            from src.core.tasks.base_ui.start_game import action__wait_enter_home
+
+            action__wait_enter_home(app)
+            app.game_utils.update_current_location(GamePageTypes.MAIN_MENU__HOME)
 
 def _goto_tab_contest(app: "AppProcessor"):
     if app.game_utils.update_current_location() == GamePageTypes.MAIN_MENU__CONTEST:

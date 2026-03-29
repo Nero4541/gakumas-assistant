@@ -2,3 +2,7 @@
 *.zip filter=lfs diff=lfs merge=lfs -text
 *.onnx filter=lfs diff=lfs merge=lfs -text
 *.pt filter=lfs diff=lfs merge=lfs -text
+model/base_ui.onnx -filter -diff -merge -text
+model/base_ui.pt -filter -diff -merge -text
+model/producer.onnx -filter -diff -merge -text
+model/producer.pt -filter -diff -merge -text

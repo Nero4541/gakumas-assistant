@@ -26,6 +26,18 @@ class GameUtils:
     def __init__(self, app_processor: "AppProcessor"):
         self._app_processor = app_processor
 
+    def _get_current_frame(self) -> Optional[np.ndarray]:
+        frame = getattr(self._app_processor, "latest_frame", None)
+        if frame is not None and frame.size > 0:
+            return frame
+        results = getattr(self._app_processor, "latest_results", None)
+        if results is None:
+            return None
+        frame = getattr(results, "frame", None)
+        if frame is None or frame.size == 0:
+            return None
+        return frame
+
     def wait_for_label(self, label, timeout=15, interval=1, continuous=1):
         """
         等待指定标签的框出现
@@ -78,6 +90,23 @@ class GameUtils:
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' found.")
         return False
 
+    def try_get_modal(self, no_body: bool = False) -> Optional[Modal]:
+        """
+        尝试解析当前画面的模态框。
+        """
+        results = self._app_processor.latest_results
+        if results is None or results.frame is None or results.frame.size == 0:
+            return None
+
+        if not results.exists_label(BaseUILabels.MODAL_HEADER):
+            return None
+
+        buttons = results.filter_by_label(BaseUILabels.BUTTON)
+        if not buttons:
+            return None
+
+        return get_modal(results, no_body=no_body, quiet=True)
+
     def wait_for_modal(self, modal_title, timeout=10, interval=1, no_body: bool = False, match_config: MatchConfig = None) -> Optional[Modal]:
         """
         等待指定标题的模态框出现
@@ -92,19 +121,14 @@ class GameUtils:
         wait_time = 0
         match_config = match_config if match_config is not None else MatchConfig(fuzz_threshold=80)
         while wait_time < timeout:
-            headers = self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER)
-            buttons = self._app_processor.latest_results.filter_by_label(BaseUILabels.BUTTON)
-
-            if not (headers and buttons):
-                logger.debug(f"No modal header or button found, waiting... ({wait_time}/{timeout})")
+            modal = self.try_get_modal(no_body=no_body)
+            if modal:
+                if modal_title is None or string_match(modal.modal_title, modal_title, match_config):
+                    logger.debug(f"Modal found: {modal.modal_title}")
+                    return modal
+                logger.debug(f"Modal title '{modal.modal_title}' does not match '{modal_title}'")
             else:
-                modal = get_modal(self._app_processor.latest_results, no_body)
-                if modal:
-                    if modal_title is None or string_match(modal.modal_title, modal_title, match_config):
-                        logger.debug(f"Modal found: {modal.modal_title}")
-                        return modal
-                    else:
-                        logger.debug(f"Modal title '{modal.modal_title}' does not match '{modal_title}'")
+                logger.debug(f"No visible modal found, waiting... ({wait_time}/{timeout})")
 
             sleep(interval)
             wait_time += interval
@@ -209,27 +233,42 @@ class GameUtils:
         :param threshold: 图像变化阈值
         :return:
         """
-        last_frame = original if original is not None and original.size > 0 else self._app_processor.latest_results.frame[y:h, x:w]
-        last_frame = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
-        wait_time = 0
-        count = 0
-        while True:
-            if wait_time > timeout:
-                return False
-            current_frame = self._app_processor.latest_results.frame[y:h, x:w]
-            current_frame = cv2.cvtColor(current_frame, cv2.COLOR_BGR2GRAY)
-            if last_frame.shape == current_frame.shape:
-                wait_time += 0.1
+        current_source = self._get_current_frame()
+        if current_source is None:
+            return False
+
+        reference_frame = original if original is not None and original.size > 0 else current_source[y:h, x:w]
+        if reference_frame is None or reference_frame.size == 0:
+            return False
+
+        wait_time = 0.0
+        stable_hits = 0
+        while wait_time <= timeout:
+            current_source = self._get_current_frame()
+            if current_source is None:
                 sleep(0.1)
+                wait_time += 0.1
                 continue
-            score = compute_ssim_score(last_frame, current_frame)
-            if score > threshold:
-                count += 1
-                if count >= 3:
+
+            current_frame = current_source[y:h, x:w]
+            if current_frame is None or current_frame.size == 0:
+                sleep(0.1)
+                wait_time += 0.1
+                continue
+
+            if reference_frame.shape != current_frame.shape:
+                return True
+
+            score = compute_ssim_score(reference_frame, current_frame)
+            if score < threshold:
+                stable_hits += 1
+                if stable_hits >= 2:
                     return True
             else:
-                wait_time += 1
-                sleep(1)
+                stable_hits = 0
+
+            sleep(0.1)
+            wait_time += 0.1
         return False
 
     def check_image_change_at_yolobox(self, target_yolobox: Yolo_Box, timeout=10, threshold: float = 0.8) -> bool:
@@ -249,6 +288,82 @@ class GameUtils:
             timeout,
             threshold
         )
+
+    def wait_for_action_trigger(
+            self,
+            element: Optional[Yolo_Box] = None,
+            original_frame: Optional[np.ndarray] = None,
+            timeout: float = 2.0,
+            interval: float = 0.1,
+            frame_threshold: float = 0.995,
+            region_threshold: float = 0.8,
+    ) -> bool:
+        """
+        等待一次操作真正触发。
+        优先检查被点击元素区域是否发生变化，并辅以整帧变化兜底。
+        """
+        baseline_frame = original_frame if original_frame is not None and original_frame.size > 0 else self._get_current_frame()
+        if baseline_frame is None:
+            return False
+        baseline_frame = baseline_frame.copy()
+
+        region_reference = None
+        if element is not None and getattr(element, "frame", None) is not None and element.frame.size > 0:
+            region_reference = element.frame.copy()
+
+        wait_time = 0.0
+        while wait_time <= timeout:
+            current_frame = self._get_current_frame()
+            if current_frame is None:
+                sleep(interval)
+                wait_time += interval
+                continue
+
+            if region_reference is not None:
+                x1, y1, x2, y2 = map(int, [element.x, element.y, element.w, element.h])
+                current_region = current_frame[y1:y2, x1:x2]
+                if current_region is not None and current_region.size > 0:
+                    if current_region.shape != region_reference.shape:
+                        return True
+                    if compute_ssim_score(region_reference, current_region) < region_threshold:
+                        return True
+
+            if compute_ssim_score(baseline_frame, current_frame) < frame_threshold:
+                return True
+
+            sleep(interval)
+            wait_time += interval
+
+        return False
+
+    def click_element_and_wait_trigger(
+            self,
+            element: Yolo_Box,
+            retries: int = 3,
+            timeout: float = 2.0,
+            interval: float = 0.1,
+            frame_threshold: float = 0.995,
+            region_threshold: float = 0.8,
+    ) -> bool:
+        """
+        点击元素并等待界面确认被触发。
+        若点击未生效，可自动重试数次。
+        """
+        for attempt in range(1, retries + 1):
+            baseline_frame = self._get_current_frame()
+            baseline_frame = baseline_frame.copy() if baseline_frame is not None else None
+            self._app_processor.device.click_element(element)
+            if self.wait_for_action_trigger(
+                    element=element,
+                    original_frame=baseline_frame,
+                    timeout=timeout,
+                    interval=interval,
+                    frame_threshold=frame_threshold,
+                    region_threshold=region_threshold,
+            ):
+                return True
+            logger.warning(f"Click did not trigger visible UI change ({attempt}/{retries}): {getattr(element, 'label', type(element).__name__)}")
+        return False
 
 
     def click_button(self, text, timeout=10, match_config: MatchConfig = MatchConfig(use_fuzz=True, fuzz_threshold=80)):
@@ -395,5 +510,3 @@ class GameUtils:
 
             prev_frame = curr_frame.copy()
             sleep(0.05)
-
-

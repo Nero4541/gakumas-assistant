@@ -57,7 +57,8 @@ def _claim_reward(app: "AppProcessor", tab: TabBarItem, button: Button):
     """
     点击领奖按钮并处理领奖成功的弹窗。
     """
-    app.device.click_element(button)
+    if not app.game_utils.click_element_and_wait_trigger(button, retries=3, timeout=2.5):
+        raise TimeoutError(f"Task reward button '{button.text}' did not trigger any UI change.")
     modal = app.game_utils.wait_for_modal(ModalText.TITLE.RECEIPT_COMPLETED, no_body=True, timeout=10)
     app.device.click_element(modal.cancel_button)
     app.game_utils.click_on_label(BaseUILabels.CLOSE_BUTTON)

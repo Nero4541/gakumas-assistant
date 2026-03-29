@@ -1,6 +1,5 @@
 import time
 
-from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.core.device.windows_compat import is_windows_device
@@ -137,27 +136,22 @@ def register_tasks(processor: "AppProcessor"):
         )
 
         sleep(2)
-        if not app.game_utils.update_current_location() == GamePageTypes.START_GAME:
-            return
-        action__click_start_game(app)
-        app.game_utils.wait_loading()
-        action__wait_enter_home(app)
+        current_location = app.game_utils.update_current_location()
+        if current_location == GamePageTypes.START_GAME:
+            action__click_start_game(app)
+            app.game_utils.wait_loading()
+            action__wait_enter_home(app)
+        elif current_location in [GamePageTypes.UNKNOWN, GamePageTypes.LOADING]:
+            if current_location == GamePageTypes.LOADING:
+                app.game_utils.wait_loading()
+            action__wait_enter_home(app)
         app.game_utils.update_current_location()
 
     @processor.task_queue.register_task("get_expenditure", "获取活动费", 30)
     def _task__get_expenditure(app: "AppProcessor"):
-        from src.core.tasks.base_ui.goto_pages import goto__get_expenditure
+        from src.core.tasks.base_ui.get_expenditure import action__claim_expenditure
 
-        goto__get_expenditure(app)
-        sleep(3)
-        if modal := app.game_utils.wait_for_modal(ModalText.TITLE.EXPENDITURE, no_body=True, timeout=10):
-            app.device.click_element(modal.cancel_button)
-            sleep(3)
-            return True
-        elif app.latest_results.exists_label(BaseUILabels.TAB_HOME):
-            logger.warning("There are no claimable expenses")
-            return True
-        raise TimeoutError("Timeout waiting for modal to appear.")
+        return action__claim_expenditure(app)
 
     @processor.task_queue.register_task("dispatch_work", "派遣任务", 120)
     def _task__work_dispatch(app: "AppProcessor"):
@@ -199,6 +193,7 @@ def register_tasks(processor: "AppProcessor"):
     @processor.task_queue.register_task("auto_enhancement_support_card", "自动强化支援卡")
     def _task__auto_enhancement_support_card(app: "AppProcessor"):
         from src.core.tasks.base_ui.goto_pages import goto_support_card_list_page
+        from src.entity.Game.Components.SupportCard import SupportCard
 
         goto_support_card_list_page(app)
         app.game_utils.wait_frame_stable()
@@ -214,11 +209,16 @@ def register_tasks(processor: "AppProcessor"):
         # logger.debug(f"found {len(support_cards)} cards: {support_cards}")
         debug_tools.clear_all()
         logger.debug(f"buttons: {buttons}")
-        for card in support_cards:
+        for index, card in enumerate(support_cards):
             logger.debug(f"support card: {card}, bool={any(btn.cy >= card.y and btn.cy <= card.h for btn in buttons)}")
             if any(card.y <= btn.cy <= card.h for btn in buttons):
                 continue
-            debug_tools.add_box(card.x, card.y, card.w, card.h)
+            support_card = SupportCard.from_yolo_box(card, index=index)
+            label = None
+            if support_card.level is not None:
+                stars = "?" if support_card.stars is None else support_card.stars
+                label = f"Lv{support_card.level} ★{stars}"
+            debug_tools.add_box(card.x, card.y, card.w, card.h, label=label)
 
     @processor.task_queue.register_task("auto_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):

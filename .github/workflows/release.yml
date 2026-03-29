@@ -131,8 +131,55 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  prepare-clip-model:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          lfs: false
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Restore OpenAI CLIP cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/clip
+          key: clip-vit-b-32-${{ hashFiles('devtools/export_clip_visual.py', 'requirements.dev.txt') }}
+          restore-keys: |
+            clip-vit-b-32-
+
+      - name: Install clip export dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install torch torchvision git+https://github.com/openai/CLIP.git
+
+      - name: Export clip_visual.onnx
+        shell: bash
+        run: |
+          set -euo pipefail
+          python devtools/export_clip_visual.py --output model/clip_visual.onnx --download-root ~/.cache/clip
+
+      - name: Upload clip model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: clip-visual-model
+          path: model/clip_visual.onnx
+          if-no-files-found: error
+          retention-days: 1
+
   build:
-    needs: prepare-android-touch-resources
+    needs:
+      - prepare-android-touch-resources
+      - prepare-clip-model
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -150,7 +197,7 @@ jobs:
         with:
           submodules: true
           fetch-depth: 0
-          lfs: true
+          lfs: false
         env:
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -160,6 +207,36 @@ jobs:
           pattern: android-touch-resource-*
           merge-multiple: true
           path: ${{ github.workspace }}
+
+      - name: Download clip model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: clip-visual-model
+          path: ${{ github.workspace }}/model
+
+      - name: Verify bundled model payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          required = [
+              Path("model/base_ui.onnx"),
+              Path("model/producer.onnx"),
+              Path("model/clip_visual.onnx"),
+          ]
+          pointer_prefix = b"version https://git-lfs.github.com/spec/v1"
+          invalid = []
+          for path in required:
+              payload = path.read_bytes()
+              if payload.startswith(pointer_prefix):
+                  invalid.append(f"{path} is still an LFS pointer")
+              elif len(payload) < 1024 * 1024:
+                  invalid.append(f"{path} is unexpectedly small: {len(payload)} bytes")
+          if invalid:
+              raise SystemExit("\n".join(invalid))
+          PY
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -197,7 +274,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: |
-            out/app.build
+            out/Gakumas Assistant.build
             .cache/nuitka
             .cache/ccache
           key: ${{ runner.os }}-nuitka-build-${{ hashFiles('build_app.py', 'requirements.txt', 'requirements.build.txt') }}
@@ -208,7 +285,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python build_app.py
+          python build_app.py --portable
         env:
           GITHUB_ACTIONS: "True"
           NUITKA_CACHE_DIR: ${{ github.workspace }}/.cache/nuitka
@@ -222,9 +299,9 @@ jobs:
         run: |
           set -euo pipefail
           PACKAGE_ROOT="${GITHUB_WORKSPACE}/out"
-          PACKAGE_BASE="app.dist"
+          PACKAGE_BASE="Gakumas Assistant.dist"
           if [ "${RUNNER_OS}" = "macOS" ]; then
-            PACKAGE_BASE="Gakumas Assistant.app"
+            PACKAGE_BASE="Gakumas Assistant"
           fi
           DATE="$(date +%Y%m%d)"
           COMMIT="${GITHUB_SHA::8}"

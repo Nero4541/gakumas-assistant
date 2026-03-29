@@ -1,5 +1,6 @@
 import colorsys
 import math
+from dataclasses import dataclass
 from typing import Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont
 
@@ -8,6 +9,30 @@ import numpy as np
 
 from src.entity.GeneralResult import GeneralResult__Threshold
 from src.utils.logger import logger
+
+
+@dataclass
+class ConnectedComponentBox:
+    x: int
+    y: int
+    w: int
+    h: int
+
+    @property
+    def x2(self) -> int:
+        return self.x + self.w
+
+    @property
+    def y2(self) -> int:
+        return self.y + self.h
+
+    @property
+    def aspect(self) -> float:
+        return self.w / max(1, self.h)
+
+    @property
+    def area(self) -> int:
+        return self.w * self.h
 
 
 def compute_ssim_score(first: np.ndarray, second: np.ndarray) -> float:
@@ -65,6 +90,98 @@ def get_mask_contours(img, lower_color, upper_color, ksize: Tuple[int, int] = (3
     mask = cv2.dilate(mask, kernel, iterations=iterations)
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     return contours
+
+
+def extract_connected_component_boxes(
+        mask: np.ndarray,
+        min_area_ratio: float = 0.0,
+        min_height_ratio: float = 0.0,
+        left_edge_noise_width: int = 0,
+        connectivity: int = 8,
+) -> list[ConnectedComponentBox]:
+    """从二值掩码中提取连通分量边界框。"""
+    if mask is None or mask.size == 0:
+        return []
+
+    height, width = mask.shape[:2]
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=connectivity)
+    min_area = height * width * min_area_ratio
+    min_height = height * min_height_ratio
+    components: list[ConnectedComponentBox] = []
+    for label_idx in range(1, num_labels):
+        x = int(stats[label_idx, cv2.CC_STAT_LEFT])
+        y = int(stats[label_idx, cv2.CC_STAT_TOP])
+        w = int(stats[label_idx, cv2.CC_STAT_WIDTH])
+        h = int(stats[label_idx, cv2.CC_STAT_HEIGHT])
+        area = int(stats[label_idx, cv2.CC_STAT_AREA])
+        if area < min_area or h < min_height:
+            continue
+        if left_edge_noise_width > 0 and x == 0 and w <= left_edge_noise_width:
+            continue
+        components.append(ConnectedComponentBox(x, y, w, h))
+    components.sort(key=lambda component: component.x)
+    return components
+
+
+def remove_small_connected_components(image: np.ndarray, min_ratio: float = 0.15) -> np.ndarray:
+    """移除面积明显小于主体的二值连通分量。"""
+    binary = (image > 0).astype(np.uint8)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary, connectivity=8)
+    if num_labels <= 1:
+        return image
+
+    max_area = float(stats[1:, cv2.CC_STAT_AREA].max())
+    area_threshold = max_area * min_ratio
+    result = np.zeros_like(image)
+    for label_idx in range(1, num_labels):
+        if stats[label_idx, cv2.CC_STAT_AREA] >= area_threshold:
+            result[labels == label_idx] = 255
+    return result
+
+
+def normalize_binary_mask(
+        image: np.ndarray,
+        canvas_size: tuple[int, int] = (32, 24),
+        max_content_size: tuple[int, int] = (20, 28),
+        denoise_ratio: float = 0.15,
+) -> np.ndarray:
+    """将二值图像规范化到固定画布尺寸。"""
+    canvas_h, canvas_w = canvas_size
+    fit_w, fit_h = max_content_size
+    binary = (image > 0).astype(np.uint8) * 255
+    binary = remove_small_connected_components(binary, min_ratio=denoise_ratio)
+    ys, xs = np.where(binary > 0)
+    if len(xs) == 0:
+        return np.zeros((canvas_h, canvas_w), dtype=np.uint8)
+
+    crop = binary[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    scale = min(fit_w / max(1, crop.shape[1]), fit_h / max(1, crop.shape[0]))
+    resized = cv2.resize(
+        crop,
+        (max(1, int(round(crop.shape[1] * scale))), max(1, int(round(crop.shape[0] * scale)))),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    canvas = np.zeros((canvas_h, canvas_w), dtype=np.uint8)
+    offset_y = (canvas_h - resized.shape[0]) // 2
+    offset_x = (canvas_w - resized.shape[1]) // 2
+    canvas[offset_y:offset_y + resized.shape[0], offset_x:offset_x + resized.shape[1]] = resized
+    return canvas
+
+
+def count_binary_holes(image: np.ndarray) -> int:
+    """统计二值图像内部孔洞数量。"""
+    binary = (image > 0).astype(np.uint8)
+    padded = np.pad(binary, 1, mode="constant", constant_values=0)
+    inverted = 1 - padded
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(inverted, connectivity=8)
+    holes = 0
+    max_y, max_x = inverted.shape
+    for label_idx in range(1, num_labels):
+        x, y, w, h, _ = stats[label_idx]
+        if x == 0 or y == 0 or x + w >= max_x or y + h >= max_y:
+            continue
+        holes += 1
+    return holes
 
 
 def get_max_contour(contours):

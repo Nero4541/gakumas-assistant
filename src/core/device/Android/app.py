@@ -59,14 +59,11 @@ class Android_App(BaseDevice):
             self.__connect_uiautomator2()
 
     def __del__(self) -> None:
-        if self.__maatouch_adapter is not None:
-            self.__maatouch_adapter.stop()
-        if self.__minitouch_adapter is not None:
-            self.__minitouch_adapter.stop()
-        if self.__scrcpy_adapter is not None:
-            self.__scrcpy_adapter.stop()
-        if self.__capture_service_shell is not None:
-            self.__capture_service_shell.close()
+        self.close()
+
+    def close(self):
+        self._reset_runtime_services()
+        self.__adb_device = None
 
     def __bool__(self) -> bool:
         return bool(self.__adb_device)

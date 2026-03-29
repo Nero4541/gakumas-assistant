@@ -7,6 +7,12 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 
 class BaseDevice(abc.ABC):
 
+    def close(self):
+        """
+        释放设备持有的运行时资源
+        """
+        return None
+
     def __bool__(self) -> bool:
         pass
 

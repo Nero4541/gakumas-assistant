@@ -206,6 +206,18 @@ class AppProcessor:
             self.yolo_engine.stop()
         except Exception as exc:
             logger.debug(f"Skip inference stop during shutdown: {exc}")
+        self._close_device(getattr(self, "device", None))
+
+    def _close_device(self, device: BaseDevice | None):
+        if device is None:
+            return
+        close = getattr(device, "close", None)
+        if not callable(close):
+            return
+        try:
+            close()
+        except Exception as exc:
+            logger.debug(f"Skip device close: {exc}")
 
     def _describe_device_state(self, device: BaseDevice) -> dict:
         if bool(device):
@@ -266,13 +278,27 @@ class AppProcessor:
         return self.yolo_engine.start()
 
     def ensure_device_ready(self, force: bool = False, restart_inference: bool = False) -> bool:
+        recreate_device = False
+        old_device = None
+        should_stop_before_recreate = False
         with self._device_state_lock:
             if not force and self.device:
                 ready = True
                 should_stop = False
                 should_start = restart_inference and hasattr(self, "yolo_engine") and not self.yolo_engine.running
             else:
-                new_device = self.create_device_instance()
+                recreate_device = True
+                old_device = getattr(self, "device", None)
+                should_stop_before_recreate = (
+                    force and hasattr(self, "yolo_engine") and self.yolo_engine.running
+                )
+        if should_stop_before_recreate:
+            self.yolo_engine.stop()
+        if recreate_device and old_device is not None:
+            self._close_device(old_device)
+        if recreate_device:
+            new_device = self.create_device_instance()
+            with self._device_state_lock:
                 self.device = new_device
                 if hasattr(self, "yolo_engine"):
                     self.yolo_engine.set_device(new_device)

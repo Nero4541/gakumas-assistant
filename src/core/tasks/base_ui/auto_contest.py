@@ -15,7 +15,7 @@ from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
-from src.utils.string_tools import MatchConfig
+from src.utils.string_tools import MatchConfig, string_match
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -176,15 +176,28 @@ def _finish_battle(app: "AppProcessor"):
             continue
         if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
             return
-        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
-            modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, timeout=1, no_body=True)
-            if modal is not None:
-                app.device.click_element(modal.cancel_button)
+        if close_buttons := app.latest_results.filter_by_label(BaseUILabels.CLOSE_BUTTON):
+            logger.debug("Found Close Button during finish phase, clicking...")
+            app.device.click_element(close_buttons.first())
+            sleep(1)
+            COUNT += 1
+            continue
+        modal = app.game_utils.try_get_modal(no_body=True)
+        if modal is not None:
+            if string_match(modal.modal_title, ModalText.TITLE.RATE_REWARD, MatchConfig(fuzz_threshold=90)):
+                close_button = modal.cancel_button or modal.confirm_button
+                if close_button is not None:
+                    app.device.click_element(close_button)
+                    sleep(1)
+                    COUNT += 1
+                    continue
+        if app.latest_results.exists_label(BaseUILabels.BUTTON):
+            buttons = ButtonList(app.latest_results)
+            if button := buttons.get_button_by_text(ButtonText.CLOSE):
+                app.device.click_element(button)
                 sleep(1)
                 COUNT += 1
                 continue
-        if app.latest_results.exists_label(BaseUILabels.BUTTON):
-            buttons = ButtonList(app.latest_results)
             if button := buttons.get_button_by_text(ButtonText.NEXT):
                 app.device.click_element(button)
                 sleep(1)

@@ -1,16 +1,15 @@
-from copy import copy
-
 import cv2
 import numpy as np
 
+import config
 from src.constants.location import Location
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
-from src.entity.Game.Components.Button import Button
 from src.entity.Game.Components.Modal import Modal
-
-from src.entity.Yolo import Yolo_Results
+from src.entity.Game.Components.SupportCard import SupportCard, SupportCardList
+from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.logger import logger
+from src.core.inference.ONNX import YoloModelFromONNX
 from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_status_detection, get_mask_contours, extract_roi_from_mask, check_color, \
     filter_by_rectangle_shape, get_max_contour
@@ -129,62 +128,63 @@ def modal_body_extract_item_info(
     return item, item_info
 
 @timeit
-def get_modal(yolo_result: Yolo_Results, no_body: bool = False) -> Modal | None:
+def get_modal(yolo_result: Yolo_Results, no_body: bool = False, quiet: bool = False) -> Modal | None:
     """
     获取模态框
     :param yolo_result: yolo结果集
     :param no_body: 不识别模态框主体（加速）
     :return: 解析后的 Modal 对象
     """
-    if not yolo_result.exists_all_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON]):
-        logger.warning("模态框不完整")
-        return None
-    yolo_result = copy(yolo_result)
-    modal = yolo_result.filter_by_labels([BaseUILabels.MODAL_HEADER, BaseUILabels.BUTTON])
-    modal_header = modal.filter_by_label(BaseUILabels.MODAL_HEADER).first()
-    # 获取 header 内按钮的最小 x
-    buttons_in_header = [
-        btn.x for btn in modal.filter_by_labels([BaseUILabels.BUTTON])
-        if modal_header.x < btn.cx < modal_header.w and
-           modal_header.y < btn.cy < modal_header.h
-    ]
-    modal_button_min_x = min(buttons_in_header, default=modal_header.w)
+    return Modal.from_yolo_results(yolo_result, no_body=no_body, quiet=quiet)
 
-    # OCR 模态框头部（排除按钮部分）
-    modal_header_ocr_result = ocr_service.ocr(
-        modal_header.frame[:, :modal_button_min_x]
-    )
-    modal_header_ocr_result.auto_merge_lines()
-    modal_header_text = modal_header_ocr_result.first().text
-    # 在结果集中排除模态框头部按钮
-    modal = modal.remove_by_yolo_boxes(buttons_in_header)
-    # 获取确认和取消按钮
-    buttons = modal.filter_by_label(BaseUILabels.BUTTON).group_yolo_boxes_by_position(30, None)
-    if buttons:
-        buttons = buttons.pop()
-        confirm_button = buttons.get_x_max_element()
-        cancel_button = buttons.get_x_min_element()
-    else:
-        # 不区分按钮类型时，取最下面的按钮作为取消按钮
-        buttons = modal.filter_by_label(BaseUILabels.BUTTON).get_y_max_element()
-        confirm_button = None
-        cancel_button = buttons
-    if not confirm_button and not cancel_button:
-        logger.warning("Cancel or Confirm buttons not found")
-        return None
-    confirm_button = Button(confirm_button.first()) if confirm_button else None
-    cancel_button = Button(cancel_button.first()) if cancel_button else None
-    # 计算模态框主体区域
-    if confirm_button and cancel_button:
-        modal_body_y = max(cancel_button.y, confirm_button.y)
-    else:
-        modal_body_y = confirm_button.y if confirm_button else cancel_button.y
-    modal_body_frame = yolo_result.frame[modal_header.h:modal_body_y, modal_header.x:modal_header.w]
-    modal_body_text = None if no_body else " ".join([item.text for item in ocr_service.ocr(modal_body_frame)])
-    return Modal(
-        modal_header_text,
-        modal_body_frame,
-        modal_body_text,
-        confirm_button,
-        cancel_button
-    )
+
+@timeit
+def get_support_card(yolo_box: Yolo_Box) -> SupportCard:
+    """
+    解析单张支援卡
+    :param yolo_box: 单个 Support Card 的 Yolo_Box
+    :return: 解析后的 SupportCard 对象
+    """
+    return SupportCard.from_yolo_box(yolo_box)
+
+
+@timeit
+def get_support_cards(yolo_result: Yolo_Results) -> SupportCardList:
+    """
+    获取当前画面支援卡识别结果
+    :param yolo_result: yolo结果集
+    :return: 解析后的 SupportCardList 对象
+    """
+    return SupportCardList.from_yolo_results(yolo_result)
+
+
+@timeit
+def extract_support_cards(
+        image: np.ndarray,
+        model: YoloModelFromONNX | None = None,
+        conf_threshold: float = 0.7,
+) -> SupportCardList:
+    """
+    从完整截图中提取支援卡信息
+    :param image: 原始截图
+    :param model: 可复用的 BASE_UI 模型
+    :param conf_threshold: YOLO 置信度阈值
+    :return: 解析后的 SupportCardList 对象
+    """
+    if image is None or image.size == 0:
+        return SupportCardList()
+    base_ui_model = model if model is not None else YoloModelFromONNX(config.model_config["BASE_UI"])
+    yolo_result = Yolo_Results(base_ui_model(image, conf_threshold=conf_threshold), image)
+    return get_support_cards(yolo_result)
+
+
+def get_support_card_level_stars(yolo_result: Yolo_Results) -> SupportCardList:
+    return get_support_cards(yolo_result)
+
+
+def extract_support_card_level_stars(
+        image: np.ndarray,
+        model: YoloModelFromONNX | None = None,
+        conf_threshold: float = 0.7,
+) -> SupportCardList:
+    return extract_support_cards(image, model=model, conf_threshold=conf_threshold)

@@ -12,7 +12,6 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.utils.logger import logger
 from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_color_in_region, check_color, check_frame_change
-from src.utils.game_tools import get_modal
 from src.utils.string_tools import string_match, MatchConfig
 
 if TYPE_CHECKING:
@@ -29,9 +28,14 @@ def handle__work_dispatch_results(app: "AppProcessor"):
     while count < MAX_WORKS + 2:
         if app.game_utils.update_current_location() == GamePageTypes.HOME_TAB.WORK:
             return
-        if app.game_utils.wait_for_label(BaseUILabels.MODAL_HEADER, 3):
-            modal = get_modal(app.latest_results, True)
-            app.device.click_element(modal.cancel_button)
+        modal = app.game_utils.wait_for_modal(None, timeout=3, interval=0.5, no_body=True)
+        if modal:
+            close_button = modal.cancel_button or modal.confirm_button
+            if close_button is None:
+                logger.warning(f"Dispatch result modal '{modal.modal_title}' has no actionable button.")
+                sleep(1)
+                continue
+            app.device.click_element(close_button)
             count += 1
             sleep(3)
     else:
@@ -91,15 +95,20 @@ def _assign_avatar_to_work(app: "AppProcessor", avatar: Yolo_Box = None):
     app.debug_tools.hide()
     sleep(1)
     while True:
-        exists_modal = app.latest_results.exists_label(BaseUILabels.MODAL_HEADER)
+        modal = app.game_utils.try_get_modal()
+        exists_modal = modal is not None
         if not app.latest_results.exists_label(BaseUILabels.AVATAR) and not exists_modal:
             break
-        if exists_modal:
-            modal = get_modal(app.latest_results)
+        if modal:
             if string_match(modal.modal_title, ModalText.TITLE.CONFIRM) and string_match(modal.modal_body_text, ModalText.BODY.DISPATCH_WORK_ERROR.OTHER_SELECTABLE_IDOLS):
-                app.device.click_element(modal.cancel_button)
+                close_button = modal.cancel_button or modal.confirm_button
+                if close_button is None:
+                    logger.warning("Dispatch confirmation modal has no actionable button.")
+                    return False
+                app.device.click_element(close_button)
                 sleep(0.5)
                 return False
+        sleep(0.1)
     app.game_utils.wait_for_label(BaseUILabels.BUTTON)
     _select_work_duration(app)
     sleep(1)
@@ -213,4 +222,3 @@ def _dispatch_single_work(app: "AppProcessor"):
         prev_frame = app.latest_frame.copy()
     _assign_avatar_to_work(app)
     app.debug_tools.clear_all()
-

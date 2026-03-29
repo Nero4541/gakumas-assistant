@@ -367,6 +367,21 @@ class TaskService:
         exec_middleware = self._exec_task_middleware
         disabled_middleware = task.disabled_middleware
 
+        def _wait_and_extend_while_blocked(condition, step=0.2):
+            """
+            当 condition() 为 True 时阻塞，并把等待时间补偿到运行时超时。
+            中间件返回 False 时属于“系统等待”而非业务执行，不应吞掉任务 timeout。
+            """
+            added = 0.0
+            while condition():
+                if timeout_event.is_set():
+                    raise TaskTimeout(task)
+                resume_event.wait()
+                sleep(step)
+                added += step
+            if added > 0:
+                task.extend_timeout(added)
+
         def _trace(frame, event, arg):
             filename = frame.f_code.co_filename
             if not should_trace(filename):
@@ -377,9 +392,7 @@ class TaskService:
             resume_event.wait()
             # 中间件拦截：仅在白名单路径中执行，返回 False 时阻塞任务
             if not disabled_middleware and is_middleware(filename):
-                while not exec_middleware():
-                    sleep(0.2)
-                    resume_event.wait()  # 阻塞期间也要响应挂起
+                _wait_and_extend_while_blocked(lambda: not exec_middleware(), step=0.2)
             return _trace
 
         return _trace
@@ -427,13 +440,6 @@ class TaskService:
                     waited = time() - focus_lost_start
                     if waited > 0:
                         task.extend_timeout(waited)
-
-            # 中间件执行
-            if not task.disabled_middleware:
-                try:
-                    self._exec_task_middleware()
-                except Exception as e:
-                    logger.error(f"Middleware error: {e}")
 
             sleep(0.5)
 

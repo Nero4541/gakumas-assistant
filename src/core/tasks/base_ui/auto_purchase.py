@@ -20,7 +20,7 @@ from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
 from src.entity.Game.Components.TabBar import TabBar
 from src.entity.Game.Page.Types.index import GamePageTypes
-from src.entity.Yolo import Yolo_Box
+from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.models import CLIPMemory
 from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
 from src.utils.game_tools import modal_body_extract_item_info
@@ -193,6 +193,36 @@ def _scroll_page(app, scroll_x, scroll_y, item_commodity):
         app.device.scrollY(scroll_x, scroll_y, -5)
     app.game_utils.wait_frame_stable()
 
+
+def _wait_exchange_item_groups(
+        app: "AppProcessor",
+        timeout: float = 5.0,
+        interval: float = 0.5,
+) -> Tuple[Yolo_Results, List[Yolo_Results]]:
+    """
+    等待每日交换所商品列表出现，避免在页面未切换成功时继续执行。
+    """
+    waited = 0.0
+    last_item_commodity = None
+    last_item_groups = []
+    while waited <= timeout:
+        item_commodity = app.latest_results.filter_by_labels([BaseUILabels.ITEM, BaseUILabels.CARD_COMMODITY])
+        item_groups = item_commodity.find_containing_groups(BaseUILabels.CARD_COMMODITY, [BaseUILabels.ITEM])
+        if item_commodity and item_groups:
+            return item_commodity, item_groups
+        last_item_commodity = item_commodity
+        last_item_groups = item_groups
+        sleep(interval)
+        waited += interval
+
+    current_location = app.game_utils.update_current_location()
+    raise RuntimeError(
+        "Daily exchange commodity list not detected. "
+        f"current_location={current_location}, "
+        f"commodity_boxes={len(last_item_commodity) if last_item_commodity else 0}, "
+        f"commodity_groups={len(last_item_groups)}"
+    )
+
 def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
     """
     主循环：交换物品
@@ -206,9 +236,7 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
 
     while True:
         # 识别当前页面元素
-        item_commodity = app.latest_results.filter_by_labels([BaseUILabels.ITEM, BaseUILabels.CARD_COMMODITY])
-        # 找到包含 ITEM 的 CARD_COMMODITY 组
-        item_groups = item_commodity.find_containing_groups(BaseUILabels.CARD_COMMODITY, [BaseUILabels.ITEM])
+        item_commodity, item_groups = _wait_exchange_item_groups(app)
         scroll_x, scroll_y = item_commodity.get_COL()
 
         # 初始化尺寸阈值（仅一次）
@@ -249,31 +277,142 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
         prev_page = app.latest_frame.copy()
         _scroll_page(app, scroll_x, scroll_y, item_commodity)
 
+def _find_visible_weekly_gift_buttons(app: "AppProcessor") -> List:
+    # 只返回当前页真正可点击的“免费”礼包按钮。
+    buttons = ButtonList(app.latest_results)
+    return [
+        button for button in buttons
+        if button.text
+        and string_match(button.text, ButtonText.FREE, MatchConfig(use_fuzz=False))
+        and not button.is_disabled()
+    ]
+
+
+def _close_weekly_gift_result_modal(app: "AppProcessor") -> bool:
+    # 领取确认后会再弹一次结果框；统一关掉后再继续扫描下一项。
+    result_modal = app.game_utils.wait_for_modal(
+        ModalText.TITLE.RECEIPT_COMPLETED,
+        timeout=5,
+        interval=0.5,
+        no_body=True,
+        match_config=MatchConfig(fuzz_threshold=90),
+    )
+    if result_modal is None:
+        result_modal = app.game_utils.wait_for_modal(None, timeout=2, interval=0.5, no_body=True)
+    if result_modal is None:
+        logger.warning("Weekly gift result modal not found")
+        return False
+
+    close_button = result_modal.cancel_button or result_modal.confirm_button
+    if close_button is None:
+        logger.warning("Weekly gift result modal close button not found")
+        return False
+
+    app.device.click_element(close_button)
+    app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER, timeout=5, interval=0.5)
+    app.game_utils.wait_frame_stable()
+    return True
+
+
+def _claim_weekly_gift_button(app: "AppProcessor", button) -> bool:
+    # 单个礼包的流程固定为：点击礼包 -> 确认领取 -> 关闭结果弹窗。
+    app.device.click_element(button)
+
+    confirm_modal = app.game_utils.wait_for_modal(None, timeout=5, interval=0.5, no_body=True)
+    if confirm_modal is None:
+        logger.warning(f"Weekly gift confirm modal not found for button '{button.text}'")
+        return False
+
+    confirm_button = confirm_modal.confirm_button or confirm_modal.cancel_button
+    if confirm_button is None:
+        logger.warning("Weekly gift confirm modal action button not found")
+        return False
+    if confirm_button.is_disabled():
+        logger.warning(f"Weekly gift button '{button.text}' is disabled after opening modal")
+        return False
+
+    app.device.click_element(confirm_button)
+    return _close_weekly_gift_result_modal(app)
+
+
+def _collect_visible_weekly_gifts(app: "AppProcessor") -> int:
+    collected = 0
+    skipped_signatures = set()
+
+    while True:
+        # 每次弹窗关闭后都重新取按钮，避免继续使用已经失效的 OCR/坐标结果。
+        buttons = [
+            button for button in _find_visible_weekly_gift_buttons(app)
+            if (int(button.cx), int(button.cy), button.text) not in skipped_signatures
+        ]
+        if not buttons:
+            return collected
+
+        button = buttons[0]
+        signature = (int(button.cx), int(button.cy), button.text)
+        if _claim_weekly_gift_button(app, button):
+            collected += 1
+            skipped_signatures.clear()
+            continue
+
+        skipped_signatures.add(signature)
+        app.game_utils.wait_frame_stable()
+
+
+def _scroll_weekly_gift_page(app: "AppProcessor"):
+    # 每次向下滚一屏左右，继续处理下一批可见礼包。
+    height, width = app.latest_frame.shape[:2]
+    if isinstance(app.device, Android_App):
+        center_x = width // 2
+        app.device.swipe(
+            center_x,
+            int(height * 0.82),
+            center_x,
+            int(height * 0.38),
+            0.6,
+        )
+    else:
+        app.device.scrollY(width // 2, height // 2, -20)
+    app.game_utils.wait_frame_stable()
+
+
 def action__receive_weekly_gift(app: "AppProcessor"):
     """领取每周礼包"""
     app.game_utils.click_button(ButtonText.SHOP.PACK, match_config=MatchConfig(use_fuzz=False))
-    app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
-    sleep(3)
-    height, width = app.latest_frame.shape[:2]
-    for _ in range(3):
-        buttons = ButtonList(app.latest_results)
-        for button in buttons:
-            if ButtonText.FREE in button.text and button.is_disabled() is False:
-                while True:
-                    if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
-                        app.device.click_element(button)
-                    sleep(0.5)
-                    if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
-                        continue
-                    app.game_utils.click_button(ButtonText.CONFIRM, match_config=MatchConfig(fuzz_threshold=90))
-                    sleep(0.5)
-                    app.game_utils.click_button(ButtonText.CLOSE, match_config=MatchConfig(fuzz_threshold=90))
-                    break
-        app.device.scrollY(width // 2, height // 2, -20)
-        app.game_utils.wait_frame_stable()
+    app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
+    app.game_utils.wait_frame_stable()
+
+    prev_page: Optional[np.ndarray] = None
+    while True:
+        # 先清空当前可视区域里的免费礼包，再决定是否继续翻页。
+        collected = _collect_visible_weekly_gifts(app)
+        logger.debug(f"Collected {collected} weekly gift packs on current page")
+
+        current_page = app.latest_frame.copy()
+        # 连续两页内容几乎不变时，说明已经滚到列表末尾。
+        if prev_page is not None and check_frame_change(prev_page, current_page):
+            break
+
+        prev_page = current_page
+        _scroll_weekly_gift_page(app)
+
     app.game_utils.back_next_page()
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+
+
+def _reset_daily_exchange_to_top(app: "AppProcessor"):
+    """
+    刷新列表后回到商店主页再重新进入每日交换所，确保列表从顶部开始。
+    """
+    app.game_utils.back_next_page()
+    app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP)
+    app.game_utils.wait_frame_stable()
+    app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))
+    app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
+    app.game_utils.wait_frame_stable()
+    _wait_exchange_item_groups(app)
+
 
 def _handle_tabbar__manny_exchange(app: "AppProcessor", commodity_target):
     refresh_shop = app.config_service().task__auto_purchase.refresh_shop.value
@@ -294,9 +433,8 @@ def _handle_tabbar__manny_exchange(app: "AppProcessor", commodity_target):
             break
         if string_match(update_shop_btn.text, ButtonText.FREE, MatchConfig(use_fuzz=False)):
             app.device.click_element(update_shop_btn)
-            app.game_utils.back_next_page()
-            app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))
             app.game_utils.wait_frame_stable()
+            _reset_daily_exchange_to_top(app)
             continue
         if not use_gem_refresh:
             break
@@ -329,15 +467,14 @@ def _handle_tabbar__manny_exchange(app: "AppProcessor", commodity_target):
         app.device.click_element(update_confirm_modal.confirm_button)
         app.game_utils.wait_loading()
         app.game_utils.wait_frame_stable()
-        remaining_attempts =- 1
-        app.game_utils.back_next_page()
-        app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))
-        app.game_utils.wait_frame_stable()
+        remaining_attempts -= 1
+        _reset_daily_exchange_to_top(app)
 
 
 def action__daily_exchange(app: "AppProcessor"):
     app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)
+    _wait_exchange_item_groups(app)
     tabbar: Optional[TabBar] = None
     for _ in range(3):
         app.game_utils.wait_for_label(BaseUILabels.TAB_BAR)
