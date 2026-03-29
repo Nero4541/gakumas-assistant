@@ -285,9 +285,13 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
     for pattern in noinclude_data_patterns:
         nuitka_cmd.append(f"--noinclude-data-files={pattern}")
     if _use_embedded_webview(storage_mode):
-        nuitka_cmd.append("--include-package=webview")
-        if TARGET_PLATFORM == "Windows":
-            nuitka_cmd.append("--disable-plugin=pywebview")
+        # app.py imports pywebview dynamically, so keep the package entrypoint explicit.
+        # Platform backends are included selectively to avoid fighting Nuitka's pywebview plugin.
+        nuitka_cmd.append("--include-module=webview")
+        if TARGET_PLATFORM == "Linux":
+            nuitka_cmd.append("--include-module=webview.platforms.qt")
+        elif TARGET_PLATFORM == "Darwin":
+            nuitka_cmd.append("--include-module=webview.platforms.cocoa")
     if TARGET_PLATFORM == "Linux":
         qt_plugin_name = _detect_qt_plugin_name()
         if qt_plugin_name is None:
@@ -295,12 +299,9 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
                 "No supported Qt binding is installed. Install pywebview[qt] or another supported Qt extra before packaging."
         )
         nuitka_cmd.append(f"--enable-plugin={qt_plugin_name}")
-        nuitka_cmd.append("--disable-plugin=pywebview")
-        nuitka_cmd.append("--include-module=webview.platforms.qt")
     elif TARGET_PLATFORM == "Darwin":
-        nuitka_cmd.append("--disable-plugin=pywebview")
-        if _use_macos_app_bundle(storage_mode):
-            nuitka_cmd.append("--include-module=webview.platforms.cocoa")
+        if not _use_macos_app_bundle(storage_mode):
+            nuitka_cmd.append("--disable-plugin=pywebview")
 
 
 
