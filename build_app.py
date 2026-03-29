@@ -286,6 +286,8 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
         nuitka_cmd.append(f"--noinclude-data-files={pattern}")
     if _use_embedded_webview(storage_mode):
         nuitka_cmd.append("--include-package=webview")
+        if TARGET_PLATFORM == "Windows":
+            nuitka_cmd.append("--disable-plugin=pywebview")
     if TARGET_PLATFORM == "Linux":
         qt_plugin_name = _detect_qt_plugin_name()
         if qt_plugin_name is None:
