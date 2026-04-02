@@ -90,15 +90,20 @@ class GameUtils:
         logger.warning(f"Timeout reached ({timeout}s): Label '{label}' found.")
         return False
 
-    def try_get_modal(self, no_body: bool = False) -> Optional[Modal]:
+    def try_get_modal(self, no_body: bool = False, require_header: bool = True) -> Optional[Modal]:
         """
         尝试解析当前画面的模态框。
+
+        默认要求存在 modal header，避免在普通页面上把按钮区误判为弹窗。
+        只有在显式关闭 require_header 时，才允许进入更宽松的 modal 解析。
+
+        这里只做轻量预筛选：当前帧存在按钮即可继续交给 ModalParser。
+        是否真的是模态框，由 ModalParser 根据头部/面板/按钮布局综合判断。
         """
         results = self._app_processor.latest_results
         if results is None or results.frame is None or results.frame.size == 0:
             return None
-
-        if not results.exists_label(BaseUILabels.MODAL_HEADER):
+        if require_header and not results.exists_label(BaseUILabels.MODAL_HEADER):
             return None
 
         buttons = results.filter_by_label(BaseUILabels.BUTTON)
@@ -107,7 +112,15 @@ class GameUtils:
 
         return get_modal(results, no_body=no_body, quiet=True)
 
-    def wait_for_modal(self, modal_title, timeout=10, interval=1, no_body: bool = False, match_config: MatchConfig = None) -> Optional[Modal]:
+    def wait_for_modal(
+            self,
+            modal_title,
+            timeout=10,
+            interval=1,
+            no_body: bool = False,
+            match_config: MatchConfig = None,
+            require_header: bool = True,
+    ) -> Optional[Modal]:
         """
         等待指定标题的模态框出现
         :param modal_title: 模态框标题
@@ -115,13 +128,14 @@ class GameUtils:
         :param interval: 轮询间隔
         :param no_body: 不需要框体文本
         :param match_config: 匹配配置
+        :param require_header: 是否要求存在 modal header
         :return:
         """
         logger.debug(f"Waiting for modal with title: {modal_title}")
         wait_time = 0
         match_config = match_config if match_config is not None else MatchConfig(fuzz_threshold=80)
         while wait_time < timeout:
-            modal = self.try_get_modal(no_body=no_body)
+            modal = self.try_get_modal(no_body=no_body, require_header=require_header)
             if modal:
                 if modal_title is None or string_match(modal.modal_title, modal_title, match_config):
                     logger.debug(f"Modal found: {modal.modal_title}")
@@ -136,6 +150,54 @@ class GameUtils:
 
         logger.warning(f"Timeout reached ({timeout}s): Modal with title '{modal_title}' not found.")
         return None
+
+    def wait_modal_transition(self, previous_modal_title: str | None = None, timeout: float = 5.0, interval: float = 0.2) -> bool:
+        """
+        等待当前模态框关闭，或切换为另一个模态框。
+
+        当 previous_modal_title 为 None 时，只要当前模态消失就返回 True；
+        当 previous_modal_title 有值时，模态消失或标题变化都视为状态切换成功。
+        """
+        wait_time = 0.0
+        while wait_time <= timeout:
+            modal = self.try_get_modal(no_body=True)
+            if modal is None:
+                return True
+            if previous_modal_title is not None and modal.modal_title != previous_modal_title:
+                return True
+            sleep(interval)
+            wait_time += interval
+        logger.warning(f"Timeout reached ({timeout}s): Modal '{previous_modal_title}' did not close or change.")
+        return False
+
+    def click_modal_button_and_wait_transition(
+            self,
+            button: Yolo_Box,
+            previous_modal_title: str | None = None,
+            retries: int = 2,
+            timeout: float = 5.0,
+            interval: float = 0.2,
+    ) -> bool:
+        """
+        点击模态按钮，并等待模态关闭或切换到下一个模态。
+
+        该方法用于“点击成功”不能只靠坐标触发来判断的模态流程。
+        返回 True 表示模态状态确实发生了变化；
+        返回 False 表示按钮点击后，原模态仍停留在当前画面。
+        """
+        baseline_title = previous_modal_title
+        if baseline_title is None:
+            modal = self.try_get_modal(no_body=True)
+            baseline_title = None if modal is None else modal.modal_title
+
+        if not self.click_element_and_wait_trigger(button, retries=retries, timeout=min(timeout, 1.5), interval=0.1):
+            self._app_processor.device.click_element(button)
+
+        return self.wait_modal_transition(
+            previous_modal_title=baseline_title,
+            timeout=timeout,
+            interval=interval,
+        )
 
     def click_on_label(self, label, timeout=10, interval=1):
         """
@@ -428,14 +490,19 @@ class GameUtils:
 
     def back_next_page(self):
         """
-        返回上一页
-        :return:
+        返回上一页。
+
+        只有在点击返回按钮后检测到可见 UI 变化，才认为返回动作成功。
         """
         logger.debug("Going back next page")
-        if self.wait_for_label(BaseUILabels.BACK_BTN, 3):
-            self._app_processor.device.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first())
-        else:
+        if not self.wait_for_label(BaseUILabels.BACK_BTN, 3):
             raise TimeoutError("Waiting for a back button timeout")
+        back_button = self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first()
+        if back_button is None:
+            raise TimeoutError("Back button disappeared before click.")
+        if not self.click_element_and_wait_trigger(back_button, retries=3, timeout=2.5, interval=0.1):
+            raise TimeoutError("Back button click did not trigger page transition.")
+        return True
 
     def update_current_location(self, new_location: str = None):
         """

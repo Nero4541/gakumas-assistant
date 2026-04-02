@@ -45,7 +45,10 @@ def goto__get_expenditure(app: "AppProcessor"):
     _back_home(app)
     if not app.game_utils.wait_for_label(BaseUILabels.HOME_GET_EXPENDITURE):
         raise TimeoutError("Timeout waiting for [home:expenditure] to appear.")
-    app.game_utils.click_on_label(BaseUILabels.HOME_GET_EXPENDITURE)
+    expenditure_button = app.latest_results.filter_by_label(BaseUILabels.HOME_GET_EXPENDITURE).first()
+    if expenditure_button is None:
+        raise TimeoutError("Failed to locate [home:expenditure] button after label wait.")
+    app.game_utils.click_element_and_wait_trigger(expenditure_button, retries=3, timeout=3.0, interval=0.1)
 
 def goto__work_dispatch_page(app: "AppProcessor"):
     """ 进入任务派遣页面 """

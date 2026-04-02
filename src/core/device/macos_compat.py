@@ -1,0 +1,40 @@
+import platform
+from typing import Any
+
+_MACOS_APP_CLASS = None
+_MACOS_IMPORT_ERROR = None
+
+if platform.system() == "Darwin":
+    try:
+        from src.core.device.MacOS.app import MacOS_App as _MACOS_APP_CLASS
+    except Exception as exc:
+        _MACOS_IMPORT_ERROR = exc
+
+
+def mac_playtools_mode_is_available() -> bool:
+    return _MACOS_APP_CLASS is not None
+
+
+def get_mac_unavailability_reason() -> str:
+    if _MACOS_APP_CLASS is not None:
+        return ""
+    if platform.system() != "Darwin":
+        return "MacPlayTools 模式仅支持 macOS (Apple Silicon)。"
+    if _MACOS_IMPORT_ERROR is not None:
+        return (
+            f"MacPlayTools 模式依赖的组件未就绪：{_MACOS_IMPORT_ERROR}"
+        )
+    return "MacPlayTools 模式当前不可用。"
+
+
+def create_mac_device():
+    if _MACOS_APP_CLASS is None:
+        message = get_mac_unavailability_reason()
+        if _MACOS_IMPORT_ERROR is not None:
+            raise RuntimeError(message) from _MACOS_IMPORT_ERROR
+        raise RuntimeError(message)
+    return _MACOS_APP_CLASS()
+
+
+def is_mac_device(device: Any) -> bool:
+    return _MACOS_APP_CLASS is not None and isinstance(device, _MACOS_APP_CLASS)

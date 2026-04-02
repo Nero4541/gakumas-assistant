@@ -24,6 +24,11 @@ from src.core.device.windows_compat import (
     get_windows_unavailability_reason,
     windows_pc_mode_is_available,
 )
+from src.core.device.macos_compat import (
+    create_mac_device,
+    get_mac_unavailability_reason,
+    mac_playtools_mode_is_available,
+)
 from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
 from src.entity.Game.Game_Info import GameStatusManager
@@ -356,6 +361,30 @@ class AppProcessor:
             logger.warning(f"{reason} 已自动回退到 Phone 模式。")
             self.config_service.get_config().base.run_mode.set("Phone", touch=False)
             mode = DeviceType.PHONE
+        if mode == DeviceType.MAC_PLAYTOOLS:
+            if not mac_playtools_mode_is_available():
+                reason = get_mac_unavailability_reason()
+                if platform.system() == "Darwin":
+                    logger.warning(reason)
+                    device = UnavailableDevice(reason, "mac_playtools_unavailable")
+                    self._update_device_state(device)
+                    return device
+                logger.warning(f"{reason} 已自动回退到 Phone 模式。")
+                self.config_service.get_config().base.run_mode.set("Phone", touch=False)
+                mode = DeviceType.PHONE
+            else:
+                logger.debug("Initializing MacPlayTools device")
+                try:
+                    device = create_mac_device()
+                except Exception as exc:
+                    device = UnavailableDevice(f"MacPlayTools 设备初始化失败：{exc}", "mac_playtools_init_failed")
+                if not device:
+                    device = UnavailableDevice(
+                        getattr(device, "get_unavailable_reason", lambda: "MacPlayTools 设备不可用。")(),
+                        getattr(device, "get_unavailable_code", lambda: "mac_playtools_unavailable")(),
+                    )
+                self._update_device_state(device)
+                return device
         if mode == DeviceType.PHONE:
             logger.debug("Initializing Android device")
             try:

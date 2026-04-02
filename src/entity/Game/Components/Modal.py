@@ -265,8 +265,18 @@ class ModalParser:
         if search_frame.size == 0:
             return None
 
-        hsv = cv2.cvtColor(search_frame, cv2.COLOR_BGR2HSV)
-        white_mask = cv2.inRange(hsv, (0, 0, 170), (179, 70, 255))
+        lab = cv2.cvtColor(search_frame, cv2.COLOR_BGR2LAB)
+        l_ch = lab[:, :, 0]
+        a_ch = lab[:, :, 1]
+        b_ch = lab[:, :, 2]
+        # White in LAB: high lightness, neutral chroma (a* and b* near 128)
+        white_mask = (
+            (l_ch > 200).astype(np.uint8)
+            & (a_ch > 118).astype(np.uint8)
+            & (a_ch < 138).astype(np.uint8)
+            & (b_ch > 115).astype(np.uint8)
+            & (b_ch < 140).astype(np.uint8)
+        ) * 255
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (11, 11))
         white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
         white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)))
@@ -309,6 +319,17 @@ class ModalParser:
         return Yolo_Box(x1, y1, x2, y2, "ModalPanel", self.frame[y1:y2, x1:x2])
 
     def _infer_header_from_frame(self) -> Yolo_Box | None:
+        """Infer the modal header location using LAB color space detection.
+
+        The modal header is an orange/yellow gradient bar above the action
+        buttons.  We detect it by converting to CIELAB and looking for warm
+        colours (high *a** and *b** channels) that form a wide, thin
+        horizontal band aligned with the action buttons.
+
+        LAB is more robust to JPEG compression artifacts than HSV because
+        luminance (L*) is decorrelated from chrominance (a*, b*), so
+        quantization noise in brightness does not shift the perceived hue.
+        """
         frame_height, frame_width = self.frame.shape[:2]
         action_top = min(box.y for box in self.action_buttons.boxes)
         action_left = min(box.x for box in self.action_buttons.boxes)
@@ -321,10 +342,37 @@ class ModalParser:
             return None
 
         search_frame = self.frame[search_top:search_bottom, :]
-        hsv = cv2.cvtColor(search_frame, cv2.COLOR_BGR2HSV)
-        orange_mask = cv2.inRange(hsv, (5, 80, 160), (35, 255, 255))
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
-        orange_mask = cv2.morphologyEx(orange_mask, cv2.MORPH_CLOSE, kernel)
+        blurred = cv2.GaussianBlur(search_frame, (5, 5), 0)
+
+        # --- LAB-based warm colour detection ---
+        lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
+        l_ch, a_ch, b_ch = cv2.split(lab)
+
+        # Orange / warm-yellow in LAB:
+        #   L* > 160  (bright),  a* > 135  (toward red),  b* > 150  (toward yellow)
+        # A secondary, slightly looser mask catches paler header variants.
+        warm_mask = (
+            (l_ch > 160).astype(np.uint8)
+            & (a_ch > 135).astype(np.uint8)
+            & (b_ch > 150).astype(np.uint8)
+        ) * 255
+        pale_mask = (
+            (l_ch > 180).astype(np.uint8)
+            & (a_ch > 128).astype(np.uint8)
+            & (b_ch > 140).astype(np.uint8)
+        ) * 255
+        orange_mask = cv2.bitwise_or(warm_mask, pale_mask)
+
+        orange_mask = cv2.morphologyEx(
+            orange_mask,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (17, 7)),
+        )
+        orange_mask = cv2.morphologyEx(
+            orange_mask,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (7, 3)),
+        )
 
         contours, _ = cv2.findContours(orange_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         candidates = []

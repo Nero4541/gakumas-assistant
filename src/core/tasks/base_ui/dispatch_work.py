@@ -163,15 +163,36 @@ def _dispatch_single_work(app: "AppProcessor"):
     """
     app.game_utils.wait_loading()
     app.game_utils.wait_for_label(BaseUILabels.AVATAR)
+    rejected_avatars: set[Yolo_Box] = set()
+
+    def _get_dispatch_avatars() -> Yolo_Results:
+        """返回当前页可参与派遣选择的头像集合。"""
+        avatars = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
+        return Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])
+
+    def _pick_fallback_avatar() -> Optional[Yolo_Box]:
+        """
+        在当前页里挑一个未被拒绝、且未处于派遣中的兜底头像。
+        """
+        for avatar in _get_dispatch_avatars():
+            if avatar in rejected_avatars:
+                continue
+            if check_color(avatar.frame, (0,5,75), (179,120,190), threshold=50):
+                continue
+            return avatar
+        return None
+
     def __try_dispatch_work__():
         """
         派遣任务
         :return:
         """
         app.debug_tools.clear_all()
-        avatars = app.latest_results.filter_by_label(BaseUILabels.AVATAR)
-        avatars = Yolo_Results.from_boxes([avatar for avatar in avatars if avatar.x >= 10])
+        avatars = _get_dispatch_avatars()
         for avatar in avatars:
+            if avatar in rejected_avatars:
+                app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="跳过，已尝试", color=(0,165,255))
+                continue
             # 跳过正在工作中的角色
             working = check_color(avatar.frame, (0,5,75), (179,120,190), threshold=50)
             logger.debug(working)
@@ -189,6 +210,7 @@ def _dispatch_single_work(app: "AppProcessor"):
             if _is_avatar_guaranteed_success(avatar):
                 app.debug_tools.add_box(avatar.x, avatar.y, avatar.w, avatar.h, label="大成功确定", color=(0,255,0))
                 if not _assign_avatar_to_work(app, avatar):
+                    rejected_avatars.add(avatar)
                     continue
                 app.debug_tools.clear_all()
                 return True
@@ -206,6 +228,8 @@ def _dispatch_single_work(app: "AppProcessor"):
         else:
             app.device.scrollY(avatar_group_x, avatar_group_y, -10)
         app.game_utils.wait_frame_stable()
+        if prev_frame is not None and not check_frame_change(prev_frame, app.latest_frame):
+            rejected_avatars.clear()
         avatar_groups = app.latest_results.filter_by_label(BaseUILabels.AVATAR).group_yolo_boxes_by_position(None, avatar_group_x//6)
         max_x_group = max(
             avatar_groups,
@@ -220,5 +244,10 @@ def _dispatch_single_work(app: "AppProcessor"):
             break
 
         prev_frame = app.latest_frame.copy()
-    _assign_avatar_to_work(app)
+    fallback_avatar = _pick_fallback_avatar()
+    if fallback_avatar is None:
+        logger.warning("No fallback avatar available after dispatch selection was rejected.")
+        app.debug_tools.clear_all()
+        return
+    _assign_avatar_to_work(app, fallback_avatar)
     app.debug_tools.clear_all()

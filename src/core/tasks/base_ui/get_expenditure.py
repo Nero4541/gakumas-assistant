@@ -18,7 +18,7 @@ def action__claim_expenditure(app: "AppProcessor", max_attempts: int = 3) -> boo
 
     for attempt in range(max_attempts):
         goto__get_expenditure(app)
-        sleep(2)
+        app.game_utils.wait_frame_stable(timeout=8)
         modal = app.game_utils.wait_for_modal(None, no_body=True, timeout=5, interval=0.5)
         if not modal:
             if app.latest_results.exists_label(BaseUILabels.TAB_HOME):
@@ -27,8 +27,15 @@ def action__claim_expenditure(app: "AppProcessor", max_attempts: int = 3) -> boo
             continue
 
         if string_match(modal.modal_title, ModalText.TITLE.EXPENDITURE, MatchConfig(fuzz_threshold=90)):
-            app.device.click_element(modal.cancel_button or modal.confirm_button)
-            app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER, timeout=5, interval=0.5)
+            close_button = modal.cancel_button or modal.confirm_button
+            if close_button is None:
+                raise RuntimeError("Expenditure modal close button not found.")
+            app.game_utils.click_modal_button_and_wait_transition(
+                close_button,
+                previous_modal_title=modal.modal_title,
+                timeout=5,
+                interval=0.2,
+            )
             sleep(1)
             return True
 
@@ -38,8 +45,12 @@ def action__claim_expenditure(app: "AppProcessor", max_attempts: int = 3) -> boo
         )
         close_button = modal.cancel_button or modal.confirm_button
         if close_button:
-            app.device.click_element(close_button)
-            app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER, timeout=5, interval=0.5)
+            app.game_utils.click_modal_button_and_wait_transition(
+                close_button,
+                previous_modal_title=modal.modal_title,
+                timeout=5,
+                interval=0.2,
+            )
         sleep(1)
 
     raise TimeoutError("Timeout waiting for expenditure modal to appear.")

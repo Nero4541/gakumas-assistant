@@ -12,12 +12,13 @@ from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()
 
-@dataclass
+@dataclass(eq=False)
 class Button(Yolo_Box):
     text: str | None
-    def __init__(self, element: Yolo_Box, no_text = False):
+
+    def __init__(self, element: Yolo_Box, no_text: bool = False):
         super().__init__(element.x, element.y, element.w, element.h, element.label, element.frame)
-        self.text = None if no_text else "".join([item.text for item in ocr_service.ocr(element.frame)])
+        self.text = None if no_text else "".join(item.text for item in ocr_service.ocr(element.frame))
 
     def is_disabled(self):
         h, w = self.frame.shape[:2]
@@ -82,7 +83,7 @@ class ButtonList:
                     int(btn.y),
                     int(btn.w),
                     int(btn.h),
-                    color=(255,0,0) if btn.is_disabled() else (0,255,0),
+                    color=(255, 0, 0) if btn.is_disabled() else (0, 255, 0),
                     label=btn.text,
                     duration=3
                 )

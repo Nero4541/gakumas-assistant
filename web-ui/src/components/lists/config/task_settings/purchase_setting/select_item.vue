@@ -1,6 +1,10 @@
 <script setup>
 import apis from "@/scripts/apis.js";
 import app from "@/main.js";
+import { useAppStore } from "@/stores/app.ts";
+import { computed } from "vue";
+
+const store = useAppStore()
 
 const props = defineProps({
   data: Object,
@@ -20,6 +24,19 @@ function filter(value, queryText, item) {
     String(val != null ? val : '').toLowerCase()
   const query = toLowerCaseString(queryText)
   return item.raw.name.includes(query) || item.raw.translation?.name.includes(query)
+}
+
+const preferGameAsset = computed(() => store.config.base?.prefer_game_asset_image?.value ?? false)
+
+function itemImageSrc(item) {
+  if (preferGameAsset.value) {
+    if (item.gameAssetImage) return `/api/game_assets/items/${item.id}.png`
+    if (item.image) return `/api/clip_image/items/${item.id}.png`
+  } else {
+    if (item.image) return `/api/clip_image/items/${item.id}.png`
+    if (item.gameAssetImage) return `/api/game_assets/items/${item.id}.png`
+  }
+  return null
 }
 </script>
 
@@ -41,8 +58,8 @@ function filter(value, queryText, item) {
         :key="item.raw.id" class="select_item">
         <template v-slot:prepend>
           <v-img
-            v-if="item.raw.image"
-            :src="`/api/clip_image/items/${item.raw.id}.png`"
+            v-if="itemImageSrc(item.raw)"
+            :src="itemImageSrc(item.raw)"
             width="48"
             height="48"
           />
@@ -67,8 +84,8 @@ function filter(value, queryText, item) {
       >
         <template v-slot:prepend>
           <v-img
-            v-if="item.raw.image"
-            :src="`/api/clip_image/items/${item.raw.id}.png`"
+            v-if="itemImageSrc(item.raw)"
+            :src="itemImageSrc(item.raw)"
             width="24"
             height="24"
             class="mr-2"

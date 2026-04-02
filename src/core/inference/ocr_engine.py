@@ -18,7 +18,7 @@ from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersi
 
 from src.utils.opencv_tools import letterbox
 from src.utils.performance_tools import timeit
-from src.utils.string_tools import fullwidth_to_halfwidth, MatchConfig, string_match
+from src.utils.string_tools import fullwidth_to_halfwidth, normalize_ocr_jp, MatchConfig, string_match
 
 
 class OCRLoader(metaclass=SingletonMeta):
@@ -265,14 +265,14 @@ class OCR_ResultList:
 
 
 class OCRService:
-    ocr_engine: OCRLoader | None
+    ocr_engine: OCRLoader
 
     def __init__(self):
-        self.ocr_engine = None
+        # Eagerly initialize the OCR model so it loads at app startup
+        # (OCRLoader is a singleton, so cost is paid only once)
+        self.ocr_engine = OCRLoader()
 
     def _get_ocr_engine(self) -> OCRLoader:
-        if self.ocr_engine is None:
-            self.ocr_engine = OCRLoader()
         return self.ocr_engine
 
     @classmethod
@@ -292,7 +292,7 @@ class OCRService:
                 y=int(y),
                 w=int(w),
                 h=int(h),
-                text=fullwidth_to_halfwidth(text),
+                text=normalize_ocr_jp(fullwidth_to_halfwidth(text)),
                 confidence=score
             ))
         return temp

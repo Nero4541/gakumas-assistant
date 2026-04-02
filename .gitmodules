@@ -4,3 +4,7 @@
 [submodule "assets/GakumasTranslationData"]
 	path = assets/GakumasTranslationData
 	url = https://github.com/chinosk6/GakumasTranslationData.git
+[submodule "vendor/GkmasObjectManager"]
+	path = vendor/GkmasObjectManager
+	url = https://github.com/AllenHeartcore/GkmasObjectManager.git
+	shallow = true

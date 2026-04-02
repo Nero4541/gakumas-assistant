@@ -24,7 +24,7 @@ from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.models import CLIPMemory
 from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
 from src.utils.game_tools import modal_body_extract_item_info
-from src.core.inference.ocr_engine import OCRService, OCR_ResultList
+from src.core.inference.ocr_engine import OCRService
 from src.utils.opencv_tools import check_color, check_frame_change
 from src.utils.string_tools import MatchConfig, string_match
 from src.utils.logger import logger
@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 ocr_service = OCRService()
 item_db = GakumasDatabase_ItemDataUtils()
+ITEM_DB_MATCH_CONFIG = MatchConfig(fuzz_threshold=85, use_contains=False, normalize=True)
 
 def _calculate_median_size(item_groups: List) -> Tuple[int, int]:
     """计算当前页面物品框的中位数宽高，用于过滤误识别"""
@@ -92,6 +93,78 @@ def _handle_known_item(app, item_inner, clip_result, commodity_target, index):
     logger.debug(f"{clip_result.name} not in target list.")
     return False
 
+
+def _ocr_modal_item_candidates(image: Optional[np.ndarray], limit: int = 5) -> list[str]:
+    """
+    对给定图像做 OCR，并按从上到下的顺序提取若干个候选文本。
+
+    用于未知商品兜底识别：优先取更靠上的短文本，避免直接落到说明正文。
+    :param image: OCR 输入图像
+    :param limit: 最多返回多少个候选文本
+    :return: 候选文本列表
+    """
+    if image is None or getattr(image, "size", 0) == 0:
+        return []
+
+    ocr_results = ocr_service.ocr(image)
+    if not ocr_results:
+        return []
+
+    merged_results = ocr_results.auto_merge_lines(width_gap=30)
+    ordered_results = sorted(merged_results, key=lambda res: (res.y, len(res.text)))
+    candidates: list[str] = []
+    for result in ordered_results:
+        text = result.text.strip()
+        if len(text) <= 2:
+            continue
+        if text in candidates:
+            continue
+        candidates.append(text)
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _resolve_item_from_modal_ocr(item_info: Optional[np.ndarray], modal_body: Optional[np.ndarray]):
+    """
+    从商品确认弹窗中解析物品名称候选，并尝试在数据库中匹配。
+
+    先使用裁剪出的 item_info 区域，再退回整个 modal body 顶部文本，
+    用于处理标题裁剪不完整时的未知物品识别。
+    :param item_info: 物品信息裁剪区域
+    :param modal_body: 整个模态框正文区域
+    :return: (是否命中数据库, 数据库对象, 最佳候选文本)
+    """
+    # 优先使用 item_info 区域的候选
+    info_candidates = _ocr_modal_item_candidates(item_info, limit=3)
+
+    # 先在 item_info 候选中查找匹配
+    if info_candidates:
+        logger.debug(f"Unknown item OCR info candidates: {info_candidates}")
+        for candidate in info_candidates:
+            status, db_result = item_db.search(candidate, ITEM_DB_MATCH_CONFIG)
+            if status:
+                return True, db_result, candidate
+
+    # item_info 无结果时再退回到 modal body 候选
+    body_candidates = [
+        text for text in _ocr_modal_item_candidates(modal_body, limit=5)
+        if text not in info_candidates
+    ]
+    all_candidates = info_candidates + body_candidates
+
+    if not all_candidates:
+        return False, None, None
+
+    if body_candidates:
+        logger.debug(f"Unknown item OCR body candidates: {body_candidates}")
+        for candidate in body_candidates:
+            status, db_result = item_db.search(candidate, ITEM_DB_MATCH_CONFIG)
+            if status:
+                return True, db_result, candidate
+
+    return False, None, all_candidates[0]
+
 def _handle_unknown_item(app, item_box, item_inner, commodity_target, index):
     """处理未知物品：点击 -> OCR -> 存库 -> 决策"""
     logger.debug(f"Item {index} not in memory, analyzing...")
@@ -119,18 +192,14 @@ def _handle_unknown_item(app, item_box, item_inner, commodity_target, index):
     try:
         yolo_result_item = copy(item_inner.frame)
         modal_item_image, item_info = modal_body_extract_item_info(modal.modal_body)
-        ocr_results = ocr_service.ocr(item_info)
-        valid_ocr = OCR_ResultList([res for res in ocr_results if len(res.text) > 2])
+        status, db_result, matched_text = _resolve_item_from_modal_ocr(item_info, modal.modal_body)
 
-        if not valid_ocr:
+        if matched_text is None:
             logger.warning("No OCR results found.")
             app.device.click_element(modal.cancel_button)
             return False
 
-        item_name_ocr = valid_ocr.get_y_min()
-        status, db_result = item_db.search(item_name_ocr.text)
-
-        final_name = item_name_ocr.text
+        final_name = matched_text
 
         # 存入记忆库
         if status:
@@ -289,7 +358,12 @@ def _find_visible_weekly_gift_buttons(app: "AppProcessor") -> List:
 
 
 def _close_weekly_gift_result_modal(app: "AppProcessor") -> bool:
-    # 领取确认后会再弹一次结果框；统一关掉后再继续扫描下一项。
+    """
+    关闭周礼包领取后的结果模态框。
+
+    返回 True 表示结果框已识别并完成关闭；
+    返回 False 表示没有找到可收尾的结果框。
+    """
     result_modal = app.game_utils.wait_for_modal(
         ModalText.TITLE.RECEIPT_COMPLETED,
         timeout=5,
@@ -314,8 +388,48 @@ def _close_weekly_gift_result_modal(app: "AppProcessor") -> bool:
     return True
 
 
+def _dismiss_weekly_gift_modal_if_present(
+        app: "AppProcessor",
+        modal_titles: Optional[List[str]] = None,
+) -> bool:
+    """
+    关闭当前仍残留在画面上的周礼包相关模态框。
+
+    当 modal_titles 不为空时，仅在标题命中这些候选值时才执行关闭。
+    返回 True 表示检测到模态且完成了关闭/切换等待。
+    """
+    modal = app.game_utils.try_get_modal(no_body=True)
+    if modal is None:
+        return False
+
+    if modal_titles and not string_match(modal.modal_title, modal_titles, MatchConfig(fuzz_threshold=90)):
+        return False
+
+    close_button = modal.cancel_button or modal.confirm_button
+    if close_button is None:
+        logger.warning("Weekly gift modal close button not found")
+        return False
+
+    logger.debug(f"Dismissing weekly gift modal: {modal.modal_title}")
+    closed = app.game_utils.click_modal_button_and_wait_transition(
+        close_button,
+        previous_modal_title=modal.modal_title,
+        timeout=5,
+        interval=0.2,
+    )
+    if closed:
+        app.game_utils.wait_frame_stable()
+    return closed
+
+
 def _claim_weekly_gift_button(app: "AppProcessor", button) -> bool:
-    # 单个礼包的流程固定为：点击礼包 -> 确认领取 -> 关闭结果弹窗。
+    """
+    执行单个周礼包领取流程。
+
+    流程为：点击礼包 -> 等确认框 -> 点击确认并等待模态切换 -> 关闭结果框。
+    返回 True 表示一次礼包领取流程完整结束；
+    返回 False 表示中途遇到异常，需要跳过当前礼包。
+    """
     app.device.click_element(button)
 
     confirm_modal = app.game_utils.wait_for_modal(None, timeout=5, interval=0.5, no_body=True)
@@ -326,13 +440,38 @@ def _claim_weekly_gift_button(app: "AppProcessor", button) -> bool:
     confirm_button = confirm_modal.confirm_button or confirm_modal.cancel_button
     if confirm_button is None:
         logger.warning("Weekly gift confirm modal action button not found")
+        _dismiss_weekly_gift_modal_if_present(app)
         return False
     if confirm_button.is_disabled():
         logger.warning(f"Weekly gift button '{button.text}' is disabled after opening modal")
+        if modal_close_button := (confirm_modal.cancel_button or confirm_modal.confirm_button):
+            app.game_utils.click_modal_button_and_wait_transition(
+                modal_close_button,
+                previous_modal_title=confirm_modal.modal_title,
+                timeout=5,
+                interval=0.2,
+            )
+            app.game_utils.wait_frame_stable()
         return False
 
-    app.device.click_element(confirm_button)
-    return _close_weekly_gift_result_modal(app)
+    if not app.game_utils.click_modal_button_and_wait_transition(
+            confirm_button,
+            previous_modal_title=confirm_modal.modal_title,
+            timeout=5,
+            interval=0.2,
+    ):
+        logger.warning(f"Weekly gift confirm modal '{confirm_modal.modal_title}' did not transition after confirm.")
+        _dismiss_weekly_gift_modal_if_present(app, modal_titles=[confirm_modal.modal_title])
+        return False
+
+    if _close_weekly_gift_result_modal(app):
+        return True
+
+    _dismiss_weekly_gift_modal_if_present(
+        app,
+        modal_titles=[ModalText.TITLE.PURCHASE_CONFIRMATION, ModalText.TITLE.CONFIRM],
+    )
+    return False
 
 
 def _collect_visible_weekly_gifts(app: "AppProcessor") -> int:
@@ -396,6 +535,8 @@ def action__receive_weekly_gift(app: "AppProcessor"):
         prev_page = current_page
         _scroll_weekly_gift_page(app)
 
+    while _dismiss_weekly_gift_modal_if_present(app):
+        pass
     app.game_utils.back_next_page()
     app.game_utils.wait_loading()
     app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
@@ -406,7 +547,17 @@ def _reset_daily_exchange_to_top(app: "AppProcessor"):
     刷新列表后回到商店主页再重新进入每日交换所，确保列表从顶部开始。
     """
     app.game_utils.back_next_page()
-    app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP)
+    app.game_utils.wait_loading()
+    app.game_utils.wait_frame_stable()
+    try:
+        app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP)
+    except TimeoutError:
+        buttons = ButtonList(app.latest_results)
+        if buttons.get_button_by_text(ButtonText.SHOP.PACK, match_config=MatchConfig(use_fuzz=False)):
+            logger.debug("Shop root detected by button layout after back, overriding current location.")
+            app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+        else:
+            raise
     app.game_utils.wait_frame_stable()
     app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.DAILY_EXCHANGE)

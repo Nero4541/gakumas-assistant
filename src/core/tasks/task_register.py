@@ -10,13 +10,45 @@ from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from typing import TYPE_CHECKING
 
-from src.utils.opencv_tools import is_white_screen
-
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
 GAME_RUNNING = False
 debug_tools = DebugTools()
+
+
+def _wait_until(condition, timeout: float, interval: float = 1.0) -> bool:
+    """
+    在给定超时时间内轮询条件函数。
+
+    返回 True 表示条件在 timeout 内满足；
+    返回 False 表示轮询超时。
+    """
+    deadline = time.time() + timeout
+    while time.time() <= deadline:
+        if condition():
+            return True
+        sleep(interval)
+    return False
+
+
+def _is_startup_screen_ready(processor: "AppProcessor") -> bool:
+    """
+    判断启动阶段是否已经进入“可继续执行业务任务”的界面。
+
+    只要当前位置不再是 UNKNOWN，或当前出现了可处理模态框，
+    就认为启动页已经准备完成。
+    """
+    latest_results = getattr(processor, "latest_results", None)
+    if latest_results is None:
+        return False
+
+    current_location = processor.game_utils.update_current_location()
+    if current_location and current_location != GamePageTypes.UNKNOWN:
+        return True
+
+    return latest_results.exists_label(BaseUILabels.MODAL_HEADER)
+
 
 def register_tasks(processor: "AppProcessor"):
     @processor.task_queue.register_pre_queue_start()
@@ -73,38 +105,33 @@ def register_tasks(processor: "AppProcessor"):
     def _pre__start_game():
         global GAME_RUNNING
         GAME_RUNNING = False
-        TIMEOUT = 120
-        COUNT = 0
         if not processor.config_service().base.auto_start_game.value:
             return True
-        logger.debug(f"Game running: {processor.device.is_app_running()}")
-        if processor.device.is_app_running():
-            GAME_RUNNING = True
-            # 将游戏切换到前台
-            if not processor.device.is_app_focused():
-                logger.debug(f"Game switch to front......")
-                if is_windows_device(processor.device):
-                    processor.device.bring_to_front()
-                else:
-                    processor.device.start_game()
-
-                    # 检测白屏
-                    start_time = time.time()
-                    while time.time() - start_time < 3:
-                        screenshot = processor.device.capture()  # 截取屏幕
-                        if is_white_screen(screenshot):
-                            logger.debug("White screen detected, setting GAME_RUNNING to False.")
-                            GAME_RUNNING = False
-                            return True
-            sleep(1)  # 每秒检查一次
+        if isinstance(processor.device, Android_App):
+            if processor.device.is_app_focused():
+                GAME_RUNNING = True
+                return True
+            logger.debug("Ensure Android game is foreground......")
+            processor.device.start_game()
             return True
+
+        game_running = processor.device.is_app_running()
+        logger.debug(f"Game running: {game_running}")
+        if game_running:
+            GAME_RUNNING = True
+            if processor.device.is_app_focused():
+                return True
+
+            logger.debug("Game switch to front......")
+            if is_windows_device(processor.device):
+                processor.device.bring_to_front()
+                return _wait_until(processor.device.is_app_focused, timeout=5, interval=0.25)
+
+            processor.device.start_game()
+            return True
+
         processor.device.start_game()
-        while not processor.device.is_app_running():
-            if COUNT >= TIMEOUT:
-                return False
-            COUNT += 1
-            sleep(1)
-        return True
+        return _wait_until(processor.device.is_app_running, timeout=120, interval=1)
 
     @processor.task_queue.register_pre_queue_start()
     def _pre__resume_yolo_engine():
@@ -116,19 +143,14 @@ def register_tasks(processor: "AppProcessor"):
     @processor.task_queue.register_pre_queue_start()
     def _pre__wait_game_start():
         """等待游戏启动"""
-        TIMEOUT = 120
-        COUNT = 0
+        if not processor.config_service().base.auto_start_game.value:
+            return True
         if GAME_RUNNING:
             return True
         logger.debug("wait game start......")
-        while not processor.latest_results.exists_label(BaseUILabels.START_MENU_LOGO):
-            if COUNT >= TIMEOUT:
-                return False
-            COUNT += 1
-            sleep(1)
-        return True
+        return _wait_until(lambda: _is_startup_screen_ready(processor), timeout=120, interval=1)
 
-    @processor.task_queue.register_task("start_game", "启动游戏", 3600, disabled_middleware=True)
+    @processor.task_queue.register_task("start_game", "启动游戏", 3600)
     def _task__start_game(app: "AppProcessor"):
         from src.core.tasks.base_ui.start_game import (
             action__click_start_game,
@@ -147,7 +169,7 @@ def register_tasks(processor: "AppProcessor"):
             action__wait_enter_home(app)
         app.game_utils.update_current_location()
 
-    @processor.task_queue.register_task("get_expenditure", "获取活动费", 30)
+    @processor.task_queue.register_task("get_expenditure", "获取活动费", 60)
     def _task__get_expenditure(app: "AppProcessor"):
         from src.core.tasks.base_ui.get_expenditure import action__claim_expenditure
 
@@ -192,33 +214,13 @@ def register_tasks(processor: "AppProcessor"):
 
     @processor.task_queue.register_task("auto_enhancement_support_card", "自动强化支援卡")
     def _task__auto_enhancement_support_card(app: "AppProcessor"):
+        from src.core.tasks.base_ui.auto_enhancement_support_card import (
+            action__auto_enhance_support_cards,
+        )
         from src.core.tasks.base_ui.goto_pages import goto_support_card_list_page
-        from src.entity.Game.Components.SupportCard import SupportCard
 
         goto_support_card_list_page(app)
-        app.game_utils.wait_frame_stable()
-        support_cards = app.latest_results.filter_by_label(BaseUILabels.SUPPORT_CARD)
-        buttons = app.latest_results.filter_by_label(BaseUILabels.BUTTON)
-        # support_cards = support_cards.from_boxes([
-        #     card for card in support_cards
-        #     if any(
-        #         card.x <= btn.cx <= card.w
-        #         for btn in buttons
-        #     )
-        # ])
-        # logger.debug(f"found {len(support_cards)} cards: {support_cards}")
-        debug_tools.clear_all()
-        logger.debug(f"buttons: {buttons}")
-        for index, card in enumerate(support_cards):
-            logger.debug(f"support card: {card}, bool={any(btn.cy >= card.y and btn.cy <= card.h for btn in buttons)}")
-            if any(card.y <= btn.cy <= card.h for btn in buttons):
-                continue
-            support_card = SupportCard.from_yolo_box(card, index=index)
-            label = None
-            if support_card.level is not None:
-                stars = "?" if support_card.stars is None else support_card.stars
-                label = f"Lv{support_card.level} ★{stars}"
-            debug_tools.add_box(card.x, card.y, card.w, card.h, label=label)
+        action__auto_enhance_support_cards(app)
 
     @processor.task_queue.register_task("auto_contest", "自动每日竞技场")
     def _task__automated_contest(app: "AppProcessor"):
@@ -263,3 +265,11 @@ def register_tasks(processor: "AppProcessor"):
         from src.core.tasks.base_ui.refresh_skill_storage import refresh_skill_storage
 
         refresh_skill_storage(app)
+
+    @processor.task_queue.register_task("learn_support_card_clip", "刷新支援卡存储", manual_only=True)
+    def _task__learn_support_card_clip(app: "AppProcessor"):
+        from src.core.tasks.base_ui.learn_support_card_clip import action__learn_support_card_clip
+        from src.core.tasks.base_ui.goto_pages import goto_support_card_list_page
+
+        goto_support_card_list_page(app)
+        action__learn_support_card_clip(app)

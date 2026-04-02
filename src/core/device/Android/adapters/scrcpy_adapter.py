@@ -41,9 +41,9 @@ class ScrcpyAdapter:
         self,
         adb_device: AdbDevice,
         max_width: int = 0,
-        bitrate: int = 20000000,
+        bitrate: int = 100_000_000,
         max_fps: int = 30,
-        connection_timeout: int = 3000,
+        connection_timeout: int = 30000,
     ):
         self._adb_device = adb_device
         self._max_width = max_width
@@ -54,6 +54,8 @@ class ScrcpyAdapter:
         self._video_socket: Optional[socket.socket] = None
         self._control_socket: Optional[socket.socket] = None
         self._server_stream = None
+        self._server_died = threading.Event()
+        self._server_monitor_thread: Optional[threading.Thread] = None
         self._decoder_thread: Optional[threading.Thread] = None
         self._frame_lock = threading.Lock()
         self._control_lock = threading.Lock()
@@ -108,6 +110,10 @@ class ScrcpyAdapter:
 
     def stop(self):
         self._alive = False
+
+        if self._server_monitor_thread is not None and self._server_monitor_thread.is_alive():
+            self._server_monitor_thread.join(timeout=1.0)
+        self._server_monitor_thread = None
 
         if self._video_socket is not None:
             try:
@@ -205,13 +211,36 @@ class ScrcpyAdapter:
             "clipboard_autosync=false",
             "raw_stream=true",
         ]
+        self._server_died.clear()
         self._server_stream = self._adb_device.shell(commands, stream=True)
+        self._server_monitor_thread = threading.Thread(
+            target=self._monitor_server_stream,
+            name="scrcpy-server-monitor",
+            daemon=True,
+        )
+        self._server_monitor_thread.start()
+
+    def _monitor_server_stream(self):
+        stream = self._server_stream
+        if stream is None:
+            self._server_died.set()
+            return
+        try:
+            while True:
+                data = stream.recv(4096)
+                if not data:
+                    break
+        except Exception:
+            pass
+        self._server_died.set()
 
     def _open_socket(self) -> socket.socket:
         timeout_seconds = max(self._connection_timeout / 1000, 0.5)
         deadline = time.time() + timeout_seconds
         last_error = None
         while time.time() < deadline:
+            if self._server_died.is_set():
+                raise ConnectionError("scrcpy server process exited before socket was ready")
             try:
                 sock = self._adb_device.create_connection(Network.LOCAL_ABSTRACT, "scrcpy")
                 sock.settimeout(1.0)

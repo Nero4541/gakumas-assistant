@@ -122,6 +122,48 @@ function get_all_item() {
 }
 
 /**
+ * 获取所有支援卡列表
+ */
+function get_all_support_card() {
+  return axiosplus.get("/api/support_card/list");
+}
+
+/**
+ * 获取游戏资源下载状态
+ */
+function get_game_asset_status() {
+  return axiosplus.get("/api/game_asset/status");
+}
+
+/**
+ * 触发下载支援卡缩略图
+ */
+function download_support_card_assets() {
+  return axiosplus.post("/api/game_asset/download_support_cards");
+}
+
+/**
+ * 触发下载支援卡全尺寸图片
+ */
+function download_support_card_full_assets() {
+  return axiosplus.post("/api/game_asset/download_support_cards_full");
+}
+
+/**
+ * 按需下载单张支援卡全尺寸图片
+ */
+function download_single_card_full(cardId) {
+  return axiosplus.post(`/api/game_asset/download_card_full/${cardId}`);
+}
+
+/**
+ * 批量下载所有支援卡相关图片（在设置页面触发）
+ */
+function auto_download_assets() {
+  return axiosplus.post("/api/game_asset/auto_download");
+}
+
+/**
  * 刷新DMM Player启动参数
  */
 function refresh_ddm_player_token() {
@@ -172,6 +214,12 @@ export default {
   save_task_config,
   get_all_adb_device,
   get_all_item,
+  get_all_support_card,
+  get_game_asset_status,
+  download_support_card_assets,
+  download_support_card_full_assets,
+  download_single_card_full,
+  auto_download_assets,
   refresh_ddm_player_token,
   get_resource_update_status,
   check_resource_updates,

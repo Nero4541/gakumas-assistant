@@ -78,6 +78,7 @@ export const useAppStore = defineStore('app', {
       })
       wsService.on(WS_ACTION.TaskQueueStop, () => {
         this.status.task = TaskStatus.PENDING
+        this.current_task = ""
       })
       wsService.on(WS_ACTION.TaskQueueSuspend, () => {
         this.status.task = TaskStatus.SUSPENDED
@@ -104,6 +105,37 @@ export const useAppStore = defineStore('app', {
     async refresh_task_list() {
       const response = await apis.get_registered_tasks()
       this.task_list = response.data
+    },
+    async run_task(task_name: string) {
+      const task = this.get_task_by_id(task_name)
+      const taskLabel = task?.description || task_name
+      await apis.run_task(task_name)
+      this.status.task = TaskStatus.RUNNING
+      this.current_task = task_name
+      if (task) {
+        task.status = TaskStatus.RUNNING
+      }
+      message.showInfo(`已开始手动执行任务：${taskLabel}`)
+    },
+    async enable_task(task_name: string) {
+      const task = this.get_task_by_id(task_name)
+      const taskLabel = task?.description || task_name
+      await apis.enable_task(task_name)
+      if (task) {
+        task.enable = true
+      }
+      await this.refresh_task_list()
+      message.showSuccess(`已启用任务：${taskLabel}`)
+    },
+    async disable_task(task_name: string) {
+      const task = this.get_task_by_id(task_name)
+      const taskLabel = task?.description || task_name
+      await apis.disable_task(task_name)
+      if (task) {
+        task.enable = false
+      }
+      await this.refresh_task_list()
+      message.showSuccess(`已禁用任务：${taskLabel}`)
     },
     async refresh_app_status() {
       const response = await apis.get_status()

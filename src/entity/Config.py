@@ -17,7 +17,11 @@ def _config_enum_values(enum_cls) -> List[str]:
 
 
 def _default_run_mode() -> str:
-    return "PC" if platform.system() == "Windows" else "Phone"
+    if platform.system() == "Windows":
+        return "PC"
+    if platform.system() == "Darwin":
+        return "MacPlayTools"
+    return "Phone"
 
 
 def _run_mode_options() -> List[Dict[str, Any]]:
@@ -39,9 +43,18 @@ def _run_mode_options() -> List[Dict[str, Any]]:
             pc_option["disabled"] = True
             pc_option["disabled_reason"] = "PC / DMM 模式仅支持 Windows。"
 
+    mac_option: Dict[str, Any] = {
+        "title": "macOS PlayCover",
+        "value": "MacPlayTools",
+    }
+    if platform.system() != "Darwin":
+        mac_option["disabled"] = True
+        mac_option["disabled_reason"] = "MacPlayTools 模式仅支持 macOS (Apple Silicon)。"
+
     return [
         pc_option,
         {"title": "手机端", "value": "Phone"},
+        mac_option,
     ]
 
 
@@ -185,7 +198,7 @@ class _Base(_BaseConfigGroup):
     run_mode = ConfigItem(
         default_value=_default_run_mode(),
         data_type=str,
-        verify=r"Phone|PC",
+        verify=r"Phone|PC|MacPlayTools",
         use_verify=True,
         ui=ConfigItemUI(
             label="运行模式",
@@ -324,6 +337,19 @@ class _Base(_BaseConfigGroup):
             order=90,
         )
     )
+    # MacPlayTools 端口
+    playtools_port = ConfigItem(
+        default_value=0,
+        data_type=int,
+        ui=ConfigItemUI(
+            label="PlayTools 端口",
+            hint="PlayCover 游戏窗口标题栏 [localhost:端口号] 中的端口号（修改后需重启生效）",
+            component="number",
+            resettable=True,
+            visible_if={"base.run_mode": "MacPlayTools"},
+            order=95,
+        )
+    )
     # 禁用任务列表
     disabled_tasks = ConfigItem(
         default_value=[],
@@ -425,6 +451,27 @@ class _Base(_BaseConfigGroup):
             order=139,
         )
     )
+    # 是否启用游戏资源下载（通过官方服务器获取游戏资源文件）
+    enable_game_asset_download = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="是否启用游戏资源下载",
+            hint="使用GkmasObjectManager从游戏服务器下载游戏资源文件。需要有互联网连接。",
+            component="switch",
+            order=140,
+        )
+    )
+    prefer_game_asset_image = ConfigItem(
+        default_value=False,
+        data_type=bool,
+        ui=ConfigItemUI(
+            label="在 UI 中始终使用游戏资源显示",
+            hint="启用后，UI 中的物品/支援卡/技能卡图片将始终优先使用从游戏服务器下载的资源图片，而非游戏过程中截图识别的图像。",
+            component="switch",
+            order=141,
+        )
+    )
 
 
 class _Task:
@@ -451,6 +498,28 @@ class _Task:
         auto_reconfigure_team_before_challenge = ConfigItem(default_value=False, data_type=bool)
         # 挑战顺序
         challenge_order = ConfigItem(default_value="random", data_type=str, verify=r"random|highest_power|lowest_power|balanced_power", use_verify=True)
+
+    class AutoEnhancementSupportCard(_BaseConfigGroup):
+        # 是否强化 R 卡
+        enhance_r = ConfigItem(default_value=False, data_type=bool)
+        # R 卡最大强化等级（4★上限=40）
+        enhance_r_max_level = ConfigItem(default_value=40, data_type=int)
+        # 是否强化 SR 卡
+        enhance_sr = ConfigItem(default_value=True, data_type=bool)
+        # SR 卡最大强化等级（4★上限=50）
+        enhance_sr_max_level = ConfigItem(default_value=50, data_type=int)
+        # 是否强化 SSR 卡
+        enhance_ssr = ConfigItem(default_value=True, data_type=bool)
+        # SSR 卡最大强化等级（4★上限=60）
+        enhance_ssr_max_level = ConfigItem(default_value=60, data_type=int)
+        # 是否自动执行上限解放（需要同名卡作为素材）
+        auto_limit_break = ConfigItem(default_value=False, data_type=bool)
+        # 是否自动执行サポート変換（将多余卡片变换为サポートの証）
+        auto_convert = ConfigItem(default_value=False, data_type=bool)
+        # 白名单模式（仅强化白名单内的卡）
+        whitelist_mode = ConfigItem(default_value=False, data_type=bool)
+        # 白名单卡 ID 列表
+        whitelist_card_ids = ConfigItem(default_value=[], data_type=list)
 
 class _DMMPlayerConfig(_BaseConfigGroup):
     """DMMPlayer启动器配置"""
@@ -506,6 +575,7 @@ class Config(_BaseConfigGroup):
     task__auto_purchase: _Task.AutoPurchase = field(default_factory=_Task.AutoPurchase)
     task__auto_contest: _Task.AutoContest = field(default_factory=_Task.AutoContest)
     task__dispatch_work: _Task.DispatchWork = field(default_factory=_Task.DispatchWork)
+    task__auto_enhancement_support_card: _Task.AutoEnhancementSupportCard = field(default_factory=_Task.AutoEnhancementSupportCard)
 
     def to_json_dict(self) -> dict:
         def serialize_group(group):

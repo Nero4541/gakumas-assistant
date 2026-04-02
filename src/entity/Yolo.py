@@ -72,7 +72,11 @@ class Yolo_Results:
     def __init__(self, yolo_results, frame: np.ndarray):
         self.boxes = []
         self.results = yolo_results
-        img_w, img_h = frame.shape[:2]
+        # Copy once up-front; all box crops are views of this owned copy.
+        # This protects against the caller mutating 'frame' later while adding
+        # zero extra memory versus individual per-box copies.
+        self.frame = frame.copy()
+        img_w, img_h = self.frame.shape[:2]
         for index, box in enumerate(yolo_results):
             x, y, w, h = map(int, box)
             # 规范化坐标，防止出现-1之类的问题
@@ -82,9 +86,8 @@ class Yolo_Results:
             h = min(img_h, h)
             label_id = int(yolo_results.class_ids[index])
             label = yolo_results.model_mata.names[label_id]
-            self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, frame[y:h, x:w]))
+            self.boxes.append(Yolo_Box(x, y, w:=x+w, h:=y+h, label, self.frame[y:h, x:w]))
         self.sort_boxes()
-        self.frame = frame.copy()
 
     def __bool__(self):
         return bool(self.boxes)
@@ -102,20 +105,23 @@ class Yolo_Results:
         """
         从左上到右下对 boxes 排序。
         vertical_thresh: 两个框的中心点 y 坐标差异小于该值，则认为在同一行。
+        以行首元素的 cy 为锚点判断是否同行，避免滑动窗口导致跨行元素被错误合并。
         """
         # 先按 y 升序粗排（先上后下）
         sorted_boxes = sorted(self.boxes, key=lambda b: b.cy)
         # 分行：把 boxes 分为多行，每行内再按 x 排序
         lines = []
-        current_line = []
-        last_cy = None
+        current_line: list = []
+        line_anchor_cy: float | None = None
         for box in sorted_boxes:
-            if last_cy is None or abs(box.cy - last_cy) <= vertical_thresh:
+            if line_anchor_cy is None or abs(box.cy - line_anchor_cy) <= vertical_thresh:
+                if not current_line:
+                    line_anchor_cy = box.cy  # 锚定行首
                 current_line.append(box)
             else:
                 lines.append(sorted(current_line, key=lambda b: b.cx))
                 current_line = [box]
-            last_cy = box.cy
+                line_anchor_cy = box.cy
         if current_line:
             lines.append(sorted(current_line, key=lambda b: b.cx))
         # 扁平化行列表

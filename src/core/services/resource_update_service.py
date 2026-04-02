@@ -397,6 +397,8 @@ class ResourceUpdateService:
             final_status["progress"] = self._build_empty_progress()
             self._publish_status(final_status)
             if final_status["required_resources_ready"]:
+                # 资源更新后触发 CLIP 预训练（后台异步）
+                self._trigger_clip_training_after_update()
                 return True, "资源仓库更新完成，游戏数据库已重新加载", final_status
             return False, "资源下载未完成，仍缺少运行所需资源", final_status
         except Exception as exc:
@@ -554,6 +556,34 @@ class ResourceUpdateService:
             should_force_check = self._force_check_requested
             self._force_check_requested = False
         return should_force_check
+
+    def _trigger_clip_training_after_update(self):
+        """资源更新完成后，在后台下载游戏资源图片并触发 CLIP 预训练。"""
+        from src.core.services import game_asset_service
+
+        clip_manager = self._app.clip_manager
+        if not game_asset_service._is_gom_available():
+            logger.debug("[ResourceUpdate] GkmasObjectManager 不可用，跳过 CLIP 预训练")
+            return
+        if not config_service().base.enable_game_asset_download.value:
+            logger.debug("[ResourceUpdate] 游戏资源下载未启用，跳过 CLIP 预训练")
+            return
+
+        def _worker():
+            for download_fn, subdir in [
+                (game_asset_service.download_support_card_images, game_asset_service.SUPPORT_CARD_SUBDIR),
+                (game_asset_service.download_item_images, game_asset_service.ITEM_SUBDIR),
+                (game_asset_service.download_skill_card_images, game_asset_service.SKILL_CARD_SUBDIR),
+            ]:
+                try:
+                    download_fn()
+                    if clip_manager is not None:
+                        game_asset_service.train_clip_from_game_assets(clip_manager, subdir)
+                except Exception as exc:
+                    logger.warning(f"[ResourceUpdate] CLIP 预训练失败 ({subdir}): {exc}")
+
+        Thread(target=_worker, daemon=True).start()
+        logger.info("[ResourceUpdate] 已启动后台 CLIP 预训练任务")
 
     def _on_config_changed(self, key: str, old_value, new_value):
         logger.info(f"Reload resource update checker because '{key}' changed: {old_value!r} -> {new_value!r}")

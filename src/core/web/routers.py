@@ -8,6 +8,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+from src.core.services import game_asset_service
+
 from src.constants.task_status import TaskStatus
 from src.constants.websocket_actions import WebsocketActions
 from src.core.web.websocket import WebSocketManager
@@ -16,7 +18,7 @@ from typing import TYPE_CHECKING
 from src.entity.Config import Config
 from src.utils.adb_runtime import describe_adb_error
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
-from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils
+from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils, GakumasDatabase_SupportCardDataUtils
 from src.utils.opencv_tools import get_black_image
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_data_str, resolve_runtime_str
@@ -39,6 +41,11 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         if not processor.is_resource_ready():
             raise RuntimeError("游戏数据库资源尚未就绪")
         return GakumasDatabase_ItemDataUtils()
+
+    def _get_support_card_db():
+        if not processor.is_resource_ready():
+            raise RuntimeError("游戏数据库资源尚未就绪")
+        return GakumasDatabase_SupportCardDataUtils()
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
@@ -345,8 +352,198 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
                     "acquisitionRouteDescription": item.localization.acquisitionRouteDescription,
                 } if item.localization else {},
                 "image": os.path.exists(os.path.join(processor.data_path, f"CLIP/items/{item.id}.png")),
+                "gameAssetImage": game_asset_service.has_item_image(item.id),
             })
         return _api_return(True, "OK", all_items)
+
+    @app.get("/api/support_card/list")
+    def get_all_support_cards():
+        """获取所有支援卡列表（含技能描述文本）"""
+        try:
+            cards = _get_support_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+
+        # 构建支援卡技能描述映射（从 ProduceSkill 关联获取）
+        from src.utils.game_database_tools import (
+            build_support_card_skill_descriptions,
+            build_support_card_event_items,
+            build_support_card_level_limits,
+            build_support_card_events,
+            get_skill_descriptions_at_level,
+        )
+        try:
+            skill_slots_map = build_support_card_skill_descriptions()
+        except Exception:
+            skill_slots_map = {}
+        try:
+            event_items_map = build_support_card_event_items()
+        except Exception:
+            event_items_map = {}
+        try:
+            level_limits_map = build_support_card_level_limits()
+        except Exception:
+            level_limits_map = {}
+        try:
+            events_map = build_support_card_events()
+        except Exception:
+            events_map = {}
+
+        all_cards = []
+        for card in cards:
+            clip_exists = os.path.exists(os.path.join(processor.data_path, f"CLIP/support_cards/{card.id}.png"))
+            game_asset_exists = game_asset_service.has_support_card_image(card.id)
+            game_asset_full_exists = game_asset_service.has_support_card_full_image(card.id)
+
+            # 技能槽位数据（含各等级描述）
+            skill_slots = skill_slots_map.get(card.id, [])
+            # 等级上限数据（从 SupportCardLevelLimit 获取）
+            level_limits = level_limits_map.get(card.supportCardLevelLimitId, [])
+            # 默认展示等级：取满突破最高等级
+            if level_limits:
+                default_level = max(ll["levelLimit"] for ll in level_limits)
+            else:
+                default_level = 40 if card.rarity != "SupportCardRarity_R" else 30
+            skill_descs = get_skill_descriptions_at_level(skill_slots, default_level)
+
+            all_cards.append({
+                "id": card.id,
+                "name": card.name,
+                "type": card.type,
+                "planType": card.planType,
+                "rarity": card.rarity,
+                "assetId": card.assetId,
+                "characterIds": card.characterIds,
+                "isLimited": card.isLimited,
+                "produceCardUpgradePermil": card.produceCardUpgradePermil,
+                "produceCardUpgradeLessonParameterType": card.produceCardUpgradeLessonParameterType,
+                "levelLimits": level_limits,
+                "translation": {
+                    "name": card.localization.name,
+                } if card.localization else {},
+                "skillDescriptions": skill_descs,
+                "skillSlots": skill_slots,
+                "eventItems": event_items_map.get(card.id, []),
+                "events": events_map.get(card.id, []),
+                "image": clip_exists,
+                "gameAssetImage": game_asset_exists,
+                "gameAssetFullImage": game_asset_full_exists,
+            })
+        return _api_return(True, "OK", all_cards)
+
+    @app.get("/api/game_asset/status")
+    def get_game_asset_status():
+        """获取游戏资源下载状态"""
+        return _api_return(True, "OK", {
+            "available": game_asset_service._is_gom_available(),
+            "downloadedCount": game_asset_service.get_downloaded_card_count(),
+            **game_asset_service.get_download_status(),
+        })
+
+    @app.post("/api/game_asset/download_support_cards")
+    def trigger_download_support_cards():
+        """触发下载支援卡缩略图"""
+        config = processor.config_service()
+        if not config.base.enable_game_asset_download.value:
+            return _api_return(False, "游戏资源下载功能未启用，请在设置中开启")
+
+        if not game_asset_service._is_gom_available():
+            return _api_return(False, "GkmasObjectManager 未就绪，请确认 vendor/GkmasObjectManager 子模块已初始化")
+
+        status = game_asset_service.get_download_status()
+        if status["downloading"]:
+            return _api_return(False, "正在下载中，请稍后")
+
+        try:
+            cards = _get_support_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+
+        game_asset_service.download_support_card_images_async(
+            card_db_list=cards,
+            clip_manager=processor.clip_manager,
+        )
+        return _api_return(True, "开始下载支援卡缩略图")
+
+    @app.post("/api/game_asset/download_support_cards_full")
+    def trigger_download_support_cards_full():
+        """触发下载支援卡全尺寸图片"""
+        config = processor.config_service()
+        if not config.base.enable_game_asset_download.value:
+            return _api_return(False, "游戏资源下载功能未启用，请在设置中开启")
+
+        if not game_asset_service._is_gom_available():
+            return _api_return(False, "GkmasObjectManager 未就绪，请确认 vendor/GkmasObjectManager 子模块已初始化")
+
+        status = game_asset_service.get_download_status()
+        if status["downloading"]:
+            return _api_return(False, "正在下载中，请稍后")
+
+        try:
+            cards = _get_support_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+
+        from threading import Thread
+        Thread(
+            target=game_asset_service.download_support_card_full_images,
+            args=(cards, False),
+            daemon=True,
+        ).start()
+        return _api_return(True, "开始下载支援卡全尺寸图片")
+
+    @app.post("/api/game_asset/download_card_full/{card_id}")
+    def download_single_card_full(card_id: str):
+        """按需下载单张支援卡全尺寸图片（查看详情时触发）"""
+        config = processor.config_service()
+        if not config.base.enable_game_asset_download.value:
+            return _api_return(False, "游戏资源下载功能未启用")
+        if not game_asset_service._is_gom_available():
+            return _api_return(False, "GkmasObjectManager 未就绪")
+        if game_asset_service.has_support_card_full_image(card_id):
+            return _api_return(True, "已存在", {"exists": True})
+        try:
+            cards = _get_support_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+        card = next((c for c in cards if c.id == card_id), None)
+        if not card:
+            return _api_return(False, f"未找到卡牌: {card_id}")
+        from threading import Thread
+        Thread(
+            target=game_asset_service.download_single_support_card_full_image,
+            args=(card_id, card.assetId),
+            daemon=True,
+        ).start()
+        return _api_return(True, "开始下载")
+
+    @app.post("/api/game_asset/auto_download")
+    def trigger_auto_download():
+        """批量下载所有支援卡相关图片（在设置页面触发）"""
+        config = processor.config_service()
+        if not config.base.enable_game_asset_download.value:
+            return _api_return(False, "游戏资源下载功能未启用")
+
+        if not game_asset_service._is_gom_available():
+            return _api_return(False, "GkmasObjectManager 未就绪")
+
+        status = game_asset_service.get_download_status()
+        if status["downloading"]:
+            return _api_return(True, "下载已在进行中")
+
+        try:
+            cards = _get_support_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+
+        from threading import Thread
+
+        Thread(
+            target=game_asset_service.download_all_for_dialog,
+            kwargs={"card_db_list": cards, "clip_manager": processor.clip_manager},
+            daemon=True,
+        ).start()
+        return _api_return(True, "开始自动下载支援卡图片")
 
     app.mount(
         "/assets",
@@ -359,6 +556,14 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         "/api/clip_image",
         StaticFiles(directory=clip_image_dir, html=False),
         name="clip_images",
+    )
+
+    game_assets_dir = resolve_data_str("game_assets")
+    os.makedirs(game_assets_dir, exist_ok=True)
+    app.mount(
+        "/api/game_assets",
+        StaticFiles(directory=game_assets_dir, html=False),
+        name="game_assets",
     )
 
     @app.get("/")

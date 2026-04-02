@@ -42,6 +42,10 @@ def _handle__modal_boxes(app: "AppProcessor"):
         logger.error("Game initialization failed.")
         app.device.click_element(modal.cancel_button)
         action__click_start_game(app)
+    elif string_match(ModalText.TITLE.SKIP_CONFIRM, modal.modal_title):
+        logger.warning("Skip the game story...")
+        app.device.click_element(modal.confirm_button)
+        sleep(2)
     # 游戏更新
     elif string_match(ModalText.TITLE.GAME_UPDATE, modal.modal_title):
         raise RuntimeWarning("Game requires an update from the App Store. Please update manually.")

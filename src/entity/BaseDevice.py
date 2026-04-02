@@ -74,3 +74,6 @@ class BaseDevice(abc.ABC):
         :param scroll_delta: 滚动距离（各系统可能不大相同）
         :return:
         """
+
+    def bring_to_front(self):
+        pass

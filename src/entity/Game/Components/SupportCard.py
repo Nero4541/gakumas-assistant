@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover - Pillow is optional for this component.
     ImageDraw = None
     ImageFont = None
 
+from src.constants.game.text.support_card_text import SupportCardText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.inference.ocr_engine import OCRService
 from src.entity.Yolo import Yolo_Box, Yolo_Results
@@ -33,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 FONT_PATH = REPO_ROOT / "assets" / "NotoSerifCJKsc-Medium.otf"
 NORMALIZED_DIGIT_SIZE = (32, 24)
 SYNTHETIC_DIGIT_CANVAS = (72, 56)
-LIMIT_BREAK_KEYWORDS = ["上限解放", "解放可能"]
+LIMIT_BREAK_KEYWORDS = [SupportCardText.LIMIT_BREAK, "解放可能"]
 
 
 @dataclass
@@ -43,6 +44,8 @@ class SupportCard:
     level: int | None
     stars: int | None
     confidence: float
+    rarity: str | None = None
+    attribute: str | None = None
     limit_break: bool = False
     occluded: bool = False
 
@@ -84,8 +87,10 @@ class SupportCardList:
             for item in self.cards:
                 level_text = "?" if item.level is None else str(item.level)
                 stars_text = "?" if item.stars is None else str(item.stars)
+                rarity_text = item.rarity or "?"
+                attr_text = item.attribute or "?"
                 limit_break_text = " LB" if item.limit_break else ""
-                label = f"Lv{level_text} ★{stars_text}{limit_break_text}"
+                label = f"{rarity_text} {attr_text} Lv{level_text} ★{stars_text}{limit_break_text}"
                 if item.limit_break:
                     color = (0, 128, 255)
                 elif item.level is not None:
@@ -127,6 +132,8 @@ class SupportCardParser:
                 level=None,
                 stars=None,
                 confidence=0.0,
+                rarity=None,
+                attribute=None,
                 limit_break=False,
                 occluded=True,
             )
@@ -148,12 +155,20 @@ class SupportCardParser:
             self.classifier,
         )
 
+        # Always detect limit_break via HSV (fast, ~0.1ms) regardless of digit
+        # confidence.  Previously gated behind confidence >= 0.70 which caused
+        # false negatives when digit recognition was unreliable.
+        limit_break = _detect_limit_break(self.yolo_box.frame)
+
+        # Rarity: HSV for normal cards (~0.1ms); OCR for limit-break cards
+        # (~150ms) to avoid orange badge ↔ SSR golden HSV confusion.
+        rarity = _detect_rarity(self.yolo_box.frame, has_limit_break=limit_break)
+        attribute = _detect_attribute(self.yolo_box.frame)
+
         stars = None
-        limit_break = False
         if level is not None and confidence >= 0.70:
             star_count, _ = _count_stars(components, band_height, band_width, digit_end_x)
             stars = star_count
-            limit_break = _detect_limit_break(self.yolo_box.frame)
         else:
             level = None
 
@@ -163,6 +178,8 @@ class SupportCardParser:
             level=level,
             stars=stars,
             confidence=confidence,
+            rarity=rarity,
+            attribute=attribute,
             limit_break=limit_break,
         )
 
@@ -197,18 +214,185 @@ SupportCardLevelStars = SupportCardList
 SupportCardLevelStarsParser = SupportCardListParser
 
 
+# ── HSV color ranges for rarity badge detection (anti-JPG-noise tolerant) ─────
+_RARITY_HSV_RANGES = {
+    SupportCardText.RARITY_SSR: {
+        # SSR badge: golden/yellow gradient
+        "lower": np.array([15, 80, 150]),
+        "upper": np.array([35, 255, 255]),
+        "min_ratio": 0.08,
+    },
+    SupportCardText.RARITY_SR: {
+        # SR badge: silver/light-gray gradient
+        "lower": np.array([0, 0, 170]),
+        "upper": np.array([179, 40, 255]),
+        "min_ratio": 0.15,
+    },
+    SupportCardText.RARITY_R: {
+        # R badge: bronze/copper gradient
+        "lower": np.array([5, 50, 100]),
+        "upper": np.array([20, 200, 220]),
+        "min_ratio": 0.06,
+    },
+}
+
+# ── HSV color ranges for attribute type icon detection ────────────────────────
+_ATTRIBUTE_HSV_RANGES = {
+    SupportCardText.TYPE_VOCAL: {
+        # Vocal: pinkish-red icon
+        "lower": np.array([150, 60, 120]),
+        "upper": np.array([179, 255, 255]),
+        "lower2": np.array([0, 60, 120]),
+        "upper2": np.array([10, 255, 255]),
+    },
+    SupportCardText.TYPE_DANCE: {
+        # Dance: blue icon
+        "lower": np.array([95, 60, 100]),
+        "upper": np.array([125, 255, 255]),
+    },
+    SupportCardText.TYPE_VISUAL: {
+        # Visual: orange/yellow icon
+        "lower": np.array([10, 80, 150]),
+        "upper": np.array([30, 255, 255]),
+    },
+    SupportCardText.TYPE_ASSIST: {
+        # Assist: green icon
+        "lower": np.array([40, 50, 100]),
+        "upper": np.array([80, 255, 255]),
+    },
+}
+
+
+def _detect_rarity(card_frame: np.ndarray, has_limit_break: bool = False) -> str | None:
+    """Detect card rarity (SSR/SR/R) from the rarity badge region via HSV color.
+
+    Strategy:
+      - Normal cards: HSV with SSR > SR > R priority (<0.1ms).
+      - Cards with limit-break badge: HSV with SR checked first, then OCR
+        fallback.  The orange badge (H:5-25, S≥80) inflates SSR golden
+        (H:15-35, S≥80) scores, but cannot produce SR silver (S<40)
+        false positives.  So an SR detection is always trustworthy.
+    """
+    height, width = card_frame.shape[:2]
+    # The rarity text is in the lower-left area of the card image (above the info band)
+    rarity_band = card_frame[int(height * 0.58):int(height * 0.74), :int(width * 0.55)]
+    if rarity_band.size == 0:
+        return None
+
+    # Apply Gaussian blur to reduce JPG noise
+    blurred = cv2.GaussianBlur(rarity_band, (3, 3), 0)
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    total_pixels = float(rarity_band.shape[0] * rarity_band.shape[1])
+
+    scores: dict[str, float] = {}
+    for rarity, ranges in _RARITY_HSV_RANGES.items():
+        mask = cv2.inRange(hsv, ranges["lower"], ranges["upper"])
+        ratio = cv2.countNonZero(mask) / total_pixels
+        if ratio >= ranges["min_ratio"]:
+            scores[rarity] = ratio
+
+    if not scores:
+        return SupportCardText.RARITY_R  # Default to R if no strong match
+
+    if has_limit_break:
+        # Orange badge cannot produce SR silver (low-saturation) false positives,
+        # so SR detection is trustworthy even at a lower threshold.
+        # Normal SR min_ratio = 0.15; relax to 0.08 for limit-break cards since
+        # JPEG compression can erode silver pixels in the rarity band.
+        sr_score = scores.get(SupportCardText.RARITY_SR, 0.0)
+        sr_ranges = _RARITY_HSV_RANGES[SupportCardText.RARITY_SR]
+        if sr_score == 0.0:
+            # Re-check SR with relaxed threshold
+            sr_mask = cv2.inRange(hsv, sr_ranges["lower"], sr_ranges["upper"])
+            sr_score = cv2.countNonZero(sr_mask) / total_pixels
+        if sr_score >= 0.08:
+            return SupportCardText.RARITY_SR
+        # No silver detected → try OCR for SSR/SR disambiguation
+        upscaled = cv2.resize(blurred, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        result = ocr_service.ocr(upscaled)
+        if result and result.results:
+            for ocr_item in result.results:
+                text = ocr_item.text.upper().replace(" ", "")
+                if "SSR" in text:
+                    return SupportCardText.RARITY_SSR
+                if "SR" in text and "SSR" not in text:
+                    return SupportCardText.RARITY_SR
+        # OCR inconclusive → use HSV SSR (likely real if no SR silver found)
+        if SupportCardText.RARITY_SSR in scores:
+            return SupportCardText.RARITY_SSR
+        # Fall through to R
+        return SupportCardText.RARITY_R
+
+    # Normal cards: SSR > SR > R priority
+    for rarity in (SupportCardText.RARITY_SSR, SupportCardText.RARITY_SR, SupportCardText.RARITY_R):
+        if rarity in scores:
+            return rarity
+
+    return None
+
+
+def _detect_attribute(card_frame: np.ndarray) -> str | None:
+    """Detect card attribute type (Vocal/Dance/Visual/Assist) from the type icon."""
+    height, width = card_frame.shape[:2]
+    # The attribute type icon is in the top-left corner of the card
+    icon_region = card_frame[:int(height * 0.12), :int(width * 0.15)]
+    if icon_region.size == 0:
+        return None
+
+    # Also check the bottom info band right side where attribute icon appears
+    band_icon = card_frame[int(height * 0.72):int(height * 0.98), int(width * 0.78):]
+    if band_icon.size > 0:
+        icon_region = np.vstack([icon_region, cv2.resize(band_icon, (icon_region.shape[1], icon_region.shape[0]))])
+
+    # Apply Gaussian blur to reduce JPG noise
+    blurred = cv2.GaussianBlur(icon_region, (3, 3), 0)
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+    total_pixels = float(icon_region.shape[0] * icon_region.shape[1])
+
+    scores: dict[str, float] = {}
+    for attr_name, ranges in _ATTRIBUTE_HSV_RANGES.items():
+        mask = cv2.inRange(hsv, ranges["lower"], ranges["upper"])
+        if "lower2" in ranges:
+            mask2 = cv2.inRange(hsv, ranges["lower2"], ranges["upper2"])
+            mask = cv2.bitwise_or(mask, mask2)
+        ratio = cv2.countNonZero(mask) / total_pixels
+        if ratio > 0.03:
+            scores[attr_name] = ratio
+
+    if not scores:
+        return None
+
+    return max(scores, key=scores.get)
+
+
 def _detect_limit_break(card_frame: np.ndarray) -> bool:
-    big_frame = cv2.resize(card_frame, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    result = ocr_service.ocr(big_frame)
-    if not result or not result.results:
+    """Detect the ‘上限解放可能’ badge via HSV orange-band detection.
+
+    The badge is a distinctive orange/amber gradient banner that spans
+    most of the card width in the 30-68% height region.  Detecting the
+    colour band is ~100x faster than full-card OCR and more robust
+    against JPG noise.
+    """
+    height, width = card_frame.shape[:2]
+    if height < 80 or width < 40:
         return False
-    for ocr_item in result.results:
-        for keyword in LIMIT_BREAK_KEYWORDS:
-            if keyword in ocr_item.text:
-                return True
-            if string_match(ocr_item.text, keyword, MatchConfig(use_fuzz=True, fuzz_threshold=60)):
-                return True
-    return False
+
+    y_start = int(height * 0.30)
+    y_end = int(height * 0.68)
+    badge_region = card_frame[y_start:y_end, :]
+    if badge_region.size == 0:
+        return False
+
+    blurred = cv2.GaussianBlur(badge_region, (3, 3), 0)
+    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
+
+    # The badge background is an orange/amber gradient (H≈5-25)
+    orange_mask = cv2.inRange(hsv, np.array([5, 80, 150]), np.array([25, 255, 255]))
+
+    row_ratios = np.count_nonzero(orange_mask, axis=1).astype(np.float32) / max(1, width)
+    max_ratio = float(np.max(row_ratios)) if row_ratios.size > 0 else 0.0
+
+    return max_ratio > 0.45
 
 
 def _extract_info_band(card_frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, int, int]:

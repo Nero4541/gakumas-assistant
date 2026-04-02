@@ -25,38 +25,25 @@ def register_middlewares(processor: "AppProcessor"):
     @logger.catch
     def _handle_unexpected_modal(app: "AppProcessor"):
         global last_modal
-        if not app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
-            last_modal = False
-            return True
-
-        if last_modal:
-            return True
-
-        modal = get_modal(app.latest_results, True, quiet=True)
-        if modal is None:
-            return True
-
-        if string_match(modal.modal_title, [ModalText.TITLE.DATA_UPDATE, ModalText.TITLE.DATE_UPDATE], MatchConfig(fuzz_threshold=90)):
-            logger.warning("Restart game...")
-            button = modal.cancel_button or modal.confirm_button
-            if button is not None:
-                app.device.click_element(button)
+        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+            if last_modal:
+                return True
+            modal = get_modal(app.latest_results, True)
+            if modal is None:
+                return True
+            if string_match(modal.modal_title, [ModalText.TITLE.DATA_UPDATE, ModalText.TITLE.DATE_UPDATE], MatchConfig(fuzz_threshold=90)):
+                logger.warning("Restart game...")
+                app.device.click_element(modal.cancel_button)
                 app.game_utils.wait_loading()
                 app.game_utils.wait_for_label(BaseUILabels.START_MENU_LOGO)
                 app.task_queue.insert_task_to_run_queue("start_game")
-            last_modal = True
-            return True
-
-        if string_match(modal.modal_title, [ModalText.TITLE.CONNECTION_ERROR, ModalText.TITLE.INFO_FETCH_FAILED]):
-            logger.warning("Network connection error...")
-            button = modal.confirm_button or modal.cancel_button
-            if button is not None:
-                app.device.click_element(button)
+            elif string_match(modal.modal_title, [ModalText.TITLE.CONNECTION_ERROR, ModalText.TITLE.INFO_FETCH_FAILED]):
+                logger.warning("Network connection error...")
+                app.device.click_element(modal.confirm_button)
                 app.game_utils.wait_loading()
             last_modal = True
-            return True
-
-        last_modal = True
+        else:
+            last_modal = False
         return True
 
     # @processor.register_middleware()

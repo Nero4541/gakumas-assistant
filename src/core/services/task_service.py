@@ -27,6 +27,7 @@ from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_runtime_str
+from src.utils.task_dumper import dump_task_failure
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
@@ -386,6 +387,8 @@ class TaskService:
             filename = frame.f_code.co_filename
             if not should_trace(filename):
                 return _trace
+            if event != "line":
+                return _trace
             if timeout_event.is_set():
                 raise TaskTimeout(task)
             # 挂起检查
@@ -525,16 +528,18 @@ class TaskService:
             sys.settrace(None)
             task.update_status(TaskStatus.CANCELED)
             logger.warning(f"Task '{task.task_name}({task.id})' cancelled")
-        except TaskTimeout:
+        except TaskTimeout as e:
             timeout_event.clear()
             sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
             logger.error(f"Task '{task.task_name}({task.id})' timed out")
+            dump_task_failure(self._app, task, e)
         except Exception as e:
             sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
             logger.error(f"Task '{task.task_name}({task.id})' failed:\n{tb_str}")
+            dump_task_failure(self._app, task, e)
         finally:
             task.update_end_time()
             sys.settrace(None)

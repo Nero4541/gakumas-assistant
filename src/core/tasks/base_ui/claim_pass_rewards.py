@@ -9,6 +9,7 @@ from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.core.device.Android.app import Android_App
 from src.entity.Game.Components.Button import ButtonList
+from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 from src.utils.opencv_tools import compute_ssim_score
 from src.utils.string_tools import string_match, MatchConfig
@@ -39,10 +40,10 @@ def _process_modal(app: "AppProcessor"):
     :param app: app实例
     :return:
     """
-    while True:
-        modal = app.game_utils.try_get_modal(no_body=True)
+    while app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+        modal = get_modal(app.latest_results, True)
         if not modal:
-            break
+            continue
         if modal.cancel_button and not modal.confirm_button:
             logger.debug(f"Close modal '{modal.modal_title}'.'")
             app.device.click_element(modal.cancel_button)
@@ -93,8 +94,13 @@ def _handle_collect_modal(app: "AppProcessor", max_wait: int = 5):
         if i > max_wait:
             raise TimeoutError("Timeout waiting for modal to appear.")
 
-        modal = app.game_utils.try_get_modal(no_body=True)
-        if modal is not None:
+        if app.latest_results.exists_all_labels(
+                [BaseUILabels.BUTTON, BaseUILabels.MODAL_HEADER]
+        ):
+            modal = get_modal(app.latest_results, True)
+            if modal is None:
+                sleep(1)
+                continue
             if string_match(modal.modal_title, ModalText.TITLE.RECEIPT_COMPLETED):
                 app.device.click_element(modal.cancel_button or modal.confirm_button)
                 return

@@ -4,18 +4,21 @@ from typing import List
 
 import cv2
 import numpy as np
-from copy import copy
 
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Yolo import Yolo_Box, Yolo_Results
 from src.core.inference.ocr_engine import OCRService, OCR_Result
 from src.utils.debug_tools import DebugTools
-from src.utils.opencv_tools import gen_color_mask, filter_by_rectangle_shape
+from src.utils.opencv_tools import gen_color_mask
 from src.utils.string_tools import string_match, MatchConfig
 from src.utils.logger import logger
 
 ocr_service = OCRService()
 debug_tools = DebugTools()
+
+# OCR 常将 "力" 误识别为 "カ"（外形相似），此处用模糊匹配兼容两种情况
+_ANCHOR_TEXT = "総合力合計"
+_ANCHOR_MATCH_CONFIG = MatchConfig(use_fuzz=True, fuzz_threshold=70, use_contains=True)
 
 @dataclass
 class ContestItem(Yolo_Box):
@@ -30,7 +33,11 @@ class ContestItem(Yolo_Box):
 
     def _parse_ocr_results(self, ocr_results: List[OCR_Result]):
         # 1. 找 “総合力合計” 作为 combat_power 的锚点
-        power_anchor = next((r for r in ocr_results if "総合力合計" in r.text), None)
+        #    OCR 常将 "力" 误识别为 "カ" (片假名)，使用模糊匹配兼容
+        power_anchor = next(
+            (r for r in ocr_results if string_match(r.text, _ANCHOR_TEXT, _ANCHOR_MATCH_CONFIG)),
+            None,
+        )
         if not power_anchor:
             raise ValueError("找不到[総合力合計]锚点")
 
@@ -57,25 +64,73 @@ class ContestList:
     contest_area: np.ndarray
     _start_y: float
     _end_y: float
+    is_exhausted: bool
 
     def __init__(self, results: Yolo_Results, frame: np.ndarray):
-        _, width, _ = frame.shape
-        if not results.filter_by_label(BaseUILabels.BUTTON):
-            logger.debug("Not find button")
-            return
-        self._start_y = results.filter_by_label(BaseUILabels.BUTTON).get_y_max_element().first().h
-        self._end_y = results.filter_by_label(BaseUILabels.BACK_BTN).first().y
+        height, width = frame.shape[:2]
+        self.contests = []
+        self.contest_area = frame[0:0, 0:width]
+        self._start_y = 0
+        self._end_y = float(height)
+        self.is_exhausted = False
+
+        self._start_y, self._end_y = self._get_contest_area_bounds(results, height)
         logger.debug(f"start_y={self._start_y}, end_y={self._end_y}")
-        self.contest_area = frame[self._start_y:self._end_y, 0:width]
+
+        if self._end_y <= self._start_y:
+            logger.debug("Invalid contest area bounds")
+            return
+
+        self.contest_area = frame[int(self._start_y):int(self._end_y), 0:width]
         if self.contest_area is None or self.contest_area.size == 0:
             logger.debug("No contest area")
             return
         contest_area_ocr = "".join([res.text for res in ocr_service.ocr(self.contest_area)])
         if string_match(contest_area_ocr, "消費しました", MatchConfig(fuzz_threshold=70)):
             logger.debug("Today's challenge opportunities have all been used up")
+            self.is_exhausted = True
             return
-        self.contests = []
         self._get_contest_items()
+
+    @staticmethod
+    def _get_contest_area_bounds(results: Yolo_Results, frame_height: int) -> tuple[int, int]:
+        fallback_start = int(frame_height * 0.45)
+        fallback_end = int(frame_height * 0.95)
+        min_roi_height = int(frame_height * 0.12)
+
+        back_buttons = results.filter_by_label(BaseUILabels.BACK_BTN)
+        if back_buttons:
+            end_y = int(back_buttons.get_y_min_element().first().y)
+        else:
+            end_y = fallback_end
+
+        buttons = results.filter_by_label(BaseUILabels.BUTTON)
+        candidate_bottoms: list[int] = []
+
+        if buttons:
+            # 底部弹窗按钮会污染边界推断，优先使用上半屏按钮。
+            upper_buttons = [box for box in buttons if box.cy <= frame_height * 0.75]
+            if upper_buttons:
+                candidate_bottoms.extend(int(box.h) for box in upper_buttons)
+
+            candidate_bottoms.extend(
+                int(box.h)
+                for box in buttons
+                if frame_height * 0.28 <= box.h <= frame_height * 0.72
+            )
+
+        start_y = max(candidate_bottoms) if candidate_bottoms else fallback_start
+
+        if end_y - start_y < min_roi_height:
+            logger.debug(
+                f"Contest bounds collapsed ({start_y}, {end_y}), fallback to ({fallback_start}, {fallback_end})"
+            )
+            start_y = fallback_start
+            end_y = max(end_y, fallback_end)
+
+        start_y = max(0, min(start_y, frame_height - 1))
+        end_y = max(start_y + 1, min(end_y, frame_height))
+        return start_y, end_y
 
     def __str__(self):
         return str(self.contests)
@@ -94,7 +149,6 @@ class ContestList:
 
     def _get_contest_items(self):
         height, width, _ = self.contest_area.shape
-        total_pixels = height * width  # 总像素数
 
         # 灰色
         lower1 = (0,0,75)
@@ -111,21 +165,31 @@ class ContestList:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         # mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
         mask = cv2.dilate(mask, kernel, iterations=2)
-        result = copy(self.contest_area)
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        # contours = filter_by_rectangle_shape(contours, total_pixels // 4)
-        # 依次提取每个区域
+        min_item_height = max(80, int(height * 0.12))
+        max_item_height = max(min_item_height + 1, int(height * 0.45))
+
+        candidate_boxes: list[tuple[int, int, int, int, np.ndarray]] = []
         for cnt in contours:
             x, y, w, h = cv2.boundingRect(cnt)
-            # 筛选条件 宽度必须大于帧宽度的一半
-            if w > width * 0.5:
-                roi = self.contest_area[y:y+h, x:x+w]
-                self._append_contest(x, box_y := self._start_y+y, x+w, box_y+h, roi)
-                cv2.drawContours(result, [cnt], -1, (0, 255, 0), 2)
-                debug_tools.add_box(x, box_y := int(self._start_y+y), x+w, box_y+h, color=(127,255,0))
+            # 仅保留宽且高度合理的候选区域，避免把整块背景或噪点当成对手卡。
+            if w > width * 0.5 and min_item_height <= h <= max_item_height:
+                candidate_boxes.append((x, y, w, h, cnt))
                 continue
-            cv2.drawContours(result, [cnt], -1, (0, 0, 255), 2)
             debug_tools.add_box(x, box_y := int(self._start_y+y), x+w, box_y+h, color=(255,0,0))
+
+        selected: list[tuple[int, int, int, int, np.ndarray]] = []
+        for x, y, w, h, cnt in sorted(candidate_boxes, key=lambda item: item[1]):
+            if selected and abs(y - selected[-1][1]) < max(20, h // 3):
+                continue
+            selected.append((x, y, w, h, cnt))
+            if len(selected) >= 3:
+                break
+
+        for x, y, w, h, _ in selected:
+            roi = self.contest_area[y:y + h, x:x + w]
+            self._append_contest(x, box_y := self._start_y + y, x + w, box_y + h, roi)
+            debug_tools.add_box(x, box_y := int(self._start_y + y), x + w, box_y + h, color=(127, 255, 0))
 
     def _get_valid_contests(self) -> List[ContestItem]:
         return [r for r in self.contests if r.combat_power is not None]

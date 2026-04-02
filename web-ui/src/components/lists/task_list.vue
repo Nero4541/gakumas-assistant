@@ -1,10 +1,11 @@
 <script setup>
-import { computed } from "vue";
-import apis from "@/scripts/apis.js";
+import { computed, ref } from "vue";
 import auto_purchase_setting from "@/components/lists/config/task_settings/auto_purchase_setting.vue"
 import auto_contest_setting from "@/components/lists/config/task_settings/auto_contest_setting.vue";
 import dispatch_work_setting from "@/components/lists/config/task_settings/dispatch_work_setting.vue";
+import auto_enhancement_support_card_setting from "@/components/lists/config/task_settings/auto_enhancement_support_card_setting.vue";
 import { useAppStore } from "@/stores/app.js";
+import { TaskStatus } from "@/scripts/constants";
 
 const app_store = useAppStore();
 const props = defineProps({
@@ -31,6 +32,7 @@ const settingComponents = {
   auto_purchase: auto_purchase_setting,
   auto_contest: auto_contest_setting,
   dispatch_work: dispatch_work_setting,
+  auto_enhancement_support_card: auto_enhancement_support_card_setting,
 }
 
 const statusMap = {
@@ -87,6 +89,41 @@ const drawerValue = computed({
   get: () => (props.temporary ? props.modelValue : true),
   set: value => emit("update:modelValue", value),
 })
+
+const runningTaskName = ref("")
+const togglingTaskName = ref("")
+
+function isTaskBusy(taskName) {
+  return runningTaskName.value === taskName || togglingTaskName.value === taskName
+}
+
+async function runTask(taskName) {
+  if (isTaskBusy(taskName)) {
+    return
+  }
+  runningTaskName.value = taskName
+  try {
+    await app_store.run_task(taskName)
+  } finally {
+    runningTaskName.value = ""
+  }
+}
+
+async function toggleTask(taskName, enable) {
+  if (isTaskBusy(taskName)) {
+    return
+  }
+  togglingTaskName.value = taskName
+  try {
+    if (enable) {
+      await app_store.enable_task(taskName)
+    } else {
+      await app_store.disable_task(taskName)
+    }
+  } finally {
+    togglingTaskName.value = ""
+  }
+}
 </script>
 
 <template>
@@ -137,6 +174,14 @@ const drawerValue = computed({
               >
                 {{ statusMap[task.status]?.label }}
               </v-chip>
+              <v-chip
+                v-if="app_store.current_task === task_name && app_store.status.task !== TaskStatus.PENDING"
+                size="small"
+                color="primary"
+                class="ml-2"
+              >
+                当前任务
+              </v-chip>
             </template>
           </v-expansion-panel-title>
 
@@ -153,26 +198,31 @@ const drawerValue = computed({
 
               <div class="task_actions mt-3">
                 <v-btn
-                  :disabled="task.status === 'RUNNING' || taskExecutionBlocked"
+                  :disabled="task.status === 'RUNNING' || taskExecutionBlocked || isTaskBusy(task_name)"
+                  :loading="runningTaskName === task_name"
                   color="primary"
                   variant="outlined"
-                  @click="apis.run_task(task_name)"
+                  @click="runTask(task_name)"
                 >
                   执行
                 </v-btn>
                 <v-btn
                   v-if="task.enable"
+                  :disabled="isTaskBusy(task_name)"
+                  :loading="togglingTaskName === task_name"
                   color="red"
                   variant="tonal"
-                  @click="apis.disable_task(task_name)"
+                  @click="toggleTask(task_name, false)"
                 >
                   禁用
                 </v-btn>
                 <v-btn
                   v-else
+                  :disabled="isTaskBusy(task_name)"
+                  :loading="togglingTaskName === task_name"
                   color="green"
                   variant="tonal"
-                  @click="apis.enable_task(task_name)"
+                  @click="toggleTask(task_name, true)"
                 >
                   启用
                 </v-btn>

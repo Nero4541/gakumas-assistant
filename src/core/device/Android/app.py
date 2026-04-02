@@ -1,4 +1,5 @@
 import random
+import re
 import time
 from typing import Optional
 
@@ -22,6 +23,14 @@ from src.utils.performance_tools import timeit
 debugger = DebugTools()
 
 class Android_App(BaseDevice):
+    _FOREGROUND_ACTIVITY_PATTERNS = (
+        r"topResumedActivity[:=]\s*ActivityRecord\{[^\}]*\s+[^\s]+\s+(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+        r"mResumedActivity[:=]\s*ActivityRecord\{[^\}]*\s+[^\s]+\s+(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+        r"ResumedActivity[:=]\s*ActivityRecord\{[^\}]*\s+[^\s]+\s+(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+        r"mResumeActivity[:=]\s*ActivityRecord\{[^\}]*\s+[^\s]+\s+(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+        r"mFocusedApp=.*?(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+        r"mCurrentFocus=.*?(?P<package>[A-Za-z0-9._]+)\/(?P<activity>[^\s\}]+)",
+    )
     __config_service: ConfigService
     __adb_host: str
     __adb_port: int
@@ -244,6 +253,55 @@ class Android_App(BaseDevice):
                 logger.warning(f"Not support touch service: '{self.__screen_touch_service}', reverted to ADB")
                 self.__screen_touch_service = ADBOperation.TouchService.ADB
 
+    def _adb_shell(self, command: str) -> str:
+        """
+        执行一次 ADB shell 命令。
+
+        该 helper 仅用于“尽力获取状态”的只读查询；
+        失败时返回空字符串，而不是把临时查询异常向上传播。
+        """
+        try:
+            return self.__adb_device.shell(command) or ""
+        except Exception as exc:
+            logger.debug(f"ADB shell failed for '{command}': {exc}")
+            return ""
+
+    def _iter_foreground_targets(self):
+        """
+        枚举当前前台候选包名/Activity。
+
+        优先读取 uiautomator2 的当前应用信息，
+        再 fallback 到 dumpsys activity/window 输出。
+        """
+        if self.__u2_device is not None:
+            try:
+                current_app = self.__u2_device.app_current()
+                current_app = current_app or {}
+                package = current_app.get("package")
+                activity = current_app.get("activity") or ""
+                if package:
+                    yield package, activity
+            except Exception as exc:
+                logger.debug(f"uiautomator2 app_current failed: {exc}")
+
+            try:
+                package = self.__u2_device.info.get("currentPackageName")
+                if package:
+                    yield package, ""
+            except Exception as exc:
+                logger.debug(f"uiautomator2 currentPackageName failed: {exc}")
+
+        for command in (
+                "dumpsys activity activities",
+                "dumpsys window windows",
+        ):
+            output = self._adb_shell(command)
+            if not output:
+                continue
+            for pattern in self._FOREGROUND_ACTIVITY_PATTERNS:
+                for match in re.finditer(pattern, output):
+                    yield match.group("package"), match.group("activity")
+
     def start_game(self):
         """启动游戏"""
         self.__adb_device.app_start(self.__package_name)
@@ -252,7 +310,7 @@ class Android_App(BaseDevice):
         while True:
             if COUNT > TIMEOUT:
                 raise TimeoutError("Waiting start game timeout")
-            if self.is_app_focused:
+            if self.is_app_focused():
                 break
             else:
                 time.sleep(1)
@@ -261,15 +319,16 @@ class Android_App(BaseDevice):
     @timeit
     def is_app_focused(self) -> bool:
         """判断游戏是否在前台"""
-        if self.__u2_device is None:
-            return self.__package_name in self.__adb_device.shell("dumpsys window windows | grep mCurrentFocus")
-        return self.__package_name in self.__u2_device.info.get('currentPackageName')
+        for package, _activity in self._iter_foreground_targets():
+            if package == self.__package_name:
+                return True
+        return False
 
     @timeit
     def is_app_running(self) -> bool:
         """判断游戏是否在运行"""
         if self.__u2_device is None:
-            return self.__adb_device.shell(f"pidof {self.__package_name}").strip() != ""
+            return self._adb_shell(f"pidof {self.__package_name}").strip() != ""
         return self.__package_name in self.__u2_device.app_list_running()
 
     @timeit

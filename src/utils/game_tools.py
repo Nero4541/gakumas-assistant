@@ -90,40 +90,53 @@ def modal_body_extract_item_info(
         img,
         item_lower: tuple[int, int, int] = (0,0,0),
         item_upper: tuple[int, int, int] = (179,90,120),
-        mark_lower: tuple[int, int, int] = (90,85,230),
-        mark_upper: tuple[int, int, int] = (98,145,250)
+        mark_lower: tuple[int, int, int] = (85,55,210),
+        mark_upper: tuple[int, int, int] = (105,175,255)
 ):
     """
     在模态框中提取物品信息
     :param img: 图像
     :param item_lower: 物品外框下值
     :param item_upper: 物品外框上值
-    :param mark_lower: 锚点下值
+    :param mark_lower: 锚点下值（已放宽以抗 JPG 压缩噪点）
     :param mark_upper: 锚点上值
-    :return: bool
+    :return: (item_image, item_info_image) or (None, None)
     """
-    # 取出物品
+    if img is None or img.size == 0:
+        return None, None
+    img_h, img_w = img.shape[:2]
+    # 取出物品：最小面积按图像尺寸自适应，防止 JPG 噪点产生的小矩形
+    min_item_area = max(50, int(img_h * img_w * 0.002))
+
+    # 主路径：小核形态学，适用于高质量截图
     item_contours = get_mask_contours(img, item_lower, item_upper, iterations=2)
-    item_contours = filter_by_rectangle_shape(item_contours, 50)
-    if item_contours is None:
+    item_contours = filter_by_rectangle_shape(item_contours, min_item_area)
+
+    # 降级：更大形态学核弥合 JPG 压缩导致的边框断裂
+    if not item_contours:
+        item_contours = get_mask_contours(
+            img, item_lower, item_upper,
+            ksize=(5, 5), iterations=2,
+        )
+        item_contours = filter_by_rectangle_shape(item_contours, min_item_area)
+
+    if not item_contours:
         return None, None
     item_x,item_y,item_w,item_h = cv2.boundingRect(get_max_contour(item_contours))
     item = img[item_y:item_y+item_h, item_x:item_x+item_w]
-    # 取出物品信息锚点
+    # 取出物品信息锚点：统一要求 contour 面积大于噪点阈值
     mark_y = 0
+    min_mark_size = max(5, int(min(img_h, img_w) * 0.01))
     contours = get_mask_contours(img[item_y+item_h:], mark_lower, mark_upper)
     for contour in contours:
         _x,_y,_w,_h = cv2.boundingRect(contour)
-        if mark_y == 0:
-            mark_y = _y
-            continue
-        if _h > 5 and _w > 5:
-            mark_y = min(_y, mark_y)
+        if _h > min_mark_size and _w > min_mark_size:
+            mark_y = min(_y, mark_y) if mark_y > 0 else _y
     mark_y = item_y+item_h+mark_y
-    if mark_y < item_y + item_h and not check_color(img[item_y+item_h:item_y+item_h+20, item_x+item_w:], (0,0,45), (0,0,108), threshold=5):
-        item_info = img[item_y-10:item_y+item_h, item_x+item_w:]
+    if mark_y <= item_y + item_h and not check_color(img[item_y+item_h:item_y+item_h+20, item_x+item_w:], (0,0,45), (0,0,108), threshold=5):
+        item_info = img[max(0, item_y-10):item_y+item_h, item_x+item_w:]
     else:
-        item_info = img[item_y-10:mark_y, item_x+item_w:]
+        item_info = img[max(0, item_y-10):mark_y, item_x+item_w:]
 
     return item, item_info
 

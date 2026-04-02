@@ -38,10 +38,14 @@ from src.entity.Game.Database.ProduceExamTrigger import ProduceExamTrigger
 from src.entity.Game.Database.ProduceItem import ProduceItem, ProduceItemLocalization
 from src.entity.Game.Database.ProduceSkill import ProduceSkill, ProduceSkillLocalization
 from src.entity.Game.Database.SupportCard import SupportCard, SupportCardLocalization
+from src.entity.Game.Database.SupportCardProduceSkillLevelAssist import SupportCardProduceSkillLevelAssist
+from src.entity.Game.Database.SupportCardProduceSkillLevelDance import SupportCardProduceSkillLevelDance
+from src.entity.Game.Database.SupportCardProduceSkillLevelVisual import SupportCardProduceSkillLevelVisual
+from src.entity.Game.Database.SupportCardProduceSkillLevelVocal import SupportCardProduceSkillLevelVocal
 from src.utils.data_converter import DataConverter
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_cache_str, resolve_existing_resource_path
-from src.utils.string_tools import string_match
+from src.utils.string_tools import string_match, MatchConfig
 
 _CACHE_DIR = resolve_cache_str("yaml_db")
 
@@ -222,7 +226,17 @@ class _BaseYamlDatabase(metaclass=_SingletonByFileMeta):
 
     def search_by_name(self, keyword, match_config=None):
         name_map = {c.name: c for c in self._data if hasattr(c, "name") and c.name}
-        result = string_match(keyword, list(name_map.keys()), match_config)
+        if match_config is not None and not match_config.normalize:
+            cfg = MatchConfig(
+                use_regex=match_config.use_regex,
+                use_fuzz=match_config.use_fuzz,
+                fuzz_threshold=match_config.fuzz_threshold,
+                use_contains=match_config.use_contains,
+                normalize=True,
+            )
+        else:
+            cfg = MatchConfig(normalize=True) if match_config is None else match_config
+        result = string_match(keyword, list(name_map.keys()), cfg)
         if not result:
             return False, None
         return True, name_map[result.result]
@@ -526,6 +540,468 @@ class GakumasDatabase_IdolCardDataUtils(_BaseYamlDatabase):
 
     def search(self, ocr_result, match_config=None):
         return self.search_by_name(ocr_result, match_config)
+
+
+class _SupportCardSkillLevelMixin:
+    """Mixin for SupportCardProduceSkillLevel tables that lack an ``id`` field."""
+
+    def _build_map_key(self, obj):
+        return f"{obj.supportCardId}|{obj.produceSkillId}|{obj.produceSkillLevel}"
+
+
+class GakumasDatabase_SupportCardSkillLevelVocalUtils(_SupportCardSkillLevelMixin, _BaseYamlDatabase):
+    data_cls = SupportCardProduceSkillLevelVocal
+    loc_cls = None
+    default_data_file_parts = ("assets", "gakumasu-diff", "SupportCardProduceSkillLevelVocal.yaml")
+
+    def __init__(self, data_file=None):
+        super().__init__(data_file)
+
+
+class GakumasDatabase_SupportCardSkillLevelDanceUtils(_SupportCardSkillLevelMixin, _BaseYamlDatabase):
+    data_cls = SupportCardProduceSkillLevelDance
+    loc_cls = None
+    default_data_file_parts = ("assets", "gakumasu-diff", "SupportCardProduceSkillLevelDance.yaml")
+
+    def __init__(self, data_file=None):
+        super().__init__(data_file)
+
+
+class GakumasDatabase_SupportCardSkillLevelVisualUtils(_SupportCardSkillLevelMixin, _BaseYamlDatabase):
+    data_cls = SupportCardProduceSkillLevelVisual
+    loc_cls = None
+    default_data_file_parts = ("assets", "gakumasu-diff", "SupportCardProduceSkillLevelVisual.yaml")
+
+    def __init__(self, data_file=None):
+        super().__init__(data_file)
+
+
+class GakumasDatabase_SupportCardSkillLevelAssistUtils(_SupportCardSkillLevelMixin, _BaseYamlDatabase):
+    data_cls = SupportCardProduceSkillLevelAssist
+    loc_cls = None
+    default_data_file_parts = ("assets", "gakumasu-diff", "SupportCardProduceSkillLevelAssist.yaml")
+
+    def __init__(self, data_file=None):
+        super().__init__(data_file)
+
+
+def build_support_card_skill_descriptions() -> dict[str, list[dict]]:
+    """构建支援卡 → 技能槽位列表的映射（含各等级描述）。
+
+    通过关联 SupportCardProduceSkillLevel → ProduceSkill 数据，
+    为每张支援卡汇总其所有技能槽位，每个槽位包含各等级的描述文本和解锁条件。
+
+    Returns:
+        {支援卡 ID: [
+            {
+                "order": int,          # 技能槽位序号
+                "levels": [
+                    {
+                        "cardLevel": int,   # 解锁所需卡等级
+                        "skillLevel": int,  # 技能等级
+                        "description": str, # 技能描述文本
+                    },
+                    ...
+                ]
+            },
+            ...
+        ]} 的映射字典。
+    """
+    skill_db = GakumasDatabase_ProduceSkillDataUtils()
+
+    # 加载所有 4 种类型的 SkillLevel 数据
+    all_skill_levels = []
+    for utils_cls in (
+        GakumasDatabase_SupportCardSkillLevelVocalUtils,
+        GakumasDatabase_SupportCardSkillLevelDanceUtils,
+        GakumasDatabase_SupportCardSkillLevelVisualUtils,
+        GakumasDatabase_SupportCardSkillLevelAssistUtils,
+    ):
+        try:
+            db = utils_cls()
+            all_skill_levels.extend(db.get_all_item())
+        except Exception:
+            pass
+
+    # 按 (supportCardId, order, produceSkillId) 收集各等级
+    from collections import defaultdict
+    card_slots: dict[str, dict[int, dict[str, list]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    for sl in all_skill_levels:
+        card_id = sl.supportCardId
+        order = sl.order or 0
+        skill_id = sl.produceSkillId
+        card_slots[card_id][order][skill_id].append(sl)
+
+    # 组装结果
+    result: dict[str, list[dict]] = {}
+    for card_id, orders in card_slots.items():
+        slots = []
+        for order in sorted(orders.keys()):
+            skills_for_order = orders[order]
+            # 通常一个 order 只有一个 produceSkillId
+            for skill_id, level_entries in skills_for_order.items():
+                levels = []
+                for sl in sorted(level_entries, key=lambda x: x.produceSkillLevel or 1):
+                    key = f"{sl.produceSkillId}.{sl.produceSkillLevel}"
+                    skill = skill_db.get_by_id(key)
+                    if not skill:
+                        continue
+                    source = skill.localization if skill.localization else skill
+                    desc_list = getattr(source, "produceDescriptions", [])
+                    combined = _concat_produce_descriptions(desc_list)
+                    if combined:
+                        levels.append({
+                            "cardLevel": sl.supportCardLevel or 1,
+                            "skillLevel": sl.produceSkillLevel or 1,
+                            "description": combined,
+                        })
+                if levels:
+                    slots.append({"order": order, "levels": levels})
+        if slots:
+            result[card_id] = slots
+    return result
+
+
+def get_skill_descriptions_at_level(
+    skill_slots: list[dict], card_level: int
+) -> list[str]:
+    """从技能槽位列表中提取指定卡等级下的生效描述。
+
+    对每个技能槽位，从后向前遍历等级列表，找到 cardLevel <= card_level 的最高一条。
+
+    Args:
+        skill_slots: build_support_card_skill_descriptions 返回的槽位列表。
+        card_level: 当前卡等级。
+
+    Returns:
+        按槽位序号排列的描述文本列表。
+    """
+    descs = []
+    for slot in skill_slots:
+        levels = slot.get("levels", [])
+        best = None
+        for entry in reversed(levels):
+            if entry["cardLevel"] <= card_level:
+                best = entry
+                break
+        if best:
+            descs.append(best["description"])
+    return descs
+
+
+def _strip_html_tags(text: str) -> str:
+    """移除字符串中的 HTML 标签（如 <nobr>, </nobr> 等）。"""
+    import re
+    return re.sub(r"<[^>]+>", "", text)
+
+
+def _concat_produce_descriptions(descs_objs, item_db=None) -> str:
+    """将 produceDescriptions token 列表按顺序拼接为单一展示文本。
+
+    游戏数据中 produceDescriptions 是一组语义 token，每个 token 的 text 字段
+    构成最终文本的一部分，需全部拼接才能得到完整描述。
+
+    Args:
+        descs_objs: produceDescriptions 列表（dict 或 dataclass）。
+        item_db: 可选的 P 物品数据库；传入后，ProduceItem 类型 token
+                 会用本地化物品名替换原始（日文）text。
+    Returns:
+        拼接并去除 HTML 标签后的单一描述字符串。
+    """
+    parts = []
+    for d in descs_objs:
+        if isinstance(d, dict):
+            dtype = d.get("produceDescriptionType", "")
+            text = d.get("text", "")
+            target_id = d.get("targetId", "")
+        else:
+            dtype = getattr(d, "produceDescriptionType", "")
+            text = getattr(d, "text", "")
+            target_id = getattr(d, "targetId", "")
+
+        # ProduceItem 类型：优先用本地化物品名替换原始文本
+        if dtype == "ProduceDescriptionType_ProduceItem" and target_id and item_db:
+            item = item_db.get_by_id(target_id)
+            if item:
+                loc = getattr(item, "localization", None)
+                name = (getattr(loc, "name", None) if loc else None) or getattr(item, "name", text)
+                if name:
+                    parts.append(name)
+                    continue
+
+        if text:
+            parts.append(_strip_html_tags(text))
+    return "".join(parts).strip()
+
+
+def build_support_card_event_items() -> dict[str, list[dict]]:
+    """构建支援卡 → 附带 P 物品 / スキルカード 的映射。
+
+    通过关联 ProduceEventSupportCard → ProduceStepEventDetail，
+    提取 ProduceDescriptionType_ProduceItem 和 ProduceDescriptionType_ProduceCard
+    两类事件奖励。
+
+    Returns:
+        {支援卡 ID: [
+            {
+                "id": str,        # 物品/卡牌ID
+                "kind": str,      # "item" | "card"
+                "name": str,      # 名称（优先本地化）
+                "rarity": str,    # 稀有度枚举值
+                "planType": str,  # 路线枚举值
+                "category": str,  # 卡牌类别（仅 card 有值）
+                "assetId": str,   # 资源ID（可用于图片）
+                "descriptions": [str],  # 效果描述文本列表
+            },
+            ...
+        ]}
+    """
+    from src.entity.Game.Database.ProduceEventSupportCard import ProduceEventSupportCard as _ProduceEventSupportCard
+    from src.entity.Game.Database.ProduceStepEventDetail import ProduceStepEventDetail as _ProduceStepEventDetail
+
+    # 加载 ProduceEventSupportCard（无 id 字段，用 AutoDataUtils 行号索引）
+    event_sc_yaml = str(resolve_existing_resource_path("assets", "gakumasu-diff", "ProduceEventSupportCard.yaml"))
+    event_sc_db = GakumasDatabase_AutoDataUtils(data_file=event_sc_yaml, table_name="ProduceEventSupportCard")
+
+    # 加载 ProduceStepEventDetail（有 id 字段，可按 id get）
+    step_event_yaml = str(resolve_existing_resource_path("assets", "gakumasu-diff", "ProduceStepEventDetail.yaml"))
+    step_event_db = GakumasDatabase_AutoDataUtils(data_file=step_event_yaml, table_name="ProduceStepEventDetail")
+
+    # 加载 ProduceItem（用专用 Utils，含本地化名称）
+    produce_item_db = GakumasDatabase_ProduceItemDataUtils()
+
+    # 加载 ProduceCard（用专用 Utils，含本地化名称）
+    produce_card_db = GakumasDatabase_ProduceCardDataUtils()
+
+    # 构建 supportCardId → [produceStepEventDetailId] 映射
+    card_to_events: dict[str, list[str]] = {}
+    for event in event_sc_db.get_all_item():
+        cid = getattr(event, "supportCardId", None)
+        did = getattr(event, "produceStepEventDetailId", None)
+        if cid and did:
+            card_to_events.setdefault(cid, []).append(did)
+
+    result: dict[str, list[dict]] = {}
+    for card_id, event_detail_ids in card_to_events.items():
+        items_found = []
+        seen_ids: set[str] = set()
+        for detail_id in event_detail_ids:
+            detail = step_event_db.get_by_id(detail_id)
+            if not detail:
+                continue
+            for desc in getattr(detail, "produceDescriptions", []):
+                if isinstance(desc, dict):
+                    dtype = desc.get("produceDescriptionType", "")
+                    target_id = desc.get("targetId", None)
+                    text = desc.get("text", "")
+                else:
+                    dtype = getattr(desc, "produceDescriptionType", "")
+                    target_id = getattr(desc, "targetId", None)
+                    text = getattr(desc, "text", "")
+
+                if dtype == "ProduceDescriptionType_ProduceItem":
+                    if not target_id or target_id in seen_ids:
+                        continue
+                    seen_ids.add(target_id)
+                    item = produce_item_db.get_by_id(target_id)
+                    if not item:
+                        continue
+                    name = None
+                    if item.localization and getattr(item.localization, "name", None):
+                        name = item.localization.name
+                    if not name:
+                        name = item.name
+                    # 收集效果描述（将所有 token 拼接为单一描述文本）
+                    source = item.localization if item.localization else item
+                    desc_concat = _concat_produce_descriptions(getattr(source, "produceDescriptions", []))
+                    descs = [desc_concat] if desc_concat else []
+                    items_found.append({
+                        "id": target_id,
+                        "kind": "item",
+                        "name": name or target_id,
+                        "rarity": item.rarity or "",
+                        "planType": item.planType or "",
+                        "category": "",
+                        "assetId": item.assetId or "",
+                        "descriptions": descs,
+                    })
+
+                elif dtype == "ProduceDescriptionType_ProduceCard":
+                    if not target_id or target_id in seen_ids:
+                        continue
+                    seen_ids.add(target_id)
+                    # ProduceCard 的 key 格式是 "{id}.{upgradeCount}"，事件给的是 upgradeCount=0
+                    card_obj = produce_card_db.get_by_id(f"{target_id}.0")
+                    if not card_obj:
+                        # fallback: 直接用 text 作为名称
+                        items_found.append({
+                            "id": target_id,
+                            "kind": "card",
+                            "name": text or target_id,
+                            "rarity": "",
+                            "planType": "",
+                            "category": "",
+                            "assetId": "",
+                            "descriptions": [],
+                        })
+                        continue
+                    name = None
+                    if card_obj.localization and getattr(card_obj.localization, "name", None):
+                        name = card_obj.localization.name
+                    if not name:
+                        name = card_obj.name
+                    # 收集卡牌效果描述（将所有 token 拼接为单一描述文本）
+                    source = card_obj.localization if card_obj.localization else card_obj
+                    desc_concat = _concat_produce_descriptions(getattr(source, "produceDescriptions", []))
+                    descs = [desc_concat] if desc_concat else []
+                    items_found.append({
+                        "id": target_id,
+                        "kind": "card",
+                        "name": name or target_id,
+                        "rarity": card_obj.rarity or "",
+                        "planType": card_obj.planType or "",
+                        "category": card_obj.category or "",
+                        "assetId": card_obj.assetId or "",
+                        "descriptions": descs,
+                    })
+
+        if items_found:
+            result[card_id] = items_found
+    return result
+
+
+def build_support_card_level_limits() -> dict[str, list[dict]]:
+    """构建 supportCardLevelLimitId → 各突破阶段等级上限 的映射。
+
+    数据来自 SupportCardLevelLimit.yaml，其中 rank=Unknown 为未突破，
+    rank=__1~__4 为 1~4 阶突破。
+
+    Returns:
+        {supportCardLevelLimitId: [
+            {"rank": 0, "levelLimit": 20},  # Unknown=0星
+            {"rank": 1, "levelLimit": 25},  # __1=1星
+            ...
+        ]}
+    """
+    limit_yaml = str(resolve_existing_resource_path(
+        "assets", "gakumasu-diff", "SupportCardLevelLimit.yaml"
+    ))
+    limit_db = GakumasDatabase_AutoDataUtils(
+        data_file=limit_yaml, table_name="SupportCardLevelLimit"
+    )
+    from collections import defaultdict
+    id_map: dict[str, list[dict]] = defaultdict(list)
+    rank_order = {
+        "SupportCardLevelLimitRank_Unknown": 0,
+        "SupportCardLevelLimitRank__1": 1,
+        "SupportCardLevelLimitRank__2": 2,
+        "SupportCardLevelLimitRank__3": 3,
+        "SupportCardLevelLimitRank__4": 4,
+    }
+    for entry in limit_db.get_all_item():
+        eid = getattr(entry, "id", None)
+        rank_str = getattr(entry, "rank", "")
+        level_limit = getattr(entry, "levelLimit", 0)
+        if eid and level_limit:
+            id_map[eid].append({
+                "rank": rank_order.get(rank_str, 0),
+                "levelLimit": level_limit,
+            })
+    # 按 rank 排序
+    for k in id_map:
+        id_map[k].sort(key=lambda x: x["rank"])
+    return dict(id_map)
+
+
+def build_support_card_events() -> dict[str, list[dict]]:
+    """构建支援卡 → サポートイベント一览 的映射。
+
+    通过 ProduceEventSupportCard → ProduceStepEventDetail → ProduceStory
+    关联事件标题、解锁等级、效果描述。
+
+    Returns:
+        {支援卡 ID: [
+            {
+                "number": int,           # 事件编号
+                "supportCardLevel": int,  # 解锁所需卡等级
+                "title": str,            # 事件标题
+                "descriptions": [str],   # 事件效果描述
+            },
+            ...
+        ]}
+    """
+    from src.entity.Game.Database.ProduceEventSupportCard import ProduceEventSupportCard as _PESC
+
+    event_sc_yaml = str(resolve_existing_resource_path(
+        "assets", "gakumasu-diff", "ProduceEventSupportCard.yaml"
+    ))
+    event_sc_db = GakumasDatabase_AutoDataUtils(
+        data_file=event_sc_yaml, table_name="ProduceEventSupportCard"
+    )
+
+    step_event_yaml = str(resolve_existing_resource_path(
+        "assets", "gakumasu-diff", "ProduceStepEventDetail.yaml"
+    ))
+    step_event_db = GakumasDatabase_AutoDataUtils(
+        data_file=step_event_yaml, table_name="ProduceStepEventDetail"
+    )
+
+    story_yaml = str(resolve_existing_resource_path(
+        "assets", "gakumasu-diff", "ProduceStory.yaml"
+    ))
+    story_db = GakumasDatabase_AutoDataUtils(
+        data_file=story_yaml, table_name="ProduceStory"
+    )
+
+    # 加载 P 物品数据库（用于替换 ProduceItem token 中的本地化名称）
+    produce_item_db = GakumasDatabase_ProduceItemDataUtils()
+
+    from collections import defaultdict
+    result: dict[str, list[dict]] = defaultdict(list)
+
+    for event in event_sc_db.get_all_item():
+        card_id = getattr(event, "supportCardId", None)
+        number = getattr(event, "number", 0)
+        unlock_level = getattr(event, "supportCardLevel", 1)
+        detail_id = getattr(event, "produceStepEventDetailId", None)
+        if not card_id or not detail_id:
+            continue
+
+        detail = step_event_db.get_by_id(detail_id)
+        story_id = getattr(detail, "produceStoryId", None) if detail else None
+
+        # 事件标题
+        title = ""
+        if story_id:
+            story = story_db.get_by_id(story_id)
+            if story:
+                loc = getattr(story, "localization", None)
+                if loc and getattr(loc, "title", None):
+                    title = loc.title
+                elif getattr(story, "title", None):
+                    title = story.title
+
+        # 事件效果描述：将所有 token 拼接为单一字符串（ProduceItem 类型用本地化名称替换）
+        descriptions = []
+        if detail:
+            descs_raw = getattr(detail, "produceDescriptions", [])
+            concat = _concat_produce_descriptions(descs_raw, item_db=produce_item_db)
+            if concat:
+                descriptions = [concat]
+
+        result[card_id].append({
+            "number": number,
+            "supportCardLevel": unlock_level,
+            "title": title or f"イベント{number}",
+            "descriptions": descriptions,
+        })
+
+    # 按 number 排序
+    for k in result:
+        result[k].sort(key=lambda x: x["number"])
+    return dict(result)
 
 
 class GakumasDatabase_SupportCardDataUtils(_BaseYamlDatabase):

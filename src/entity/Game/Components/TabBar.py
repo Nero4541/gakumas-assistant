@@ -1,6 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
-from typing import List
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -18,9 +18,11 @@ _NEW_PREFIX_PATTERN = re.compile(r"^[A-Za-z]{3,5}")
 @dataclass
 class TabBarItem(Yolo_Box):
     text: str
+    selection_frame: Optional[np.ndarray] = field(default=None, repr=False)
 
-    def __init__(self, x: float, y: float, w: float, h: float, text: str, frame):
+    def __init__(self, x: float, y: float, w: float, h: float, text: str, frame, selection_frame=None):
         self.text = text
+        self.selection_frame = selection_frame
         x = int(x)
         y = int(y)
         w = int(w)
@@ -37,7 +39,7 @@ class TabBar(Yolo_Box):
         super().__init__(element.x, element.y, element.w, element.h, element.label, element.frame)
         self.tab_items = self._get_items()
         for tab_item in self.tab_items:
-            if _is_selected_tab_frame(tab_item.frame):
+            if _is_selected_tab_frame(tab_item.selection_frame if tab_item.selection_frame is not None else tab_item.frame):
                 self.selected = tab_item
                 break
 
@@ -45,25 +47,33 @@ class TabBar(Yolo_Box):
         if self.frame is None or self.frame.size == 0:
             return []
         height, width = self.frame.shape[:2]
-        tab_regions = _merge_word_boxes_into_tab_regions(
-            _extract_tab_word_boxes(self.frame),
-            width,
-            height,
-        )
-        logger.debug(tab_regions)
+        word_boxes = _extract_tab_word_boxes(self.frame)
+        tab_groups = _group_word_boxes_into_tab_groups(word_boxes, width)
+        logger.debug([_get_box_group_bounds(group) for group in tab_groups])
         tab_items = []
-        for x1, y1, x2, y2 in tab_regions:
-            x1, y1, x2, y2 = _expand_tab_region(x1, y1, x2, y2, width, height)
-            cropped = self.frame[y1:y2, x1:x2]
+        for group in tab_groups:
+            region_x1, region_y1, region_x2, region_y2 = _get_box_group_bounds(group)
+            selected_x1, selected_y1, selected_x2, selected_y2 = _expand_tab_region(
+                region_x1, region_y1, region_x2, region_y2, width, height
+            )
+            centered_boxes = _filter_centered_word_boxes(group, height)
+            text_x1, text_y1, text_x2, text_y2 = _expand_tab_text_region(
+                *_get_box_group_bounds(centered_boxes or group),
+                width,
+                height,
+            )
+            cropped = self.frame[text_y1:text_y2, text_x1:text_x2]
+            selection_cropped = self.frame[selected_y1:selected_y2, selected_x1:selected_x2]
             ocr_results = ocr_service.ocr(cropped)
             text = _normalize_tab_text("".join(item.text for item in ocr_results))
             tab_items.append(TabBarItem(
-                el_x := self.x + x1,
-                el_y := self.y + y1,
-                el_w := self.x + x2,
-                el_h := self.y + y2,
+                el_x := self.x + text_x1,
+                el_y := self.y + text_y1,
+                el_w := self.x + text_x2,
+                el_h := self.y + text_y2,
                 text,
-                cropped
+                cropped,
+                selection_cropped,
             ))
             debug_tools.add_box(el_x, el_y, el_w, el_h, label=text)
         logger.debug(tab_items)
@@ -119,30 +129,62 @@ def _merge_word_boxes_into_tab_regions(
         width: int,
         height: int,
 ) -> List[tuple[int, int, int, int]]:
+    return [
+        _get_box_group_bounds(group)
+        for group in _group_word_boxes_into_tab_groups(word_boxes, width)
+    ]
+
+
+def _group_word_boxes_into_tab_groups(
+        word_boxes: List[tuple[int, int, int, int]],
+        width: int,
+) -> List[List[tuple[int, int, int, int]]]:
     if not word_boxes:
         return []
 
-    merged_groups: List[list[int]] = []
-    for x1, y1, x2, y2 in word_boxes:
-        for group in merged_groups:
-            overlap = max(0, min(group[2], x2) - max(group[0], x1))
-            min_width = min(group[2] - group[0], x2 - x1)
+    grouped_boxes: List[list] = []
+    for box in word_boxes:
+        x1, y1, x2, y2 = box
+        for group in grouped_boxes:
+            group_x1, _, group_x2, _, group_boxes = group
+            overlap = max(0, min(group_x2, x2) - max(group_x1, x1))
+            min_width = min(group_x2 - group_x1, x2 - x1)
             if overlap >= max(6, int(min_width * 0.2)):
-                group[0] = min(group[0], x1)
+                group[0] = min(group_x1, x1)
                 group[1] = min(group[1], y1)
-                group[2] = max(group[2], x2)
+                group[2] = max(group_x2, x2)
                 group[3] = max(group[3], y2)
+                group_boxes.append(box)
                 break
         else:
-            merged_groups.append([x1, y1, x2, y2])
+            grouped_boxes.append([x1, y1, x2, y2, [box]])
 
     min_group_width = max(30, width // 16)
-    tab_regions = [
-        (x1, y1, x2, y2)
-        for x1, y1, x2, y2 in merged_groups
+    return [
+        sorted(group_boxes, key=lambda box: box[0])
+        for x1, _, x2, _, group_boxes in grouped_boxes
         if (x2 - x1) >= min_group_width
     ]
-    return sorted(tab_regions, key=lambda region: region[0])
+
+
+def _get_box_group_bounds(boxes: List[tuple[int, int, int, int]]) -> tuple[int, int, int, int]:
+    x1 = min(box[0] for box in boxes)
+    y1 = min(box[1] for box in boxes)
+    x2 = max(box[2] for box in boxes)
+    y2 = max(box[3] for box in boxes)
+    return x1, y1, x2, y2
+
+
+def _filter_centered_word_boxes(
+        word_boxes: List[tuple[int, int, int, int]],
+        height: int,
+) -> List[tuple[int, int, int, int]]:
+    center_y = height / 2
+    max_offset = max(6, height // 6)
+    return [
+        box for box in word_boxes
+        if abs(((box[1] + box[3]) / 2) - center_y) <= max_offset
+    ]
 
 
 def _is_background_like_tab_box(
@@ -183,6 +225,26 @@ def _expand_tab_region(
         max(0, y1 - top_padding),
         min(width, x2 + horizontal_padding),
         min(height, y2 + bottom_padding),
+    )
+
+
+def _expand_tab_text_region(
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        width: int,
+        height: int,
+) -> tuple[int, int, int, int]:
+    box_width = x2 - x1
+    box_height = y2 - y1
+    horizontal_padding = max(4, int(box_width * 0.05))
+    vertical_padding = max(2, int(box_height * 0.08))
+    return (
+        max(0, x1 - horizontal_padding),
+        max(0, y1 - vertical_padding),
+        min(width, x2 + horizontal_padding),
+        min(height, y2 + vertical_padding),
     )
 
 
