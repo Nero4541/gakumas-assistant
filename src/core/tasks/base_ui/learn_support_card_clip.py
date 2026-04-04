@@ -151,10 +151,10 @@ def action__learn_support_card_clip(app: "AppProcessor") -> bool:
                         logger.warning(f"  Failed to learn {card_label}")
 
             # Step 4: Go back to card list
-            if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
-                app.game_utils.click_on_label(BaseUILabels.BACK_BTN)
-            elif isinstance(app.device, Android_App):
-                app.device.back()
+            try:
+                app.game_utils.back_next_page()
+            except TimeoutError:
+                pass
             sleep(1)
             app.game_utils.wait_frame_stable(stable_count=2)
             app.game_utils.wait_for_label(BaseUILabels.SUPPORT_CARD, timeout=10)

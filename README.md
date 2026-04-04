@@ -34,6 +34,10 @@
 > - 自动购买每日商店
 >   - 自动学习物品信息
 >   - 自动刷新商店
+> - 自动强化支援卡
+>   - 自动升星支援卡
+>   - 自动交换多余的支援卡
+>   - 自动学习支援卡信息
 > - 自动竞技场
 > 
 ### 待实现/待完善：
@@ -44,7 +48,7 @@
 > - 自动P卡
 
 ## 注意事项
-> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`，`macOS / Linux` 仅支持 `Phone / ADB` 模式。  
+> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`。  
 
 > 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件上传并截图进行反馈。
 
@@ -84,6 +88,7 @@ python app.py
 - Windows 安装依赖时会自动安装 `pywin32`，用于 `PC / DMM` 模式。
 - macOS / Linux 首次启动会默认进入 `Phone / ADB` 模式；若本机 `pywebview` 后端不可用，程序会自动回退到浏览器模式。
 - macOS 上主 ONNX 模型与 OCR 模型都会优先尝试 `CoreMLExecutionProvider`；运行时会在用户缓存目录中保存 ONNX Runtime / CoreML 缓存，若该目录不可写则自动回退到项目内 `.cache`。
+- OCR 后端现支持 `auto / rapidocr / vision` 三种策略：`auto` 会在 macOS 上优先尝试原生 `Vision`，失败时自动回退到 `RapidOCR`；其他平台默认继续使用 `RapidOCR`。也可通过环境变量 `GAKUMAS_OCR_BACKEND` 强制覆盖。
 - 若环境中尚未缓存 RapidOCR 模型，程序会在首次实际调用 OCR 时按 RapidOCR 默认机制准备模型；执行 `build_app.py` 时也会自动补齐并打包这些模型。
 
 ## 免责声明

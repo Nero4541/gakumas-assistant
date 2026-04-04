@@ -13,6 +13,7 @@ starlette
 pywin32; platform_system == "Windows"
 rapidfuzz
 rapidocr==3.2.0
+pyobjc-framework-Vision; platform_system == "Darwin"
 peewee
 openai
 pyyaml

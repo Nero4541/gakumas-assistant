@@ -101,6 +101,9 @@ def action__loop_challenge_contest(app: "AppProcessor"):
                         cv2.imwrite(os.path.join(DebugPath.NotEnoughContests, f"contest_item__{i}_{index}.png"), item.frame)
             except Exception as e:
                 logger.warning(f"Save NotEnoughContests debug image error: {e}")
+            if _is_contest_detail_page(app):
+                logger.debug("Contest detail page detected during retry loop, breaking early.")
+                break
             sleep(1)
             debug_tools.clear_all()
         if not contest or len(contest) != 3:
@@ -243,103 +246,44 @@ def _start_battle(app: "AppProcessor", width: int, height: int):
 def _finish_battle(app: "AppProcessor"):
     """
     处理战斗结束的按钮点击与奖励弹窗。
-    点击过结算按钮后进入短暂静默等待，避免误触进入详情页。
+    分阶段处理：
+    1. 持续点击屏幕中心，等待"次へ"按钮出现并点击
+    2. 等待并点击"終了"按钮（click_button 内部轮询，不中心点击）
+    3. 等待返回竞技场页面，同时处理可能出现的奖励模态框
     """
-    COUNT, WAIT = 0, 30
-    post_exit_cooldown = 0
-    fallback_center_tap_budget = 3
-    unknown_location_wait_count = 0
+    # 阶段1: 持续点击屏幕中心，等待"次へ"按钮出现
+    COUNT, WAIT = 0, 15
     while COUNT < WAIT:
-        skip_buttons = app.latest_results.filter_by_label(BaseUILabels.SKIP_BUTTON)
-        if skip_buttons:
-            logger.debug("Skip Button still visible during finish phase, clicking again.")
-            app.device.click_element(skip_buttons.first())
-            sleep(1)
-            COUNT += 1
-            continue
-        if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
-            update_location = getattr(app.game_utils, "update_current_location", None)
-            if update_location is None or update_location() == GamePageTypes.CONTEST_TAB.ARENA:
-                if _is_contest_detail_page(app):
-                    logger.debug("Contest detail page detected in finish phase, clicking back.")
-                    if _try_back_to_contest_list(app):
-                        COUNT += 1
-                        continue
-                return
-        if close_buttons := app.latest_results.filter_by_label(BaseUILabels.CLOSE_BUTTON):
-            logger.debug("Found Close Button during finish phase, clicking...")
-            app.device.click_element(close_buttons.first())
-            post_exit_cooldown = 2
-            sleep(1)
-            COUNT += 1
-            continue
-        try_get_modal = getattr(app.game_utils, "try_get_modal", None)
-        modal = try_get_modal(no_body=True) if callable(try_get_modal) else None
-        if modal is not None:
-            if string_match(modal.modal_title, ModalText.TITLE.RATE_REWARD, MatchConfig(fuzz_threshold=90)):
-                close_button = modal.cancel_button or modal.confirm_button
-                if close_button is not None:
-                    app.device.click_element(close_button)
-                    post_exit_cooldown = 2
-                    sleep(1)
-                    COUNT += 1
-                    continue
-        if app.latest_results.exists_label(BaseUILabels.BUTTON):
-            buttons = ButtonList(app.latest_results)
-            if button := buttons.get_button_by_text(ButtonText.CLOSE):
-                app.device.click_element(button)
-                post_exit_cooldown = 2
-                sleep(1)
-                COUNT += 1
-                continue
-            if button := buttons.get_button_by_text(ButtonText.NEXT):
-                app.device.click_element(button)
-                post_exit_cooldown = 2
-                sleep(1)
-                COUNT += 1
-                continue
-            if button := buttons.get_button_by_text(ButtonText.EXIT):
-                app.device.click_element(button)
-                post_exit_cooldown = 2
-                sleep(1)
-                COUNT += 1
-                continue
-
-        # 主路径：即使 BACK_BTN 单帧漏检，也避免在 ARENA 页面误点中部进入详情页。
-        update_location = getattr(app.game_utils, "update_current_location", None)
-        current_location = update_location() if callable(update_location) else None
-        if current_location == GamePageTypes.CONTEST_TAB.ARENA:
-            if _is_contest_detail_page(app):
-                logger.debug("Contest detail page detected without BACK label, clicking back.")
-                if _try_back_to_contest_list(app):
-                    COUNT += 1
-                    continue
-            return
-
-        if post_exit_cooldown > 0:
-            logger.debug("Post-exit cooldown active, waiting without center tap.")
-            post_exit_cooldown -= 1
-            sleep(1)
-            COUNT += 1
-            continue
-
-        if current_location is None:
-            unknown_location_wait_count += 1
-            logger.debug("Location unknown in finish phase, waiting without center tap.")
-            if unknown_location_wait_count >= 3:
-                logger.warning("Finish phase location remains unknown, exit conservatively.")
-                return
-            sleep(1)
-            COUNT += 1
-            continue
-
-        unknown_location_wait_count = 0
-        if fallback_center_tap_budget <= 0:
-            logger.warning(f"No actionable controls on location {current_location}, stop fallback tapping.")
-            return
-
+        buttons = ButtonList(app.latest_results)
+        if button := buttons.get_button_by_text(ButtonText.NEXT):
+            logger.debug("Found NEXT button, clicking.")
+            app.device.click_element(button)
+            break
         app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
-        fallback_center_tap_budget -= 1
         sleep(1)
         COUNT += 1
-    logger.warning("Waiting for the challenge to end timeout, exit finish phase conservatively.")
+    if COUNT >= WAIT:
+        raise TimeoutError("Waiting for NEXT button timeout")
+
+    # 阶段2: 等待并点击"終了"按钮（click_button 内部轮询最多10秒）
+    app.game_utils.click_button(ButtonText.EXIT)
+
+    # 阶段3: 等待返回竞技场页面，处理可能出现的奖励模态框
+    COUNT, WAIT = 0, 30
+    while COUNT < WAIT:
+        if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
+            if _is_contest_detail_page(app):
+                _try_back_to_contest_list(app)
+                sleep(1)
+                COUNT += 1
+                continue
+            return
+        if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
+            modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
+            if modal is not None:
+                close_button = modal.cancel_button or modal.confirm_button
+                if close_button:
+                    app.device.click_element(close_button)
+        sleep(1)
+        COUNT += 1
+    logger.warning("Waiting for return to arena timeout.")

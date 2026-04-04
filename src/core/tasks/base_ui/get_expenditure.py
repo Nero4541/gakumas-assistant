@@ -12,12 +12,13 @@ if TYPE_CHECKING:
 
 def action__claim_expenditure(app: "AppProcessor", max_attempts: int = 3) -> bool:
     """
-    打开活动费弹窗；若误点进其他弹窗，则关闭后重试。
+    打开活动费弹窗；若误点进其他弹窗，则关闭后尝试下一个候选按钮。
     """
     from src.core.tasks.base_ui.goto_pages import goto__get_expenditure
 
+    candidate_index = 0
     for attempt in range(max_attempts):
-        goto__get_expenditure(app)
+        goto__get_expenditure(app, candidate_index=candidate_index)
         app.game_utils.wait_frame_stable(timeout=8)
         modal = app.game_utils.wait_for_modal(None, no_body=True, timeout=5, interval=0.5)
         if not modal:
@@ -41,8 +42,9 @@ def action__claim_expenditure(app: "AppProcessor", max_attempts: int = 3) -> boo
 
         logger.warning(
             f"Unexpected modal '{modal.modal_title}' when opening expenditure. "
-            f"Retrying... ({attempt + 1}/{max_attempts})"
+            f"Trying next candidate... ({attempt + 1}/{max_attempts})"
         )
+        candidate_index += 1
         close_button = modal.cancel_button or modal.confirm_button
         if close_button:
             app.game_utils.click_modal_button_and_wait_transition(

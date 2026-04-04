@@ -471,17 +471,37 @@ class GameUtils:
                 value for name, value in vars(GamePageTypes).items()
                 if name.startswith("MAIN_MENU__")
             ]
-            if self.update_current_location() in main_menu_items:
-                self._app_processor.device.click_element(self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME).first())
-                self.wait_loading()
-                self.update_current_location()
-                return
-            elif go_home_btn := self._app_processor.latest_results.filter_by_label(BaseUILabels.GO_HOME_BTN):
-                self._app_processor.device.click_element(go_home_btn.first())
-                self.wait_loading()
-                self.update_current_location()
-                return
-            elif modal_header := self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
+            current_location = self.update_current_location()
+            navigation_candidates = []
+            if current_location in main_menu_items:
+                if home_tab := self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME):
+                    navigation_candidates.append(home_tab.first())
+            else:
+                if go_home_btn := self._app_processor.latest_results.filter_by_label(BaseUILabels.GO_HOME_BTN):
+                    navigation_candidates.append(go_home_btn.first())
+                if back_btn := self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN):
+                    navigation_candidates.append(back_btn.first())
+
+            if navigation_candidates:
+                for candidate in navigation_candidates:
+                    if not self.click_element_and_wait_trigger(candidate, retries=3, timeout=2.5, interval=0.1):
+                        logger.warning(
+                            "Navigation click did not trigger visible UI change during go_home: {}",
+                            getattr(candidate, "label", type(candidate).__name__),
+                        )
+                        continue
+                    self.wait_loading()
+                    current_location = self.update_current_location()
+                    if current_location == GamePageTypes.MAIN_MENU__HOME:
+                        return
+                    logger.warning(
+                        "Navigation click changed the UI but did not reach HOME. Current location: {}",
+                        current_location,
+                    )
+                sleep(1)
+                continue
+
+            if modal_header := self._app_processor.latest_results.filter_by_label(BaseUILabels.MODAL_HEADER):
                 modal_header = modal_header.first()
                 self._app_processor.device.click(modal_header.cx, max(modal_header.y - 50, 0))
             sleep(1)
@@ -522,23 +542,31 @@ class GameUtils:
         if update: logger.debug(f"Current location: {self._app_processor.game_status_manager.current_location}")
         return self._app_processor.game_status_manager.current_location
 
-    def wait_location_update(self, target_location: str, timeout=10):
+    def wait_location_update(self, target_location: str, timeout=15, ignore_loading=True):
         """
         等待当前位置刷新
         :param target_location: 目标位置
-        :param timeout: 超时时间
+        :param timeout: 超时时间 (increased default to 15s for reliability)
+        :param ignore_loading: 是否忽略LOADING状态 (允许在加载过程中继续等待)
         :return:
         """
         logger.debug(f"Wait for the location to be updated to {target_location}......")
         COUNT = 0
         while True:
             if COUNT > timeout:
+                current = self.update_current_location()
+                logger.error(f"Timeout waiting for location update. Target: {target_location}, Current: {current}")
                 raise TimeoutError("Timeout for waiting for location update")
-            if self.update_current_location() == target_location:
+            current_loc = self.update_current_location()
+            if current_loc == target_location:
+                logger.debug(f"Location successfully updated to {target_location}")
                 return True
+            # If ignore_loading is True, don't count LOADING states towards timeout
+            elif ignore_loading and current_loc == GamePageTypes.LOADING:
+                logger.debug(f"Detected LOADING state, continuing to wait (count={COUNT})")
             else:
                 COUNT += 1
-                sleep(1)
+            sleep(1)
 
     def wait_frame_stable(self, threshold=0.98, stable_count=3, timeout=5):
         """

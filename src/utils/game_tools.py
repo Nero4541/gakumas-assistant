@@ -20,11 +20,10 @@ ocr_service = OCRService()
 
 @timeit
 def get_current_location(boxes: Yolo_Results) -> str | None:
+    # Priority 1: Check for start menu
     if boxes.exists_label(BaseUILabels.START_MENU_LOGO):
         return GamePageTypes.START_GAME
-    if boxes.exists_label(BaseUILabels.GENERAL_LOADING1) or boxes.exists_label(
-            BaseUILabels.GENERAL_LOADING2):
-        return GamePageTypes.LOADING
+    
     # 映射标签 → 页面类型
     TAB_LABEL_TO_PAGE = {
         BaseUILabels.TAB_COMMUNICATE: GamePageTypes.MAIN_MENU__COMMUNICATE,
@@ -58,6 +57,8 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
         Location.MAIN_UI.Page.PRODUCER_ILLUSTRATED: GamePageTypes.SUB_MENU.PRODUCER_ILLUSTRATED,
     }
     MAIN_UI_TABS = list(TAB_LABEL_TO_PAGE.keys())[:5]
+    
+    # Priority 2: Check for main UI tabs (color detection)
     if boxes.exists_all_labels(MAIN_UI_TABS):
         home_tab_bar = boxes.filter_by_labels(MAIN_UI_TABS)
         for item in home_tab_bar:
@@ -69,20 +70,33 @@ def get_current_location(boxes: Yolo_Results) -> str | None:
                 background_lower_color=(0,35,225)
             ):
                 return TAB_LABEL_TO_PAGE.get(item.label)
-    elif current_location := boxes.filter_by_label(BaseUILabels.CURRENT_LOCATION):
+    
+    # Priority 3: Check "Current Location" label with OCR fallback
+    # This is more reliable than loading detection for identifying actual pages
+    if current_location := boxes.filter_by_label(BaseUILabels.CURRENT_LOCATION):
         current_location = current_location.first()
-        if current_location.frame is None or current_location.frame.size == 0:
-            logger.debug("Not current location frame")
-            return GamePageTypes.UNKNOWN
-        ocr_result = ocr_service.ocr(current_location.frame)
-        if ocr_result is None:
-            logger.debug("Current location not text")
-            return GamePageTypes.UNKNOWN
-        location_text = "".join([ocr_item.text for ocr_item in ocr_result])
-        match_result = string_match(location_text, list(TAB_LABEL_TO_PAGE.keys()), MatchConfig(fuzz_threshold=90))
-        if not match_result:
-            return GamePageTypes.UNKNOWN
-        return TAB_LABEL_TO_PAGE.get(match_result.result)
+        if current_location.frame is not None and current_location.frame.size > 0:
+            ocr_result = ocr_service.ocr(current_location.frame)
+            if ocr_result and len(ocr_result.results) > 0:
+                location_text = "".join([ocr_item.text for ocr_item in ocr_result])
+                logger.debug(f"OCR detected location text: '{location_text}'")
+                match_result = string_match(location_text, list(TAB_LABEL_TO_PAGE.keys()), MatchConfig(fuzz_threshold=85))
+                if match_result and match_result.status:
+                    logger.debug(f"Matched location: '{match_result.result}' -> {TAB_LABEL_TO_PAGE.get(match_result.result)}")
+                    return TAB_LABEL_TO_PAGE.get(match_result.result)
+                else:
+                    logger.debug(f"No match found for location text: '{location_text}'")
+            else:
+                logger.debug("OCR returned no text from Current Location frame")
+        else:
+            logger.debug("Current Location frame is None or empty")
+    
+    # Priority 4: Check for loading indicators (lowest priority)
+    # Only return LOADING if no other location could be determined
+    if boxes.exists_label(BaseUILabels.GENERAL_LOADING1) or boxes.exists_label(BaseUILabels.GENERAL_LOADING2):
+        logger.debug("Loading indicators detected, returning LOADING")
+        return GamePageTypes.LOADING
+    
     return GamePageTypes.UNKNOWN
 
 @timeit

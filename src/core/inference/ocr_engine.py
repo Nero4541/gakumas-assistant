@@ -1,20 +1,20 @@
 import re
 import threading
 from dataclasses import dataclass
-from pathlib import Path
 from typing import List
 
 import cv2
 import numpy as np
-import rapidocr as rapidocr_package
 
 from src.entity.Base import SingletonMeta
 from src.entity.Yolo import Yolo_Box
+from src.constants.ocr.backend import OCRBackendType
+from src.core.inference.ocr_backends import (
+    RapidOCRBackend,
+    create_ocr_backend,
+)
 from src.utils.dml_manager import DMLManager
 from src.utils.logger import logger
-from src.utils.runtime_paths import resolve_runtime_path
-
-from rapidocr import RapidOCR, EngineType, LangDet, LangRec, ModelType, OCRVersion
 
 from src.utils.opencv_tools import letterbox
 from src.utils.performance_tools import timeit
@@ -25,97 +25,42 @@ class OCRLoader(metaclass=SingletonMeta):
     _instance = None
     _infer_lock = threading.Lock()
 
-    @staticmethod
-    def _resolve_resource_path(relative_path: str) -> str | None:
-        relative = Path(relative_path)
-        candidates = [
-            resolve_runtime_path("rapidocr") / relative,
-            Path(rapidocr_package.__file__).resolve().parent / relative,
-        ]
-        for candidate in candidates:
-            if candidate.exists():
-                return str(candidate)
-        logger.info(
-            "RapidOCR resource {} not found locally, fallback to RapidOCR default model resolution. Looked in: {}",
-            relative_path,
-            ", ".join(str(path) for path in candidates),
-        )
-        return None
-
-    @staticmethod
-    def _create_accelerated_session(model_path: str):
-        try:
-            return DMLManager.create_dml_session(model_path)
-        except Exception as exc:
-            logger.warning(
-                "Failed to create accelerated OCR session for {}, fallback to RapidOCR default session: {}",
-                model_path,
-                exc,
-            )
-            return None
-
-    @staticmethod
-    def _attach_accelerated_session(engine, component_name: str, session) -> None:
-        if session is None:
-            return
-        component = getattr(engine, component_name, None)
-        if component is None or not hasattr(component, "session"):
-            logger.warning(
-                "RapidOCR component {} is unavailable, skip attaching accelerated session.",
-                component_name,
-            )
-            return
-        component.session.session = session
-        logger.info(
-            "Attached accelerated OCR session to {} with providers: {}",
-            component_name,
-            session.get_providers(),
-        )
-
     def __init__(self):
-        det_model_path = self._resolve_resource_path("models/ch_PP-OCRv5_mobile_det.onnx")
-        cls_model_path = self._resolve_resource_path("models/ch_ppocr_mobile_v2.0_cls_infer.onnx")
-        rec_model_path = self._resolve_resource_path("models/japan_PP-OCRv4_rec_infer.onnx")
-        det_session = self._create_accelerated_session(det_model_path) if det_model_path else None
-        cls_session = self._create_accelerated_session(cls_model_path) if cls_model_path else None
-        rec_session = self._create_accelerated_session(rec_model_path) if rec_model_path else None
-        params = {
-            "EngineConfig.onnxruntime.use_dml": "DmlExecutionProvider" in DMLManager.get_session_providers(),
-            "Global.use_cls": False,
-            "Global.min_height": 10,
+        self._backend = create_ocr_backend()
 
-            "Det.engine_type": EngineType.ONNXRUNTIME,
-            "Det.lang_type": LangDet.CH,
-            "Det.model_type": ModelType.MOBILE,
-            "Det.ocr_version": OCRVersion.PPOCRV5,
+    @property
+    def backend_name(self) -> str:
+        return self._backend.name
 
-            "Rec.engine_type": EngineType.ONNXRUNTIME,
-            "Rec.lang_type": LangRec.JAPAN,
-            "Rec.model_type": ModelType.MOBILE,
-        }
-        if det_model_path is not None:
-            params["Det.model_path"] = det_model_path
-        if cls_model_path is not None:
-            params["Cls.model_path"] = cls_model_path
-        if rec_model_path is not None:
-            params["Rec.model_path"] = rec_model_path
-        # 初始化时创建 RapidOCR 实例
-        self.ocr = RapidOCR(
-            params=params,
+    @property
+    def requires_dml_lock(self) -> bool:
+        return bool(getattr(self._backend, "requires_dml_lock", False))
+
+    def _fallback_to_rapidocr(self, exc: Exception):
+        if self.backend_name == OCRBackendType.RAPIDOCR:
+            raise exc
+        logger.warning(
+            "OCR backend {} failed during inference, fallback to {}: {}",
+            self.backend_name,
+            OCRBackendType.RAPIDOCR,
+            exc,
         )
-        self._attach_accelerated_session(self.ocr, "text_det", det_session)
-        self._attach_accelerated_session(self.ocr, "text_cls", cls_session)
-        self._attach_accelerated_session(self.ocr, "text_rec", rec_session)
+        self._backend = RapidOCRBackend()
+        return self._backend
 
     def __call__(self, *args, **kwargs):
         with self._infer_lock:
-            return self.ocr(*args, **kwargs)
+            try:
+                return self._backend.infer(*args, **kwargs)
+            except Exception as exc:
+                fallback_backend = self._fallback_to_rapidocr(exc)
+                return fallback_backend.infer(*args, **kwargs)
 
 @dataclass
 class OCR_Result(Yolo_Box):
 
     text: str
-    confidence: float
+    confidence: float | None
 
     def __init__(self, x, y, w, h, text, confidence):
         super().__init__(x, y, w, h, None, None)
@@ -232,7 +177,10 @@ class OCR_ResultList:
         :param current_line: 当前行的OCR结果列表
         :return: 平均信心值
         """
-        return sum(r.confidence for r in current_line) / len(current_line)  # 取平均信心值
+        valid_scores = [r.confidence for r in current_line if r.confidence is not None]
+        if not valid_scores:
+            return 0.0
+        return sum(valid_scores) / len(valid_scores)  # 取平均信心值
 
     def exclude(self, exclude_list: List[OCR_Result]) -> 'OCR_ResultList':
         """
@@ -293,7 +241,7 @@ class OCRService:
                 w=int(w),
                 h=int(h),
                 text=normalize_ocr_jp(fullwidth_to_halfwidth(text)),
-                confidence=score
+                confidence=None if score is None else float(score)
             ))
         return temp
 
@@ -303,6 +251,8 @@ class OCRService:
             logger.warning(f"Empty images or dimensions are illegal: {img.shape if img is not None else 'None'}")
             return []
         img_letterbox, ratio, (dw, dh) = letterbox(img)
+        # Keep OCR execution serialized through the existing DMLManager lock so a
+        # mid-call fallback from Vision -> RapidOCR stays on the same safe path.
         with DMLManager.get_lock():
             result = self._get_ocr_engine()(img_letterbox, use_cls=False)
         result = self._map_result_to_ocr_result(result, ratio, dw, dh)

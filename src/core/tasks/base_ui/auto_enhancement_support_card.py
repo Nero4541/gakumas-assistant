@@ -144,14 +144,14 @@ def _card_needs_enhancement(
     rarity_config = config.get(card.rarity)
     if rarity_config is None or not rarity_config["enabled"]:
         return False
+    # 上限解放和等级强化是两个独立状态，互不影响。
+    # 即使 badge=True（卡片可做上限解放），只要等级未达目标就需要强化。
+    # 主循环会按顺序处理：先上限解放，再强化。
     # 计算该卡的实际等级上限（基于星数）
     actual_cap = _get_level_cap(card.rarity, card.stars)
     # 用户设定目标 vs 实际突破上限，取较小值
     target_level = min(rarity_config["max_level"], actual_cap)
     if card.level >= target_level:
-        return False
-    # 已达当前星级上限且未开启上限解放 → 跳过（limit_break 标记表示可以做上限解放）
-    if card.limit_break and card.level >= actual_cap:
         return False
     if whitelist_mode and clip_db_id and clip_db_id not in whitelist_ids:
         return False
@@ -163,28 +163,26 @@ def _card_needs_limit_break(
     config: dict,
     auto_limit_break: bool,
 ) -> bool:
-    """判断卡片是否需要上限解放。"""
+    """判断卡片是否需要上限解放。
+
+    当「上限解放可能」badge 存在时，游戏已经确认：
+      1. 卡片等级已达当前星级上限
+      2. 有重复卡片可用于上限解放
+    因此 badge 是权威信号，优先于可能不准确的数字识别结果。
+
+    上限解放消耗的是重复卡片（不消耗强化 Pt），是"免费"操作。
+    用户开启 auto_limit_break=True 即表示希望尽可能解放所有可解放的卡，
+    不再受 max_level 限制。仅检查星数上限 (4★ = 最大) 即可。
+    """
     if not auto_limit_break:
-        return False
-    if card.level is None or card.rarity is None or card.stars is None:
         return False
     if not card.limit_break:
         return False
-    # 检查当前等级是否已达到星级上限
-    actual_cap = _get_level_cap(card.rarity, card.stars)
-    if card.level < actual_cap:
-        return False  # 还能继续 Lv 强化，不需要先解放
-    # 检查是否已到最高星数 (4★)
-    if card.stars >= 4:
+    if card.rarity is None:
         return False
-    # 检查品级总开关
-    rarity_config = config.get(card.rarity)
-    if rarity_config is None or not rarity_config["enabled"]:
+    # 如果已知星数，检查是否已到最高星数 (4★)
+    if card.stars is not None and card.stars >= 4:
         return False
-    # 检查用户设定的目标等级是否超过当前上限（才有解放的必要）
-    next_cap = _get_level_cap(card.rarity, card.stars + 1)
-    if rarity_config["max_level"] <= actual_cap:
-        return False  # 用户目标等级不超过当前上限，没必要解放
     return True
 
 
@@ -275,19 +273,13 @@ def _go_back_via_cancel(app: "AppProcessor") -> bool:
 def _go_back_to_list(app: "AppProcessor") -> bool:
     """Navigate from detail page back to card list via Back Button."""
     for attempt in range(3):
-        if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
-            app.game_utils.click_on_label(BaseUILabels.BACK_BTN)
-            sleep(1)
-            app.game_utils.wait_frame_stable(stable_count=2)
+        try:
+            app.game_utils.back_next_page()
             return True
-        if isinstance(app.device, Android_App):
-            app.device.back()
-            sleep(1)
-            app.game_utils.wait_frame_stable(stable_count=2)
-            return True
-        if attempt < 2:
-            sleep(0.5)
-            app.game_utils.wait_frame_stable(stable_count=2)
+        except TimeoutError:
+            if attempt < 2:
+                sleep(0.5)
+                app.game_utils.wait_frame_stable(stable_count=2)
     return False
 
 
@@ -313,13 +305,11 @@ def _ensure_on_card_list(app: "AppProcessor", max_attempts: int = 5) -> bool:
             app.game_utils.click_modal_button_and_wait_transition(modal.confirm_button)
             sleep(0.5)
             continue
-        if isinstance(app.device, Android_App):
-            app.device.back()
-            sleep(1)
+        try:
+            app.game_utils.back_next_page()
+        except TimeoutError:
+            pass
     return False
-
-
-# ── Enhancement flow ──────────────────────────────────────────────────────────
 
 def _enter_enhance_page(app: "AppProcessor") -> bool:
     """On the detail page, click Lv強化 to enter the enhancement page.
@@ -380,6 +370,34 @@ def _click_max_level_button(app: "AppProcessor") -> bool:
     return False
 
 
+def _click_level_down_button(app: "AppProcessor") -> bool:
+    """On the enhancement page, click '<' to decrease target level by 1.
+    Finds the single-chevron button on the LEFT side of the screen (cx < 400).
+    Returns True if successfully clicked, False if not found or disabled."""
+    buttons = ButtonList(app.latest_results)
+    for b in buttons.buttons:
+        if b.cx >= 400:
+            continue  # right-side buttons are increase (> / >>)
+        if b.is_disabled():
+            continue
+        if _detect_chevron_count(b.frame) == 1:
+            app.device.click(b.cx, b.cy, el_label="<")
+            sleep(0.5)
+            app.game_utils.wait_frame_stable(stable_count=2)
+            return True
+    # Fallback: try double-chevron (<<) to jump to minimum
+    for b in buttons.buttons:
+        if b.cx >= 400 or b.is_disabled():
+            continue
+        if _detect_chevron_count(b.frame) == 2:
+            app.device.click(b.cx, b.cy, el_label="<<")
+            sleep(0.5)
+            app.game_utils.wait_frame_stable(stable_count=2)
+            return True
+    logger.debug("'<' level-down button not found or disabled")
+    return False
+
+
 def _check_confirm_enabled(app: "AppProcessor") -> tuple[bool, Optional["ButtonList"]]:
     """Check if the Lv強化 confirm button on enhancement page is enabled.
     Returns (is_enabled, ButtonList) so caller can reuse the buttons."""
@@ -430,15 +448,36 @@ def _enhance_single_card(app: "AppProcessor") -> str:
     if not _enter_enhance_page(app):
         return "at_cap"
 
-    # Click ">>" to set target level to max
-    _click_max_level_button(app)
-
-    # 检查确认按钮是否可用（资源检查）
+    # 先检查默认等级（+1）时确认按钮是否可用
     enabled, _ = _check_confirm_enabled(app)
     if not enabled:
-        logger.info("Lv強化 confirm disabled → 资源不足或已达上限")
+        # 连 +1 级都做不了 → 真的没材料
+        logger.info("Lv強化 confirm disabled at default level → 资源不足")
         _go_back_via_cancel(app)
         return "no_materials"
+
+    # 尝试 ">>" 跳到最大等级
+    clicked_max = _click_max_level_button(app)
+    if clicked_max:
+        enabled, _ = _check_confirm_enabled(app)
+        if not enabled:
+            # ">>" 后资源不够 → 用 '<' 逐级递减，找到最高可负担等级
+            logger.info("Lv強化 confirm disabled at max → 逐级递减寻找可负担等级")
+            found_affordable = False
+            for step in range(20):  # 安全上限：最多递减 20 级
+                if not _click_level_down_button(app):
+                    logger.debug(f"'<' not found after {step} steps, giving up step-down")
+                    break
+                enabled, _ = _check_confirm_enabled(app)
+                if enabled:
+                    logger.info(f"Lv強化 re-enabled after {step + 1} level-down steps")
+                    found_affordable = True
+                    break
+            if not found_affordable:
+                # 逐级递减仍无法找到可负担等级 → 取消
+                logger.info("逐级递减失败，取消强化")
+                _go_back_via_cancel(app)
+                return "no_materials"
 
     # Click Lv強化 (confirm)
     if not _confirm_enhancement(app):
@@ -454,6 +493,76 @@ def _enhance_single_card(app: "AppProcessor") -> str:
 
 
 # ── 上限解放 flow ─────────────────────────────────────────────────────────────
+
+
+def _find_lb_arrow(buttons: ButtonList, direction: str) -> "Button | None":
+    """Find left (<) or right (>) arrow button on the LB page by position.
+
+    The LB page has a '<' arrow on the left and '>' arrow on the right.
+    Both are detected as Universal Buttons with 1 chevron glyph.
+    We distinguish them by horizontal position relative to screen center (540px).
+    """
+    # screen width = 1080, midpoint = 540
+    for b in buttons.buttons:
+        if _detect_chevron_count(b.frame) < 1 or b.is_disabled():
+            continue
+        if direction == "right" and b.cx > 540:
+            return b
+        if direction == "left" and b.cx < 540:
+            return b
+    return None
+
+
+def _maximize_lb_level(app: "AppProcessor") -> bool:
+    """On the LB page, click '>' repeatedly to maximize the limit break level.
+
+    Strategy: advance with '>' while 解放する stays enabled.
+    If 解放する becomes disabled (枚数が足りません), revert one step with '<'.
+    Returns True if 解放する is enabled after maximization, False otherwise.
+    """
+    # Pre-check: if 解放する is already disabled at initial level, skip arrow clicking
+    buttons = ButtonList(app.latest_results)
+    confirm = buttons.get_button_by_text(SupportCardText.LIMIT_BREAK_CONFIRM, _FUZZ_CONFIG)
+    if confirm is None:
+        logger.debug("解放する not found on LB page — not on LB page?")
+        return False
+    if confirm.is_disabled():
+        logger.debug("解放する already disabled at initial level (no cards available)")
+        return False
+
+    advanced = 0
+    for step in range(4):  # max 4 star increments (0★→4★)
+        buttons = ButtonList(app.latest_results)
+        right_arrow = _find_lb_arrow(buttons, "right")
+        if right_arrow is None:
+            logger.debug(f"'>' arrow not found after {advanced} advances (max star level)")
+            break
+
+        # Click '>'
+        app.device.click(right_arrow.cx, right_arrow.cy, el_label=">")
+        sleep(0.8)
+        app.game_utils.wait_frame_stable(stable_count=2)
+        advanced += 1
+
+        # Check if 解放する is still enabled
+        buttons = ButtonList(app.latest_results)
+        confirm = buttons.get_button_by_text(SupportCardText.LIMIT_BREAK_CONFIRM, _FUZZ_CONFIG)
+        if confirm is None or confirm.is_disabled():
+            logger.debug(f"解放する disabled at advance {advanced} — reverting one step")
+            left_arrow = _find_lb_arrow(buttons, "left")
+            if left_arrow:
+                app.device.click(left_arrow.cx, left_arrow.cy, el_label="<")
+                sleep(0.8)
+                app.game_utils.wait_frame_stable(stable_count=2)
+                advanced -= 1
+            break
+
+        logger.debug(f"LB level advanced to step {advanced}")
+
+    if advanced > 0:
+        logger.info(f"上限解放: selected {advanced + 1}★ target (+{advanced} from initial)")
+    return True
+
 
 def _perform_limit_break(app: "AppProcessor") -> bool:
     """On the detail page, perform 上限解放.
@@ -474,33 +583,48 @@ def _perform_limit_break(app: "AppProcessor") -> bool:
     sleep(1)
     app.game_utils.wait_frame_stable(stable_count=2)
 
-    # 在上限解放页面，尝试找到确认按钮「解放する」
+    # ── 点击 '>' 将上限解放等级设为最大 ──
+    if not _maximize_lb_level(app):
+        logger.info("上限解放: 解放する disabled — no cards available, cancelling")
+        _go_back_via_cancel(app)
+        return False
+
+    # 找到确认按钮「解放する」
+    confirm = None
     for attempt in range(3):
         buttons = ButtonList(app.latest_results)
         confirm = buttons.get_button_by_text(SupportCardText.LIMIT_BREAK_CONFIRM, _FUZZ_CONFIG)
-        if confirm is None:
-            # 也尝试匹配上限解放文本本身（部分版本使用不同按钮文案）
-            confirm = buttons.get_button_by_text(SupportCardText.LIMIT_BREAK, _FUZZ_CONFIG)
         if confirm and not confirm.is_disabled():
             break
         if attempt < 2:
             sleep(0.5)
             app.game_utils.wait_frame_stable(stable_count=2)
     else:
-        logger.info("上限解放 confirm button not found or disabled")
+        logger.info("上限解放 confirm button not found or disabled after maximization")
         _go_back_via_cancel(app)
         return False
 
-    # 点击确认
-    app.game_utils.click_element_and_wait_trigger(confirm, retries=3, timeout=3.0)
+    # 点击确認
+    if not app.game_utils.click_element_and_wait_trigger(confirm, retries=3, timeout=3.0):
+        logger.warning("解放する click did not trigger — cancelling")
+        _go_back_via_cancel(app)
+        return False
     sleep(1.5)
     app.game_utils.wait_frame_stable(stable_count=3)
 
     # 处理弹窗（解放完成提示）
     _handle_post_enhancement(app)
 
-    # 回到详情页
-    _go_back_via_cancel(app)
+    # 尝试返回详情页：先试キャンセル（如果还在LB页面），再试閉じる
+    if not _go_back_via_cancel(app):
+        # 可能已经自动回到详情页，尝试用閉じる关闭结果面板
+        buttons = ButtonList(app.latest_results)
+        close_btn = buttons.get_button_by_text(SupportCardText.ENHANCE_CLOSE, _FUZZ_CONFIG)
+        if close_btn:
+            app.game_utils.click_element_and_wait_trigger(close_btn, retries=2, timeout=2.0)
+            sleep(0.5)
+            app.game_utils.wait_frame_stable(stable_count=2)
+
     return True
 
 
@@ -615,19 +739,13 @@ def _go_back_to_list_from_convert(app: "AppProcessor"):
     The convert page uses the BACK_BTN (<<), not キャンセル.
     """
     for attempt in range(3):
-        if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
-            app.game_utils.click_on_label(BaseUILabels.BACK_BTN)
-            sleep(1)
-            app.game_utils.wait_frame_stable(stable_count=2)
+        try:
+            app.game_utils.back_next_page()
             return
-        if isinstance(app.device, Android_App):
-            app.device.back()
-            sleep(1)
-            app.game_utils.wait_frame_stable(stable_count=2)
-            return
-        if attempt < 2:
-            sleep(0.5)
-            app.game_utils.wait_frame_stable(stable_count=2)
+        except TimeoutError:
+            if attempt < 2:
+                sleep(0.5)
+                app.game_utils.wait_frame_stable(stable_count=2)
 
 
 # ── Main action ───────────────────────────────────────────────────────────────
@@ -717,8 +835,11 @@ def action__auto_enhance_support_cards(app: "AppProcessor") -> bool:
             elif _pos in failed_positions:
                 color = (0, 0, 200)     # red: given up this page
                 label = f"{card.rarity or '?'} Lv{card.level}/{actual_cap} {stars_str} (已放弃)"
+            elif id(card) in lb_set and id(card) in enhance_set:
+                color = (255, 200, 0)   # gold: needs both LB + enhance
+                label = f"{card.rarity} Lv{card.level}/{actual_cap} {stars_str} 解放+✓"
             elif id(card) in lb_set:
-                color = (255, 165, 0)   # blue-ish: needs limit break
+                color = (255, 165, 0)   # orange: needs limit break
                 label = f"{card.rarity} Lv{card.level}/{actual_cap} {stars_str} 解放"
             elif id(card) in enhance_set:
                 color = (0, 255, 0)     # green: will enhance

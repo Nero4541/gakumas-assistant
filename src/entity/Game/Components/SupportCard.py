@@ -26,6 +26,7 @@ from src.utils.opencv_tools import (
     normalize_binary_mask,
 )
 from src.utils.string_tools import MatchConfig, string_match
+from src.utils.logger import logger
 
 ocr_service = OCRService()
 debug_tools = DebugTools()
@@ -35,6 +36,21 @@ FONT_PATH = REPO_ROOT / "assets" / "NotoSerifCJKsc-Medium.otf"
 NORMALIZED_DIGIT_SIZE = (32, 24)
 SYNTHETIC_DIGIT_CANVAS = (72, 56)
 LIMIT_BREAK_KEYWORDS = [SupportCardText.LIMIT_BREAK, "解放可能"]
+
+# Rarity → maximum possible level at ★4 (for cross-validation)
+_RARITY_MAX_LEVEL = {
+    SupportCardText.RARITY_R: 40,
+    SupportCardText.RARITY_SR: 50,
+    SupportCardText.RARITY_SSR: 60,
+}
+# Rarity → level cap per star count (for cross-validation)
+_RARITY_STAR_CAPS = {
+    SupportCardText.RARITY_R:   {0: 20, 1: 25, 2: 30, 3: 35, 4: 40},
+    SupportCardText.RARITY_SR:  {0: 30, 1: 35, 2: 40, 3: 45, 4: 50},
+    SupportCardText.RARITY_SSR: {0: 40, 1: 45, 2: 50, 3: 55, 4: 60},
+}
+# Upgrade order: R → SR → SSR
+_RARITY_UPGRADE = [SupportCardText.RARITY_R, SupportCardText.RARITY_SR, SupportCardText.RARITY_SSR]
 
 
 @dataclass
@@ -172,6 +188,12 @@ class SupportCardParser:
         else:
             level = None
 
+        # Cross-validate rarity against level/stars.
+        # HSV can misclassify when no color matches threshold (defaults to R).
+        # If level exceeds the maximum possible for the detected rarity, upgrade.
+        if rarity is not None and level is not None and stars is not None:
+            rarity = _cross_validate_rarity(rarity, level, stars)
+
         return SupportCard(
             index=self.index,
             box=self.yolo_box,
@@ -263,6 +285,33 @@ _ATTRIBUTE_HSV_RANGES = {
 }
 
 
+def _cross_validate_rarity(rarity: str, level: int, stars: int) -> str:
+    """Cross-validate rarity against level/stars — upgrade if impossible.
+
+    HSV detection can default to R when no color matches threshold.
+    If the detected level exceeds the star-cap for that rarity, the rarity
+    must be higher. E.g., Lv=45 at ★1 cannot be R (cap=25) or SR (cap=35).
+    """
+    star_count = min(max(stars, 0), 4)
+    for r in _RARITY_UPGRADE:
+        caps = _RARITY_STAR_CAPS.get(r)
+        if caps is None:
+            continue
+        cap = caps.get(star_count, caps[0])
+        if r == rarity and level <= cap:
+            return rarity  # current rarity is consistent
+    # Level exceeds cap for detected rarity → find the lowest rarity that fits
+    for r in _RARITY_UPGRADE:
+        caps = _RARITY_STAR_CAPS.get(r)
+        if caps is None:
+            continue
+        cap = caps.get(star_count, caps[0])
+        if level <= cap:
+            return r
+    # Level exceeds even SSR cap → keep SSR (likely max)
+    return SupportCardText.RARITY_SSR
+
+
 def _detect_rarity(card_frame: np.ndarray, has_limit_break: bool = False) -> str | None:
     """Detect card rarity (SSR/SR/R) from the rarity badge region via HSV color.
 
@@ -292,7 +341,19 @@ def _detect_rarity(card_frame: np.ndarray, has_limit_break: bool = False) -> str
             scores[rarity] = ratio
 
     if not scores:
-        return SupportCardText.RARITY_R  # Default to R if no strong match
+        # No HSV match passed threshold → OCR fallback for rarity text
+        upscaled = cv2.resize(blurred, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        result = ocr_service.ocr(upscaled)
+        if result and result.results:
+            for ocr_item in result.results:
+                text = ocr_item.text.upper().replace(" ", "")
+                if "SSR" in text:
+                    return SupportCardText.RARITY_SSR
+                if "SR" in text and "SSR" not in text:
+                    return SupportCardText.RARITY_SR
+                if text == "R":
+                    return SupportCardText.RARITY_R
+        return SupportCardText.RARITY_R  # Default to R if OCR also fails
 
     if has_limit_break:
         # Orange badge cannot produce SR silver (low-saturation) false positives,
@@ -365,34 +426,28 @@ def _detect_attribute(card_frame: np.ndarray) -> str | None:
     return max(scores, key=scores.get)
 
 
-def _detect_limit_break(card_frame: np.ndarray) -> bool:
-    """Detect the ‘上限解放可能’ badge via HSV orange-band detection.
+_LB_MATCH_CONFIG = MatchConfig(use_fuzz=True, fuzz_threshold=70, use_contains=True)
 
-    The badge is a distinctive orange/amber gradient banner that spans
-    most of the card width in the 30-68% height region.  Detecting the
-    colour band is ~100x faster than full-card OCR and more robust
-    against JPG noise.
+
+def _detect_limit_break(card_frame: np.ndarray) -> bool:
+    """Detect the '上限解放可能' badge via OCR on the card crop.
+
+    The badge is an orange/amber semi-transparent overlay with white text
+    "上限解放可能" spanning most of the card width.  We run OCR on the full
+    card crop and fuzzy-match against LIMIT_BREAK_KEYWORDS.
     """
     height, width = card_frame.shape[:2]
-    if height < 80 or width < 40:
+    if height < 20 or width < 20:
         return False
 
-    y_start = int(height * 0.30)
-    y_end = int(height * 0.68)
-    badge_region = card_frame[y_start:y_end, :]
-    if badge_region.size == 0:
+    ocr_result = ocr_service.ocr(card_frame)
+    if not ocr_result or not ocr_result.results:
         return False
 
-    blurred = cv2.GaussianBlur(badge_region, (3, 3), 0)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-    # The badge background is an orange/amber gradient (H≈5-25)
-    orange_mask = cv2.inRange(hsv, np.array([5, 80, 150]), np.array([25, 255, 255]))
-
-    row_ratios = np.count_nonzero(orange_mask, axis=1).astype(np.float32) / max(1, width)
-    max_ratio = float(np.max(row_ratios)) if row_ratios.size > 0 else 0.0
-
-    return max_ratio > 0.45
+    for item in ocr_result.results:
+        if string_match(item.text, LIMIT_BREAK_KEYWORDS, _LB_MATCH_CONFIG):
+            return True
+    return False
 
 
 def _extract_info_band(card_frame: np.ndarray) -> tuple[np.ndarray, np.ndarray, int, int]:

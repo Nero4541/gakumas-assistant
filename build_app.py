@@ -244,10 +244,8 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
         if not _use_embedded_webview(storage_mode):
             nofollow_modules.extend(
                 [
-                    "Foundation",
                     "AppKit",
                     "Cocoa",
-                    "objc",
                     "WebKit",
                     "webview.platforms.cocoa",
                 ]
@@ -292,6 +290,10 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
             nuitka_cmd.append("--include-module=webview.platforms.qt")
         elif TARGET_PLATFORM == "Darwin":
             nuitka_cmd.append("--include-module=webview.platforms.cocoa")
+    if TARGET_PLATFORM == "Darwin":
+        for module_name in ("Foundation", "objc", "Vision"):
+            if importlib.util.find_spec(module_name):
+                nuitka_cmd.append(f"--include-module={module_name}")
     if TARGET_PLATFORM == "Linux":
         qt_plugin_name = _detect_qt_plugin_name()
         if qt_plugin_name is None:

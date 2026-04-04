@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Optional, List, Any, Tuple, Dict
 
 from src.constants.device.adb import ADBOperation, ADBConnectMode
+from src.constants.ocr.backend import OCR_BACKEND_VERIFY, OCRBackendType
 from src.utils.logger import logger
 
 
@@ -55,6 +56,21 @@ def _run_mode_options() -> List[Dict[str, Any]]:
         pc_option,
         {"title": "手机端", "value": "Phone"},
         mac_option,
+    ]
+
+
+def _ocr_backend_options() -> List[Dict[str, Any]]:
+    vision_option: Dict[str, Any] = {
+        "title": "Vision（macOS 原生 OCR）",
+        "value": OCRBackendType.VISION,
+    }
+    if platform.system() != "Darwin":
+        vision_option["disabled"] = True
+        vision_option["disabled_reason"] = "Vision OCR 仅在 macOS 可用。"
+    return [
+        {"title": "自动", "value": OCRBackendType.AUTO},
+        {"title": "RapidOCR", "value": OCRBackendType.RAPIDOCR},
+        vision_option,
     ]
 
 
@@ -207,6 +223,19 @@ class _Base(_BaseConfigGroup):
             options=_run_mode_options(),
             order=10,
         )
+    )
+    ocr_backend = ConfigItem(
+        default_value=OCRBackendType.AUTO,
+        data_type=str,
+        verify=OCR_BACKEND_VERIFY,
+        use_verify=True,
+        ui=ConfigItemUI(
+            label="OCR 后端",
+            hint="auto：macOS 优先 Vision，其他平台使用 RapidOCR；失败时会回退到 RapidOCR（修改后需重启生效）",
+            component="select",
+            options=_ocr_backend_options(),
+            order=15,
+        ),
     )
     # 游戏窗口名
     game_window_name = ConfigItem(

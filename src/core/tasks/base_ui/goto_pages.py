@@ -40,15 +40,18 @@ def _goto_tab_idol(app: "AppProcessor"):
     app.game_utils.click_on_label(BaseUILabels.TAB_IDOL)
     app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__IDOL)
 
-def goto__get_expenditure(app: "AppProcessor"):
-    """ 进入“活动费”领取菜单 """
+def goto__get_expenditure(app: "AppProcessor", candidate_index: int = 0):
+    """ 进入“活动费”领取菜单，点击第 candidate_index 个候选按钮 """
     _back_home(app)
     if not app.game_utils.wait_for_label(BaseUILabels.HOME_GET_EXPENDITURE):
         raise TimeoutError("Timeout waiting for [home:expenditure] to appear.")
-    expenditure_button = app.latest_results.filter_by_label(BaseUILabels.HOME_GET_EXPENDITURE).first()
-    if expenditure_button is None:
+    candidates = app.latest_results.filter_by_label(BaseUILabels.HOME_GET_EXPENDITURE)
+    if not candidates:
         raise TimeoutError("Failed to locate [home:expenditure] button after label wait.")
+    idx = min(candidate_index, len(candidates) - 1)
+    expenditure_button = candidates.boxes[idx]
     app.game_utils.click_element_and_wait_trigger(expenditure_button, retries=3, timeout=3.0, interval=0.1)
+
 
 def goto__work_dispatch_page(app: "AppProcessor"):
     """ 进入任务派遣页面 """
