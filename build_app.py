@@ -21,6 +21,7 @@ from src.utils.runtime_paths import (
     RUNTIME_METADATA_FILE_NAME,
     STORAGE_MODE_MERGED,
     STORAGE_MODE_PORTABLE,
+    get_data_root,
 )
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -204,8 +205,15 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
             missing_files.append(source_path)
     if missing_files:
         print("RapidOCR runtime files are missing, bootstrapping models before packaging")
+        get_data_root().mkdir(parents=True, exist_ok=True)
+        bootstrap_cmd = (
+            "from src.main import AppProcessor; "
+            "AppProcessor._init_database(); "
+            "from src.core.inference.ocr_engine import OCRLoader; "
+            "OCRLoader()"
+        )
         subprocess.run(
-            [sys.executable, "-c", "from src.core.inference.ocr_engine import OCRLoader; OCRLoader()"],
+            [sys.executable, "-c", bootstrap_cmd],
             cwd=PROJECT_ROOT,
             check=True,
         )
