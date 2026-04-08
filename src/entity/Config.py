@@ -550,6 +550,151 @@ class _Task:
         # 白名单卡 ID 列表
         whitelist_card_ids = ConfigItem(default_value=[], data_type=list)
 
+    class AutoProducer(_BaseConfigGroup):
+        # 剧本选择: "hajime" (初) / "nia" (NIA)
+        scenario = ConfigItem(
+            default_value="hajime",
+            data_type=str,
+            verify=r"hajime|nia",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="剧本",
+                hint="选择培育剧本",
+                component="select",
+                options=[
+                    {"title": "初（HAJIME）", "value": "hajime"},
+                    {"title": "NIA", "value": "nia"},
+                ],
+                order=10,
+            ),
+        )
+        # HAJIME 难度: "regular" / "pro" / "master" / "legend"
+        difficulty = ConfigItem(
+            default_value="regular",
+            data_type=str,
+            verify=r"regular|pro|master|legend",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="难度",
+                hint="选择培育难度",
+                component="select",
+                options=[
+                    {"title": "Regular（produce-001）", "value": "regular"},
+                    {"title": "Pro（produce-002）", "value": "pro"},
+                    {"title": "Master（produce-003）", "value": "master"},
+                    {"title": "Legend（produce-006）", "value": "legend"},
+                ],
+                visible_if={"task__auto_producer.scenario": "hajime"},
+                order=20,
+            ),
+        )
+        # NIA 难度: "pro" / "master"
+        nia_difficulty = ConfigItem(
+            default_value="pro",
+            data_type=str,
+            verify=r"pro|master",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="NIA 难度",
+                hint="选择 NIA 剧本难度",
+                component="select",
+                options=[
+                    {"title": "Pro（produce-004）", "value": "pro"},
+                    {"title": "Master（produce-005）", "value": "master"},
+                ],
+                visible_if={"task__auto_producer.scenario": "nia"},
+                order=21,
+            ),
+        )
+        # 目标偶像卡 ID（通过 CLIP 匹配，留空使用默认选中的卡）
+        target_idol_card_id = ConfigItem(
+            default_value="",
+            data_type=str,
+            ui=ConfigItemUI(
+                label="目标偶像卡",
+                hint="目标 P アイドル ID（留空使用默认选中的卡；需先执行「刷新偶像卡存储」学习卡片特征）",
+                order=30,
+            ),
+        )
+        # 支援卡编成模式: "auto" (おまかせ) / "preset" (预设编号)
+        support_card_mode = ConfigItem(
+            default_value="auto",
+            data_type=str,
+            verify=r"auto|preset",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="支援卡编成",
+                hint="自动编成（おまかせ）或使用预设编号",
+                component="select",
+                options=[
+                    {"title": "自动编成（おまかせ）", "value": "auto"},
+                    {"title": "预设编号", "value": "preset"},
+                ],
+                order=40,
+            ),
+        )
+        # 预设支援卡编号
+        support_card_preset_index = ConfigItem(
+            default_value=1,
+            data_type=int,
+            ui=ConfigItemUI(
+                label="支援卡预设编号",
+                hint="使用第几组预设编成",
+                visible_if={"task__auto_producer.support_card_mode": "preset"},
+                order=50,
+            ),
+        )
+        # 记忆编成模式
+        memory_mode = ConfigItem(
+            default_value="auto",
+            data_type=str,
+            verify=r"auto|preset",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="记忆编成",
+                hint="自动编成（おまかせ）或使用预设编号",
+                component="select",
+                options=[
+                    {"title": "自动编成（おまかせ）", "value": "auto"},
+                    {"title": "预设编号", "value": "preset"},
+                ],
+                order=60,
+            ),
+        )
+        # 预设记忆编号
+        memory_preset_index = ConfigItem(
+            default_value=1,
+            data_type=int,
+            ui=ConfigItemUI(
+                label="记忆预设编号",
+                hint="使用第几组预设编成",
+                visible_if={"task__auto_producer.memory_mode": "preset"},
+                order=70,
+            ),
+        )
+        # 自动编排记忆时「レンタルを使用」复选框
+        use_rental = ConfigItem(
+            default_value=True,
+            data_type=bool,
+            ui=ConfigItemUI(
+                label="使用租赁记忆",
+                hint="自动编排记忆时勾选「レンタルを使用」复选框",
+                component="switch",
+                order=75,
+            ),
+        )
+        # 開始確認页是否使用加成道具
+        use_boost_items = ConfigItem(
+            default_value=False,
+            data_type=bool,
+            ui=ConfigItemUI(
+                label="使用加成道具",
+                hint="開始確認页面是否使用加成道具（編成詳细按钮上方）",
+                component="switch",
+                order=80,
+            ),
+        )
+
 class _DMMPlayerConfig(_BaseConfigGroup):
     """DMMPlayer启动器配置"""
     game_exe_path = ConfigItem(
@@ -605,6 +750,7 @@ class Config(_BaseConfigGroup):
     task__auto_contest: _Task.AutoContest = field(default_factory=_Task.AutoContest)
     task__dispatch_work: _Task.DispatchWork = field(default_factory=_Task.DispatchWork)
     task__auto_enhancement_support_card: _Task.AutoEnhancementSupportCard = field(default_factory=_Task.AutoEnhancementSupportCard)
+    task__auto_producer: _Task.AutoProducer = field(default_factory=_Task.AutoProducer)
 
     def to_json_dict(self) -> dict:
         def serialize_group(group):

@@ -133,10 +133,11 @@ class MacOS_App(BaseDevice):
         self._adapter.click(int(x), int(y))
 
     def swipe(self, start_x, start_y, end_x, end_y, duration=0.8,
-              offset_x=10, offset_y=10, safe_margin=50):
+              offset_x=10, offset_y=10, safe_margin=50, hold_end=0.0, ease=None):
         width, height = self.get_window_size()
         if width == 0 or height == 0:
-            self._adapter.swipe(int(start_x), int(start_y), int(end_x), int(end_y), duration)
+            self._adapter.swipe(int(start_x), int(start_y), int(end_x), int(end_y),
+                                duration, hold_end=hold_end, ease=ease)
             return
 
         def clamp(val, max_val):
@@ -160,7 +161,8 @@ class MacOS_App(BaseDevice):
 
         self._adapter.swipe(
             safe_start_x + offset_x, safe_start_y + offset_y,
-            safe_end_x, safe_end_y, actual_duration
+            safe_end_x, safe_end_y, actual_duration,
+            hold_end=hold_end, ease=ease,
         )
         time.sleep(random.uniform(0.05, 0.1))
 

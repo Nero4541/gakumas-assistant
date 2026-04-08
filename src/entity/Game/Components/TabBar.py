@@ -57,8 +57,11 @@ class TabBar(Yolo_Box):
                 region_x1, region_y1, region_x2, region_y2, width, height
             )
             centered_boxes = _filter_centered_word_boxes(group, height)
+            if not centered_boxes:
+                logger.debug(f"Skip non-centered tab group: {group}")
+                continue
             text_x1, text_y1, text_x2, text_y2 = _expand_tab_text_region(
-                *_get_box_group_bounds(centered_boxes or group),
+                *_get_box_group_bounds(centered_boxes),
                 width,
                 height,
             )

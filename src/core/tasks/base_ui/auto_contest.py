@@ -16,6 +16,7 @@ from src.entity.Game.Components.CheckBox import CheckBox
 from src.entity.Game.Components.Contest import ContestList, ContestItem
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
+from src.utils.task_debug_tools import record_task_step
 from src.utils.string_tools import MatchConfig, string_match
 
 if TYPE_CHECKING:
@@ -248,42 +249,115 @@ def _finish_battle(app: "AppProcessor"):
     处理战斗结束的按钮点击与奖励弹窗。
     分阶段处理：
     1. 持续点击屏幕中心，等待"次へ"按钮出现并点击
-    2. 等待并点击"終了"按钮（click_button 内部轮询，不中心点击）
+    2. 持续推进结算页（优先点"次へ"/"終了"，OCR 失败时兜底点底部主按钮）
     3. 等待返回竞技场页面，同时处理可能出现的奖励模态框
     """
     # 阶段1: 持续点击屏幕中心，等待"次へ"按钮出现
-    COUNT, WAIT = 0, 15
-    while COUNT < WAIT:
+    count = 0
+    while True:
         buttons = ButtonList(app.latest_results)
         if button := buttons.get_button_by_text(ButtonText.NEXT):
             logger.debug("Found NEXT button, clicking.")
+            record_task_step(app, "auto_contest.finish.phase1.click_next", attempts=count)
             app.device.click_element(button)
+            sleep(1)
             break
+        if count == 0 or count % 10 == 0:
+            record_task_step(app, "auto_contest.finish.phase1.wait_next", attempts=count)
         app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
         sleep(1)
-        COUNT += 1
-    if COUNT >= WAIT:
-        raise TimeoutError("Waiting for NEXT button timeout")
+        count += 1
 
-    # 阶段2: 等待并点击"終了"按钮（click_button 内部轮询最多10秒）
-    app.game_utils.click_button(ButtonText.EXIT)
-
-    # 阶段3: 等待返回竞技场页面，处理可能出现的奖励模态框
-    COUNT, WAIT = 0, 30
-    while COUNT < WAIT:
+    # 阶段2/3: 推进结算页并等待返回竞技场页面，处理可能出现的奖励模态框
+    idle_count = 0
+    while True:
         if app.latest_results.exists_label(BaseUILabels.BACK_BTN):
             if _is_contest_detail_page(app):
+                record_task_step(app, "auto_contest.finish.return_to_contest_list")
                 _try_back_to_contest_list(app)
                 sleep(1)
-                COUNT += 1
                 continue
+            record_task_step(app, "auto_contest.finish.returned_to_arena")
             return
         if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
             modal = app.game_utils.wait_for_modal(ModalText.TITLE.RATE_REWARD, no_body=True)
             if modal is not None:
                 close_button = modal.cancel_button or modal.confirm_button
                 if close_button:
+                    record_task_step(
+                        app,
+                        "auto_contest.finish.close_reward_modal",
+                        title=getattr(modal, "modal_title", None),
+                    )
                     app.device.click_element(close_button)
+                    sleep(1)
+                    idle_count = 0
+                    continue
+
+        buttons = ButtonList(app.latest_results)
+        if button := buttons.get_button_by_text(ButtonText.NEXT):
+            logger.debug("Found NEXT button during finish phase, clicking.")
+            record_task_step(app, "auto_contest.finish.phase2.click_next")
+            app.device.click_element(button)
+            sleep(1)
+            idle_count = 0
+            continue
+        if button := buttons.get_button_by_text(ButtonText.EXIT):
+            logger.debug("Found EXIT button during finish phase, clicking.")
+            record_task_step(app, "auto_contest.finish.phase2.click_exit")
+            app.device.click_element(button)
+            sleep(1)
+            idle_count = 0
+            continue
+        if button := _get_bottom_primary_button(buttons, app.latest_frame.shape):
+            logger.debug(
+                f"Found bottom primary button during finish phase, clicking fallback. "
+                f"text={button.text!r}"
+            )
+            record_task_step(
+                app,
+                "auto_contest.finish.phase2.click_primary_fallback",
+                text=button.text,
+                cx=int(button.cx),
+                cy=int(button.cy),
+            )
+            app.device.click_element(button)
+            sleep(1)
+            idle_count = 0
+            continue
+        idle_count += 1
+        if idle_count == 1 or idle_count % 10 == 0:
+            record_task_step(
+                app,
+                "auto_contest.finish.phase2.wait_progress",
+                idle_loops=idle_count,
+                button_count=len(buttons),
+            )
         sleep(1)
-        COUNT += 1
-    logger.warning("Waiting for return to arena timeout.")
+
+
+def _get_bottom_primary_button(buttons: ButtonList, frame_shape: tuple[int, ...]):
+    if not buttons:
+        return None
+
+    frame_height, frame_width = frame_shape[:2]
+    min_width = int(frame_width * 0.22)
+    bottom_threshold = int(frame_height * 0.82)
+    center_tolerance = int(frame_width * 0.18)
+
+    candidates = []
+    for button in buttons:
+        if button is None or button.is_disabled():
+            continue
+        button_width = int(button.w - button.x)
+        if button_width < min_width:
+            continue
+        if int(button.cy) < bottom_threshold:
+            continue
+        if abs(int(button.cx) - frame_width // 2) > center_tolerance:
+            continue
+        candidates.append(button)
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (int(item.cy), int(item.w - item.x)))

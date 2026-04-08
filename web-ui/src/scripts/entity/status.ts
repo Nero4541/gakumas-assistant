@@ -22,6 +22,7 @@ export interface AppStatus {
   platform: string
   yolo: boolean
   task: boolean
+  current_task?: string
   device: DeviceStatus
   game: GameStatus
 }

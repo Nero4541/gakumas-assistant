@@ -1213,6 +1213,7 @@ def _build_dynamic_table_loader_cls(table_name: str):
         {
             "__doc__": f"Auto generated loader for `{table_name}` table.",
             "__init__": __init__,
+            "default_data_file_parts": ("assets", "gakumasu-diff", f"{table_name}.yaml"),
         },
     )
     globals()[class_name] = dynamic_cls

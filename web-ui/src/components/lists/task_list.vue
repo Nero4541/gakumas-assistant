@@ -4,6 +4,7 @@ import auto_purchase_setting from "@/components/lists/config/task_settings/auto_
 import auto_contest_setting from "@/components/lists/config/task_settings/auto_contest_setting.vue";
 import dispatch_work_setting from "@/components/lists/config/task_settings/dispatch_work_setting.vue";
 import auto_enhancement_support_card_setting from "@/components/lists/config/task_settings/auto_enhancement_support_card_setting.vue";
+import auto_producer_setting from "@/components/lists/config/task_settings/auto_producer_setting.vue";
 import { useAppStore } from "@/stores/app.js";
 import { TaskStatus } from "@/scripts/constants";
 
@@ -33,6 +34,7 @@ const settingComponents = {
   auto_contest: auto_contest_setting,
   dispatch_work: dispatch_work_setting,
   auto_enhancement_support_card: auto_enhancement_support_card_setting,
+  auto_producer: auto_producer_setting,
 }
 
 const statusMap = {

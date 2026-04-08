@@ -3,6 +3,7 @@ from time import sleep
 
 from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
+from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.game_tools import get_modal
 from src.utils.logger import logger
 from src.utils.string_tools import string_match
@@ -59,6 +60,30 @@ def action__wait_enter_home(app: "AppProcessor"):
     COUNT:int = 0
     REQUIRED_COUNT:int = 3
     while True:
+        current_location = app.game_utils.update_current_location()
+        if current_location in {
+            GamePageTypes.PRODUCER__MEMORY_DETAIL,
+            GamePageTypes.PRODUCER__MEMORY_CANDIDATE_LIST,
+            GamePageTypes.PRODUCER__FORMATION_DETAILS,
+        }:
+            logger.debug(f"Closing special page before returning home: {current_location}")
+            try:
+                app.game_utils.back_next_page()
+            except Exception as exc:
+                logger.warning(f"Failed to close special page while waiting for home: {current_location} ({exc})")
+            sleep(1)
+            continue
+        if current_location in {
+            GamePageTypes.PRODUCER__MEMORY_SELECTION,
+            GamePageTypes.PRODUCER__FINAL_CONFIRM,
+        }:
+            logger.debug(f"Leaving producer page before returning home: {current_location}")
+            try:
+                app.game_utils.go_home(max_try=2)
+            except Exception as exc:
+                logger.warning(f"Failed to leave producer page while waiting for home: {current_location} ({exc})")
+            sleep(1)
+            continue
         if close_btn := app.latest_results.filter_by_label(BaseUILabels.CLOSE_BUTTON):
             app.device.click_element(close_btn.first())
             sleep(1)

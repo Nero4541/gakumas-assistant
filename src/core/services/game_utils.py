@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Optional
 
 import cv2
 import numpy as np
+from src.constants.game.text.button_text import ButtonText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Components.Modal import Modal
@@ -457,6 +458,89 @@ class GameUtils:
             COUNT += 1
         raise TimeoutError(f"Waiting for {text} button timeout")
 
+    def _find_button_by_text(
+            self,
+            text: str,
+            *,
+            fuzz_threshold: float = 70,
+            use_contains: bool = True,
+    ):
+        return ButtonList(self._app_processor.latest_results).get_button_by_text(
+            text,
+            MatchConfig(fuzz_threshold=fuzz_threshold, use_contains=use_contains, normalize=True),
+        )
+
+    def _get_top_right_action_button(self):
+        buttons = ButtonList(self._app_processor.latest_results)
+        candidates = [button for button in buttons if button.cx >= 720 and button.cy <= 280]
+        candidates.sort(key=lambda button: (button.cy, -button.cx))
+        return candidates[0] if candidates else None
+
+    def _get_top_right_fallback_target(self) -> Optional[Yolo_Box]:
+        frame = self._get_current_frame()
+        if frame is None:
+            return None
+        height, width = frame.shape[:2]
+        left = max(width - 220, 0)
+        top = 0
+        bottom = min(int(height * 0.18), height)
+        if left >= width or top >= bottom:
+            return None
+        return Yolo_Box(left, top, width, bottom, BaseUILabels.CLOSE_BUTTON, frame[top:bottom, left:width].copy())
+
+    def _wait_loading_safely(self, timeout: int = 8):
+        try:
+            self.wait_loading(timeout=timeout)
+        except TimeoutError:
+            logger.warning(f"Waiting for loading timed out after {timeout}s during navigation")
+
+    def _try_exit_special_page(self, current_location: str | None) -> bool:
+        results = self._app_processor.latest_results
+        candidates: list = []
+        if current_location == GamePageTypes.PRODUCER__MEMORY_DETAIL:
+            if cancel_button := self._find_button_by_text("キャンセル", fuzz_threshold=60):
+                candidates.append(cancel_button)
+        elif current_location in {
+            GamePageTypes.PRODUCER__MEMORY_CANDIDATE_LIST,
+            GamePageTypes.PRODUCER__FORMATION_DETAILS,
+        }:
+            close_buttons = results.filter_by_label(BaseUILabels.CLOSE_BUTTON)
+            if close_buttons:
+                candidates.append(close_buttons.first())
+            back_buttons = results.filter_by_label(BaseUILabels.BACK_BTN)
+            if back_buttons:
+                candidates.append(back_buttons.first())
+            if current_location == GamePageTypes.PRODUCER__FORMATION_DETAILS:
+                if close_button := self._find_button_by_text(ButtonText.CLOSE, fuzz_threshold=65):
+                    candidates.append(close_button)
+                if top_right_button := self._get_top_right_action_button():
+                    candidates.append(top_right_button)
+                if top_right_fallback := self._get_top_right_fallback_target():
+                    candidates.append(top_right_fallback)
+        else:
+            return False
+
+        seen: set[tuple[int | float | None, ...]] = set()
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            key = (
+                getattr(candidate, "x", None),
+                getattr(candidate, "y", None),
+                getattr(candidate, "w", None),
+                getattr(candidate, "h", None),
+                getattr(candidate, "text", None),
+                getattr(candidate, "label", None),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            if not self.click_element_and_wait_trigger(candidate, retries=2, timeout=2.5, interval=0.1):
+                continue
+            self._wait_loading_safely(timeout=8)
+            return True
+        return False
+
     def go_home(self, max_try: int = 5):
         """
         返回主页
@@ -472,6 +556,14 @@ class GameUtils:
                 if name.startswith("MAIN_MENU__")
             ]
             current_location = self.update_current_location()
+            if current_location == GamePageTypes.MAIN_MENU__HOME:
+                return
+            if self._try_exit_special_page(current_location):
+                current_location = self.update_current_location()
+                if current_location == GamePageTypes.MAIN_MENU__HOME:
+                    return
+                sleep(1)
+                continue
             navigation_candidates = []
             if current_location in main_menu_items:
                 if home_tab := self._app_processor.latest_results.filter_by_label(BaseUILabels.TAB_HOME):
@@ -490,7 +582,7 @@ class GameUtils:
                             getattr(candidate, "label", type(candidate).__name__),
                         )
                         continue
-                    self.wait_loading()
+                    self._wait_loading_safely(timeout=8)
                     current_location = self.update_current_location()
                     if current_location == GamePageTypes.MAIN_MENU__HOME:
                         return
@@ -515,6 +607,9 @@ class GameUtils:
         只有在点击返回按钮后检测到可见 UI 变化，才认为返回动作成功。
         """
         logger.debug("Going back next page")
+        current_location = self.update_current_location()
+        if self._try_exit_special_page(current_location):
+            return True
         if not self.wait_for_label(BaseUILabels.BACK_BTN, 3):
             raise TimeoutError("Waiting for a back button timeout")
         back_button = self._app_processor.latest_results.filter_by_label(BaseUILabels.BACK_BTN).first()
@@ -568,12 +663,18 @@ class GameUtils:
                 COUNT += 1
             sleep(1)
 
-    def wait_frame_stable(self, threshold=0.98, stable_count=3, timeout=5):
+    def wait_frame_stable(self, threshold=0.98, stable_count=3, timeout=5,
+                          exclude_region=None):
         """
         等待画面稳定（SSIM）
-        threshold: 画面相似度阈值
-        stable_count: 连续多少帧满足才算稳定
-        timeout: 超时时间（秒）
+
+        Args:
+            threshold: 画面相似度阈值
+            stable_count: 连续多少帧满足才算稳定
+            timeout: 超时时间（秒）
+            exclude_region: 可选 (x, y, w, h) 比例元组 (0~1)，
+                           将该区域遮黑后再算 SSIM，用于排除动画区域（如 Live2D 卡面）。
+                           例如 (0.1, 0.2, 0.8, 0.7) 表示排除 10%~90% 宽、20%~90% 高的中心区域。
         """
         start = time()
         prev_frame = None
@@ -590,7 +691,20 @@ class GameUtils:
                 prev_frame = curr_frame.copy()
                 sleep(0.05)
                 continue
-            score = compute_ssim_score(prev_frame, curr_frame)
+
+            a = prev_frame
+            b = curr_frame
+            if exclude_region is not None:
+                a = a.copy()
+                b = b.copy()
+                h, w = a.shape[:2]
+                rx, ry, rw, rh = exclude_region
+                x1, y1 = int(rx * w), int(ry * h)
+                x2, y2 = int((rx + rw) * w), int((ry + rh) * h)
+                a[y1:y2, x1:x2] = 0
+                b[y1:y2, x1:x2] = 0
+
+            score = compute_ssim_score(a, b)
             logger.debug(f"SSIM: {score}")
             if score >= threshold:
                 stable_times += 1

@@ -18,6 +18,8 @@ class ModalText:
         CONFIRM = "確認"
         SKIP_CONFIRM = "スキップ確認"
         INFO_FETCH_FAILED = "情報取得に失敗"
+        RENTAL_AVAILABLE = "レンタル可能"
+        RENTAL_CONFIRMATION = "レンタル確認"
 
     class BODY:
         class CONNECTION_ERROR_ID:

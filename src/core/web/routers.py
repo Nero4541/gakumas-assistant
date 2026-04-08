@@ -134,10 +134,12 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.get("/api/status")
     def get_status():
         """获取服务状态"""
+        current_task = processor.task_queue.get_current_running_task()
         return _api_return(True, 'OK', {
             'platform': processor.config_service().base.run_mode.value.lower(),
             'yolo': processor.yolo_engine.running,
             'task': processor.task_queue.queue_status(),
+            'current_task': current_task.id if current_task else '',
             'device': processor.get_device_status(),
             'game': {
                 'current_location': processor.game_status_manager.current_location,

@@ -365,7 +365,8 @@ class Android_App(BaseDevice):
                 self.__screen_touch_service = ADBOperation.TouchService.ADB
                 return self.__adb_device
 
-    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, offset_x = 10, offset_y = 10, safe_margin = 50):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8,
+              offset_x=10, offset_y=10, safe_margin=50, hold_end=0.0, ease=None):
         """
         基础滑动方法：执行带安全检查和随机偏移的单次滑动
         :param start_x: 起始X
@@ -376,6 +377,8 @@ class Android_App(BaseDevice):
         :param offset_x: 随机偏移x值
         :param offset_y: 随机偏移y值
         :param safe_margin: 安全边距
+        :param hold_end: 到达终点后保持不动的时间（秒），用于消除游戏惯性滑动
+        :param ease: 缓动函数名（"out_quad" 等），None 为线性
         """
         width, height = self.get_window_size()
         def clamp(val, max_val):
@@ -412,13 +415,26 @@ class Android_App(BaseDevice):
         offset_y = random.randint(0-offset_y, offset_y)
         # 将 duration 稍微随机化，避免死板的固定时长
         actual_duration = duration * random.uniform(0.9, 1.1)
-        self.__get_touch_service().swipe(
-            safe_start_x + offset_x,
-            safe_start_y + offset_y,
-            safe_end_x,
-            safe_end_y,
-            actual_duration
-        )
+        service = self.__get_touch_service()
+        try:
+            service.swipe(
+                safe_start_x + offset_x,
+                safe_start_y + offset_y,
+                safe_end_x,
+                safe_end_y,
+                actual_duration,
+                hold_end=hold_end,
+                ease=ease,
+            )
+        except TypeError:
+            # ADB / uiautomator2 等不支持 hold_end / ease 参数
+            service.swipe(
+                safe_start_x + offset_x,
+                safe_start_y + offset_y,
+                safe_end_x,
+                safe_end_y,
+                actual_duration,
+            )
         # 增加随机短暂停顿 (模拟人类自然停顿)
         time.sleep(random.uniform(0.05, 0.1))
 

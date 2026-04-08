@@ -2,7 +2,7 @@
 import apis from "@/scripts/apis.js";
 import app from "@/main.js";
 import { useAppStore } from "@/stores/app.ts";
-import { computed } from "vue";
+import { ref } from "vue";
 
 const store = useAppStore()
 
@@ -26,17 +26,8 @@ function filter(value, queryText, item) {
   return item.raw.name.includes(query) || item.raw.translation?.name.includes(query)
 }
 
-const preferGameAsset = computed(() => store.config.base?.prefer_game_asset_image?.value ?? false)
-
 function itemImageSrc(item) {
-  if (preferGameAsset.value) {
-    if (item.gameAssetImage) return `/api/game_assets/items/${item.id}.png`
-    if (item.image) return `/api/clip_image/items/${item.id}.png`
-  } else {
-    if (item.image) return `/api/clip_image/items/${item.id}.png`
-    if (item.gameAssetImage) return `/api/game_assets/items/${item.id}.png`
-  }
-  return null
+  return `/api/image/items/${item.id}.png`
 }
 </script>
 

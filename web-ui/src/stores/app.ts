@@ -189,6 +189,9 @@ export const useAppStore = defineStore('app', {
     },
     apply_app_status(status: AppStatus) {
       const previousDevice = this.status?.device
+      if (status.current_task !== undefined) {
+        this.current_task = status.current_task
+      }
       this.status = status
       this.notify_device_status_change(previousDevice, status?.device)
     },

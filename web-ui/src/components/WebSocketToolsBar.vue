@@ -67,10 +67,10 @@ async function startTaskQueue() {
         <v-btn color="red" @click="api.stop_task_queue().then(() => {message.showSuccess('任务正在停止')})" v-else-if="store.status.task === TaskStatus.RUNNING">
           停止任务
         </v-btn>
-        <v-btn color="warning" v-if="store.status.task === TaskStatus.RUNNING && store.get_current_task().allow_manual_suspend">
+        <v-btn color="warning" v-if="store.status.task === TaskStatus.RUNNING && store.get_current_task()?.allow_manual_suspend">
           挂起任务
         </v-btn>
-        <v-btn color="green" v-if="store.status.task === TaskStatus.SUSPENDED && store.get_current_task().allow_manual_resume">
+        <v-btn color="green" v-if="store.status.task === TaskStatus.SUSPENDED && store.get_current_task()?.allow_manual_resume">
           恢复任务
         </v-btn>
       </div>

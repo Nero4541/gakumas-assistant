@@ -27,6 +27,7 @@ from src.entity.WebSocketData import WebSocketData
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_runtime_str
+from src.utils.task_debug_tools import record_task_step, reset_task_debug_trace
 from src.utils.task_dumper import dump_task_failure
 
 if TYPE_CHECKING:
@@ -498,6 +499,14 @@ class TaskService:
         task.reset_runtime_state()
         task.update_start_time()
         task.update_status(TaskStatus.RUNNING)
+        reset_task_debug_trace(self._app, task.id)
+        record_task_step(
+            self._app,
+            "task.run.start",
+            task_id=task.id,
+            task_name=task.task_name,
+            timeout=task.get_timeout(),
+        )
         timeout_event = Event()
         runner = Thread(target=self._run_task_inner, args=(task, timeout_event), daemon=True)
         self._task_runner_thread = runner
@@ -527,21 +536,42 @@ class TaskService:
         except (UserCancelTask, FailSafeException):
             sys.settrace(None)
             task.update_status(TaskStatus.CANCELED)
+            record_task_step(self._app, "task.run.canceled", task_id=task.id)
             logger.warning(f"Task '{task.task_name}({task.id})' cancelled")
         except TaskTimeout as e:
             timeout_event.clear()
             sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
+            record_task_step(
+                self._app,
+                "task.run.timeout",
+                task_id=task.id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             logger.error(f"Task '{task.task_name}({task.id})' timed out")
             dump_task_failure(self._app, task, e)
         except Exception as e:
             sys.settrace(None)
             task.update_status(TaskStatus.FAILED)
+            record_task_step(
+                self._app,
+                "task.run.exception",
+                task_id=task.id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__)).rstrip()
             logger.error(f"Task '{task.task_name}({task.id})' failed:\n{tb_str}")
             dump_task_failure(self._app, task, e)
         finally:
             task.update_end_time()
+            record_task_step(
+                self._app,
+                "task.run.finish",
+                task_id=task.id,
+                status=task.status,
+            )
             sys.settrace(None)
             logger.info(f"Task '{task.task_name}({task.id})' status: {task.status}")
 

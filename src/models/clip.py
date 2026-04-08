@@ -30,6 +30,9 @@ class CLIPayload_SkillCard(_BaseCLIPPayload):
 class CLIPayload_SupportCard(_BaseCLIPPayload):
     id = CharField(unique=True)
 
+class CLIPayload_IdolCard(_BaseCLIPPayload):
+    id = CharField(unique=True)
+
 class CLIPMemory(BaseModel):
     uuid = UUIDField(default=uuid4, unique=True, primary_key=True)
     clip_name = CharField()

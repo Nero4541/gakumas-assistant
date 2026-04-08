@@ -8,6 +8,22 @@ from src.core.device.Android.adapters.maatouch_resource import MaaTouchResource
 from src.utils.logger import logger
 
 
+# ── 缓动函数（ease functions）──────────────────────────
+def _ease_linear(t: float) -> float:
+    return t
+
+
+def _ease_out_quad(t: float) -> float:
+    return 1 - (1 - t) ** 2
+
+
+_EASE_FUNCTIONS = {
+    None: _ease_linear,
+    "linear": _ease_linear,
+    "out_quad": _ease_out_quad,
+}
+
+
 class MaaTouchAdapter:
     PACKAGE_NAME = "com.shxyke.MaaTouch"
     APP_PROCESS_CLASS = "com.shxyke.MaaTouch.App"
@@ -99,7 +115,7 @@ class MaaTouchAdapter:
         time.sleep(0.01)
         self._send_commands(["u 0", "c"])
 
-    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8):
+    def swipe(self, start_x, start_y, end_x, end_y, duration=0.8, hold_end=0.0, ease=None):
         if not self.alive:
             raise RuntimeError("MaaTouch adapter is not running")
 
@@ -112,14 +128,18 @@ class MaaTouchAdapter:
             steps = max(steps, min(120, int(duration / 0.016) or 2))
         step_delay = max(float(duration) / steps, 0.001)
 
+        ease_fn = _EASE_FUNCTIONS.get(ease, _ease_linear)
         self._send_commands([f"d 0 {start_touch_x} {start_touch_y} {pressure}", "c"])
         for index in range(1, steps):
-            progress = index / steps
+            progress = ease_fn(index / steps)
             move_x = round(start_touch_x + (end_touch_x - start_touch_x) * progress)
             move_y = round(start_touch_y + (end_touch_y - start_touch_y) * progress)
             self._send_commands([f"m 0 {move_x} {move_y} {pressure}", "c"])
             time.sleep(step_delay)
-        self._send_commands([f"m 0 {end_touch_x} {end_touch_y} {pressure}", "c", "u 0", "c"])
+        if hold_end > 0:
+            self._send_commands([f"m 0 {end_touch_x} {end_touch_y} {pressure}", "c"])
+            time.sleep(hold_end)
+        self._send_commands(["u 0", "c"])
 
     def press_key(self, keycode: int):
         if not self.alive:

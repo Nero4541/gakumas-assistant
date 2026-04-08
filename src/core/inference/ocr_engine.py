@@ -63,7 +63,12 @@ class OCR_Result(Yolo_Box):
     confidence: float | None
 
     def __init__(self, x, y, w, h, text, confidence):
-        super().__init__(x, y, w, h, None, None)
+        # OCR results use (x1, y1, width, height) but Yolo_Box stores (x1, y1, x2, y2).
+        # Pass x2=x+w and y2=y+h so that cx/cy are computed correctly as true centers.
+        # Then restore w and h to width/height for merge_lines compatibility.
+        super().__init__(x, y, x + w, y + h, None, None)
+        self.w = w
+        self.h = h
         self.text = text
         self.confidence = confidence
 

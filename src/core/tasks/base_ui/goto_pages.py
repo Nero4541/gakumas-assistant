@@ -3,17 +3,21 @@ from typing import TYPE_CHECKING
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.modal_text import ModalText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
+from src.entity.Game.Components.Button import ButtonList
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.game_tools import get_modal
 from src.utils.string_tools import MatchConfig
+from src.utils.task_debug_tools import record_task_step
 
 if TYPE_CHECKING:
     from src.main import AppProcessor
 
+
+_CONTEST_ENTRY_BUTTON_MATCH = MatchConfig(fuzz_threshold=80, normalize=True)
+
 def _back_home(app: "AppProcessor"):
     if app.game_utils.update_current_location() != GamePageTypes.MAIN_MENU__HOME:
         app.game_utils.go_home()
-        app.game_utils.wait_loading()
         try:
             app.game_utils.wait_location_update(GamePageTypes.MAIN_MENU__HOME)
         except TimeoutError:
@@ -79,9 +83,104 @@ def goto__shop_page(app: "AppProcessor"):
 
 def goto__contest_page(app: "AppProcessor"):
     """ 进入竞技场页面 """
+    if app.game_utils.update_current_location() == GamePageTypes.CONTEST_TAB.ARENA:
+        record_task_step(app, "goto_contest.already_in_arena")
+        return
     _goto_tab_contest(app)
-    app.game_utils.click_button(ButtonText.MAIN_MENU__CONTEST.CONTEST)
-    app.game_utils.wait_location_update(GamePageTypes.CONTEST_TAB.ARENA)
+    record_task_step(app, "goto_contest.enter_tab")
+    if app.game_utils.update_current_location() == GamePageTypes.CONTEST_TAB.ARENA:
+        record_task_step(app, "goto_contest.entered_arena_from_tab")
+        return
+
+    last_error: TimeoutError | None = None
+    for attempt in range(2):
+        contest_button = _get_contest_entry_button(app)
+        if contest_button is None:
+            raise TimeoutError("Timeout waiting for contest entry button to appear.")
+
+        record_task_step(
+            app,
+            "goto_contest.click_entry",
+            attempt=attempt + 1,
+            text=getattr(contest_button, "text", None),
+            cx=int(contest_button.cx),
+            cy=int(contest_button.cy),
+        )
+        if not app.game_utils.click_element_and_wait_trigger(
+                contest_button,
+                retries=3,
+                timeout=2.5,
+                interval=0.1,
+        ):
+            record_task_step(app, "goto_contest.click_entry_no_trigger", attempt=attempt + 1)
+            app.device.click_element(contest_button)
+
+        try:
+            app.game_utils.wait_loading(timeout=8)
+        except TimeoutError as exc:
+            last_error = exc
+            record_task_step(
+                app,
+                "goto_contest.wait_loading_timeout",
+                attempt=attempt + 1,
+                error=str(exc),
+            )
+
+        try:
+            app.game_utils.wait_location_update(GamePageTypes.CONTEST_TAB.ARENA, timeout=10)
+            record_task_step(app, "goto_contest.entered_arena", attempt=attempt + 1)
+            return
+        except TimeoutError as exc:
+            last_error = exc
+            record_task_step(
+                app,
+                "goto_contest.location_timeout",
+                attempt=attempt + 1,
+                error=str(exc),
+            )
+            if app.game_utils.update_current_location() != GamePageTypes.MAIN_MENU__CONTEST:
+                continue
+
+    if last_error is not None:
+        raise last_error
+    raise TimeoutError("Timeout waiting for contest page to open.")
+
+
+def _get_contest_entry_button(app: "AppProcessor"):
+    buttons = ButtonList(app.latest_results)
+    if not buttons:
+        return None
+
+    if button := buttons.get_button_by_text(
+            ButtonText.MAIN_MENU__CONTEST.CONTEST,
+            match_config=_CONTEST_ENTRY_BUTTON_MATCH,
+    ):
+        return button
+
+    frame_height, frame_width = app.latest_frame.shape[:2]
+    min_width = int(frame_width * 0.35)
+    min_height = int(frame_height * 0.10)
+    right_threshold = int(frame_width * 0.58)
+    top_threshold = int(frame_height * 0.55)
+    bottom_threshold = int(frame_height * 0.88)
+
+    candidates = []
+    for button in buttons:
+        if button is None or button.is_disabled():
+            continue
+        button_width = int(button.w - button.x)
+        button_height = int(button.h - button.y)
+        if button_width < min_width or button_height < min_height:
+            continue
+        if int(button.cx) < right_threshold:
+            continue
+        if not top_threshold <= int(button.cy) <= bottom_threshold:
+            continue
+        candidates.append(button)
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: (int(item.w - item.x), int(item.cx), int(item.cy)))
 
 def goto__claim_task_rewards_page(app: "AppProcessor"):
     """ 进入任务奖励领取页面 """
@@ -119,3 +218,11 @@ def goto_support_card_list_page(app: "AppProcessor"):
     app.game_utils.click_button(ButtonText.PAGE__IDOL.SUPPORT_CARD, match_config=MatchConfig(fuzz_threshold=90))
     app.game_utils.wait_loading()
     app.game_utils.wait_for_label(BaseUILabels.SUPPORT_CARD)
+
+def goto_idol_card_list_page(app: "AppProcessor"):
+    """进入 P アイドル育成列表页面"""
+    _goto_tab_idol(app)
+    app.game_utils.click_button(ButtonText.PAGE__IDOL.IDOL_CULTIVATION, match_config=MatchConfig(fuzz_threshold=85))
+    app.game_utils.wait_loading()
+    if not app.game_utils.wait_for_label(BaseUILabels.PRODUCT_CARD_SELECTED, timeout=10):
+        raise TimeoutError("Timeout waiting for idol card cultivation carousel to appear.")

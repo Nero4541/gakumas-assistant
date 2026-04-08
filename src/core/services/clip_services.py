@@ -1,3 +1,4 @@
+from src.core.services.clip.idol_card import IdolCardCLIP
 from src.core.services.clip.item import ItemCLIP
 from src.core.services.clip.skill_card import SkillCardCLIP
 from src.core.services.clip.support_card import SupportCardCLIP
@@ -11,6 +12,7 @@ class CLIPServiceManager:
     skill_card_clip: SkillCardCLIP
     item_clip: ItemCLIP
     support_card_clip: SupportCardCLIP
+    idol_card_clip: IdolCardCLIP
 
     def __init__(self):
         """初始化共享 ONNX 模型会话，并创建各类 CLIP 子服务实例。"""
@@ -18,3 +20,4 @@ class CLIPServiceManager:
         self.skill_card_clip = SkillCardCLIP(self._model_session)
         self.item_clip = ItemCLIP(self._model_session)
         self.support_card_clip = SupportCardCLIP(self._model_session)
+        self.idol_card_clip = IdolCardCLIP(self._model_session)

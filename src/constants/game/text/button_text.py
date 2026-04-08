@@ -5,11 +5,22 @@ class ButtonText:
     AUTO_SELECT = "おまかせ"  # 自动编成 / 自动选择
     CONFIRM = "決定"  # 决定 / 确认
     CLOSE = "閉じる"  # 关闭
+    CANCEL = "キャンセル"  # 取消
     NEXT = "次へ"  # 下一步 / Next
+    RESET = "リセット"  # 重置 / Reset
     EXIT = "終了"  # 结束 / 退出
+    COMPLETE = "完了する"  # 完了 / 完成
+    HOME = "ホーム"  # 主页
+    RETIRE = "リタイア"  # 退出挑战
+    SAVE_AND_SUSPEND = "保存して中断"  # 保存并中断
     START_CHALLENGE = "挑戦開始"  # 开始挑战 / 开始战斗
+    GENERATE = "生成"  # 生成
+    REGENERATE = "再生成"  # 再生成
+    RETRY = "再挑戦"  # 再挑战
+    PRODUCE_END = "プロデュース終了"  # 结束本次培育
     FREE = "無料"  # 免费 / Free
     GOTO_APPSTORE = "ストアヘ"  # 去Appstore（更新）
+    PRODUCE_START = "プロデュース開始"  # 开始培育 / Produce Start
 
     class SHOP:
         PACK = "パック"  # 套装 / 礼包 / Pack
@@ -32,3 +43,4 @@ class ButtonText:
         SUPPORT_CARD = "サポートカード"  # 支援卡
         MEMORY_CARD = "メモリー"  # 回忆卡
         IDOL_CULTIVATION = "Ｐアイドル育成"  # 偶像育成
+        IDOL_LIST = "Pアイドル一覧"  # 偶像列表

@@ -545,18 +545,29 @@ def action__receive_weekly_gift(app: "AppProcessor"):
 def _reset_daily_exchange_to_top(app: "AppProcessor"):
     """
     刷新列表后回到商店主页再重新进入每日交换所，确保列表从顶部开始。
+    Retry back navigation up to 3 times, because the first back may only dismiss
+    a result dialog (e.g. after a free list refresh) instead of leaving the page.
     """
-    app.game_utils.back_next_page()
-    app.game_utils.wait_loading()
-    app.game_utils.wait_frame_stable()
-    try:
-        app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP)
-    except TimeoutError:
-        buttons = ButtonList(app.latest_results)
-        if buttons.get_button_by_text(ButtonText.SHOP.PACK, match_config=MatchConfig(use_fuzz=False)):
-            logger.debug("Shop root detected by button layout after back, overriding current location.")
-            app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
-        else:
+    max_back_attempts = 3
+    for attempt in range(max_back_attempts):
+        app.game_utils.back_next_page()
+        app.game_utils.wait_loading()
+        app.game_utils.wait_frame_stable()
+        try:
+            app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP)
+            break
+        except TimeoutError:
+            buttons = ButtonList(app.latest_results)
+            if buttons.get_button_by_text(ButtonText.SHOP.PACK, match_config=MatchConfig(use_fuzz=False)):
+                logger.debug("Shop root detected by button layout after back, overriding current location.")
+                app.game_utils.update_current_location(GamePageTypes.HOME_TAB.SHOP)
+                break
+            current = app.game_utils.update_current_location()
+            if current and str(current).startswith("SHOP__") and attempt < max_back_attempts - 1:
+                logger.warning(
+                    f"Still on sub-page '{current}' after back attempt {attempt + 1}/{max_back_attempts}, retrying..."
+                )
+                continue
             raise
     app.game_utils.wait_frame_stable()
     app.game_utils.click_button(ButtonText.SHOP.DAILY_EXCHANGE, match_config=MatchConfig(fuzz_threshold=90))

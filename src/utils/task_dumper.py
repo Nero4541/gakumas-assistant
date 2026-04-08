@@ -20,6 +20,7 @@ import numpy as np
 
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_log_path
+from src.utils.task_debug_tools import get_task_debug_trace
 
 if TYPE_CHECKING:
     from src.entity.Task import Task
@@ -69,6 +70,38 @@ def _serialize_yolo_results(results: "Yolo_Results") -> list:
     return items
 
 
+def _get_button_list(results):
+    from src.entity.Game.Components.Button import ButtonList
+
+    return ButtonList(results)
+
+
+def _serialize_button_snapshot(results: "Yolo_Results") -> tuple[list, str | None]:
+    try:
+        buttons = _get_button_list(results)
+    except Exception as exc:
+        return [], f"{type(exc).__name__}: {exc}"
+
+    items = []
+    for button in buttons:
+        disabled = None
+        try:
+            disabled = button.is_disabled()
+        except Exception:
+            pass
+        items.append({
+            "text": button.text,
+            "x": int(button.x),
+            "y": int(button.y),
+            "w": int(button.w),
+            "h": int(button.h),
+            "cx": int(button.cx),
+            "cy": int(button.cy),
+            "disabled": disabled,
+        })
+    return items, None
+
+
 def dump_task_failure(
     app: "AppProcessor",
     task: "Task",
@@ -95,12 +128,16 @@ def dump_task_failure(
         frame: Optional[np.ndarray] = getattr(app, "latest_frame", None)
         if frame is not None:
             cv2.imwrite(os.path.join(dump_dir, "last_frame.png"), frame)
+        frame_shape = list(map(int, frame.shape)) if frame is not None else None
 
         # ── 2. YOLO 检测结果 & 标注帧 ──
         results: Optional["Yolo_Results"] = getattr(app, "latest_results", None)
         yolo_data = []
+        button_snapshot = []
+        button_snapshot_error = None
         if results is not None:
             yolo_data = _serialize_yolo_results(results)
+            button_snapshot, button_snapshot_error = _serialize_button_snapshot(results)
             # 标注帧
             raw = results.results
             if raw is not None and hasattr(raw, "plot"):
@@ -128,8 +165,17 @@ def dump_task_failure(
                     None,
                 ),
             },
+            "ui": {
+                "frame_shape": frame_shape,
+                "buttons": button_snapshot,
+            },
+            "debug": {
+                "task_trace": get_task_debug_trace(app),
+            },
             "yolo_detections": yolo_data,
         }
+        if button_snapshot_error is not None:
+            meta["ui"]["button_snapshot_error"] = button_snapshot_error
 
         # ── 4. 异常堆栈 ──
         if exception is not None:

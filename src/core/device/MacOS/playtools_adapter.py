@@ -238,7 +238,8 @@ class MacPlayToolsAdapter:
         time.sleep(0.01)
         self.touch(self.TOUCH_UP, x, y)
 
-    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int, duration: float = 0.8):
+    def swipe(self, start_x: int, start_y: int, end_x: int, end_y: int,
+              duration: float = 0.8, hold_end: float = 0.0, ease: str | None = None):
         """从起点滑动到终点。"""
         start_x, start_y = int(start_x), int(start_y)
         end_x, end_y = int(end_x), int(end_y)
@@ -250,13 +251,21 @@ class MacPlayToolsAdapter:
 
         step_delay = max(float(duration) / steps, 0.001)
 
+        if ease == "out_quad":
+            ease_fn = lambda t: 1 - (1 - t) ** 2
+        else:
+            ease_fn = lambda t: t
+
         self.touch(self.TOUCH_DOWN, start_x, start_y)
         for i in range(1, steps):
-            progress = i / steps
+            progress = ease_fn(i / steps)
             move_x = round(start_x + (end_x - start_x) * progress)
             move_y = round(start_y + (end_y - start_y) * progress)
             self.touch(self.TOUCH_MOVE, move_x, move_y)
             time.sleep(step_delay)
+        if hold_end > 0:
+            self.touch(self.TOUCH_MOVE, end_x, end_y)
+            time.sleep(hold_end)
         self.touch(self.TOUCH_UP, end_x, end_y)
 
     def get_bundle_id(self) -> str:

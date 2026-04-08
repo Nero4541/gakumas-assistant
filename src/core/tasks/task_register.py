@@ -251,9 +251,31 @@ def register_tasks(processor: "AppProcessor"):
         goto__claim_pass_rewards(app)
         claim_pass_rewards(app)
 
-    # @processor.task_queue.register_task("auto_producer", "自动培育")
-    # def _task__auto_producer(app: "AppProcessor"):
-    #     pass
+    @processor.task_queue.register_task("auto_producer", "自动培育", 600)
+    def _task__auto_producer(app: "AppProcessor"):
+        from src.core.tasks.producer_challenge import build_produce_pipeline
+        from src.core.tasks.producer_challenge.context import ProduceContext
+
+        cfg = app.config_service().task__auto_producer
+        # NIA 使用独立的 nia_difficulty 配置
+        if cfg.scenario.value == "nia":
+            difficulty = cfg.nia_difficulty.value
+        else:
+            difficulty = cfg.difficulty.value
+        ctx = ProduceContext(
+            scenario=cfg.scenario.value,
+            difficulty=difficulty,
+            target_idol_card_id=cfg.target_idol_card_id.value,
+            support_card_mode=cfg.support_card_mode.value,
+            support_card_preset_index=int(cfg.support_card_preset_index.value),
+            memory_mode=cfg.memory_mode.value,
+            memory_preset_index=int(cfg.memory_preset_index.value),
+            use_rental=cfg.use_rental.value,
+            use_boost_items=cfg.use_boost_items.value,
+        )
+
+        pipeline = build_produce_pipeline()
+        pipeline.run(app, ctx)
 
     @processor.task_queue.register_task("void_task", "测试任务", hide=True)
     def _task__void_task(app: "AppProcessor"):
@@ -273,3 +295,11 @@ def register_tasks(processor: "AppProcessor"):
 
         goto_support_card_list_page(app)
         action__learn_support_card_clip(app)
+
+    @processor.task_queue.register_task("learn_idol_card_clip", "刷新偶像卡存储", manual_only=True)
+    def _task__learn_idol_card_clip(app: "AppProcessor"):
+        from src.core.tasks.base_ui.goto_pages import goto_idol_card_list_page
+        from src.core.tasks.base_ui.learn_idol_card_clip import action__learn_idol_card_clip
+
+        goto_idol_card_list_page(app)
+        action__learn_idol_card_clip(app)
