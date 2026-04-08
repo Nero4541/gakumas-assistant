@@ -21,6 +21,7 @@ from src.utils.runtime_paths import (
     RUNTIME_METADATA_FILE_NAME,
     STORAGE_MODE_MERGED,
     STORAGE_MODE_PORTABLE,
+    get_data_root,
 )
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -205,7 +206,11 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
     if missing_files:
         print("RapidOCR runtime files are missing, bootstrapping models before packaging")
         subprocess.run(
-            [sys.executable, "-c", "from src.core.inference.ocr_engine import OCRLoader; OCRLoader()"],
+            [
+                sys.executable,
+                "-c",
+                "from build_app import bootstrap_rapidocr_runtime_files; bootstrap_rapidocr_runtime_files()",
+            ],
             cwd=PROJECT_ROOT,
             check=True,
         )
@@ -214,6 +219,15 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
         if not source_path.exists():
             raise FileNotFoundError(source_path)
         nuitka_cmd.append(f"--include-data-files={source_path}={relative_path}")
+
+
+def bootstrap_rapidocr_runtime_files():
+    from src.main import AppProcessor
+    from src.core.inference.ocr_engine import OCRLoader
+
+    get_data_root().mkdir(parents=True, exist_ok=True)
+    AppProcessor.init_database()
+    OCRLoader()
 
 
 def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
