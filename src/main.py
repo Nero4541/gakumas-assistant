@@ -146,6 +146,10 @@ class AppProcessor:
         logger.success("Database Initialized")
 
     @staticmethod
+    def init_database():
+        AppProcessor._init_database()
+
+    @staticmethod
     def _load_game_database(force_reload: bool = False):
         from src.utils.game_database_tools import (
             GakumasDatabase_ItemDataUtils,
