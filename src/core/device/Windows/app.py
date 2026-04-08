@@ -3,7 +3,10 @@ import os
 import subprocess
 import sys
 from time import sleep
-from typing import Tuple
+from typing import TYPE_CHECKING, Tuple
+
+if TYPE_CHECKING:
+    from src.core.services.config_service import ConfigService
 
 import cv2
 import numpy as np
@@ -14,7 +17,6 @@ import win32com.client
 import win32con
 import win32gui
 
-from src.core.services.config_service import ConfigService
 from src.entity.BaseDevice import BaseDevice
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
@@ -26,9 +28,10 @@ debugger = DebugTools()
 class Windows_App(BaseDevice):
     __window_name: str
     __cached_hwnd: int = None
-    __config_service: ConfigService
+    __config_service: 'ConfigService'
 
     def __init__(self):
+        from src.core.services.config_service import ConfigService
         if not self._is_admin():
             logger.warning("当前不是管理员权限，正在尝试使用管理员权限重启...")
             if is_compiled():
@@ -36,7 +39,8 @@ class Windows_App(BaseDevice):
             else:
                 args = " ".join(sys.argv)
             ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, args, None, 1)
-            sys.exit()
+            import os
+            os._exit(0)
         ctypes.windll.user32.SetProcessDPIAware()
 
         self.__config_service = ConfigService()
@@ -110,18 +114,20 @@ class Windows_App(BaseDevice):
         """
         将窗口切换到前台
         """
-        pythoncom.CoInitialize()  # 初始化COM
         try:
             hwnd = self.__find_window()
-            win32gui.BringWindowToTop(hwnd)
-
-            shell = win32com.client.Dispatch("WScript.Shell")
-            shell.SendKeys('%')
-
-            win32gui.SetForegroundWindow(hwnd)
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        finally:
-            pythoncom.CoUninitialize()  # 用完后释放
+            
+            # 使用 SetWindowPos 置顶窗口再取消置顶，避免 AttachThreadInput 造成的跨线程死锁
+            win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0, 
+                                  win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+                                  
+            win32gui.SetForegroundWindow(hwnd)
+            
+            win32gui.SetWindowPos(hwnd, win32con.HWND_NOTOPMOST, 0, 0, 0, 0, 
+                                  win32con.SWP_SHOWWINDOW | win32con.SWP_NOMOVE | win32con.SWP_NOSIZE)
+        except Exception as e:
+            logger.error(f"bring_to_front failed: {e}")
 
     @logger.catch
     def is_app_focused(self):
