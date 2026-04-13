@@ -722,8 +722,25 @@ def decide_p_drink_limit_action(
                 preferred_candidate.action_id,
                 preferred_reason,
             )
+            # 记录覆盖决策
+            from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+            DecisionDumper.get_instance().update_last_resolved(
+                resolved_index=preferred_candidate.index,
+                resolved_name=getattr(preferred_candidate, "title", ""),
+                fallback_used=True,
+                fallback_reason=f"系统偏好覆盖({preferred_reason})",
+            )
             return preferred_candidate
         return target
+
+    # 无 LLM 决策，使用系统偏好
+    from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+    DecisionDumper.get_instance().update_last_resolved(
+        resolved_index=preferred_candidate.index,
+        resolved_name=getattr(preferred_candidate, "title", ""),
+        fallback_used=True,
+        fallback_reason=f"无决策,系统偏好({preferred_reason})",
+    )
     return preferred_candidate
 
 
@@ -907,13 +924,30 @@ def decide_p_drink(
     if decision is not None:
         return resolve_candidate_index(decision, candidates)
 
+    # 无 LLM 决策，使用本地兜底
+    from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+    fallback_index: int
+    fallback_reason: str
     if (
         ctx.pending_p_drink_index is not None
         and 0 <= ctx.pending_p_drink_index < len(candidates)
     ):
-        return ctx.pending_p_drink_index
+        fallback_index = ctx.pending_p_drink_index
+        fallback_reason = "pending 索引"
+    else:
+        fallback_index = 0
+        fallback_reason = "默认首选"
 
-    return 0
+    resolved_name = ""
+    if 0 <= fallback_index < len(candidates):
+        resolved_name = getattr(candidates[fallback_index], "title", "")
+    DecisionDumper.get_instance().update_last_resolved(
+        resolved_index=fallback_index,
+        resolved_name=resolved_name,
+        fallback_used=True,
+        fallback_reason=fallback_reason,
+    )
+    return fallback_index
 
 
 def _handle_reward_skip_confirmation(app: "AppProcessor", timeout: float = 2.0) -> bool:

@@ -7,11 +7,13 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Sequence
 
 from openai import OpenAI
 
 from src.utils.logger import logger
+from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
 
 if TYPE_CHECKING:
     from src.core.tasks.producer_challenge.context import ProduceContext
@@ -31,6 +33,17 @@ _SYSTEM_TEMPLATE_MAP: dict[str, str] = {
     "consult": "system_consult.j2",
     "item_select": "system_item_select.j2",
 }
+
+
+@dataclass
+class _LLMCallDetails:
+    """_call_and_parse 内部保存的 LLM 调用详情，供 __call__ 读取后写入 dump。"""
+    system_prompt: str = ""
+    user_prompt: str = ""
+    raw_content: str = ""
+    raw_reasoning: str = ""
+    cleaned_output: str = ""
+    elapsed_sec: float = 0.0
 
 
 class LLMStrategy:
@@ -63,6 +76,8 @@ class LLMStrategy:
         self._client: OpenAI | None = None
         self._call_count = 0
         self._total_latency = 0.0
+        # 最近一次 LLM 调用的详情（供 dump 系统使用）
+        self._last_call_details: _LLMCallDetails | None = None
 
     def _get_client(self) -> OpenAI:
         if self._client is None:
@@ -93,17 +108,28 @@ class LLMStrategy:
 
         try:
             t0 = time.monotonic()
+            self._last_call_details = None
             action_index = self._call_and_parse(prompt, decision_state)
             elapsed = time.monotonic() - t0
             self._call_count += 1
             self._total_latency += elapsed
 
+            candidate_name = ""
             if action_index is not None:
                 # 验证索引合法性
                 legal = decision_state.get("legal_actions", [])
                 if legal and action_index not in legal:
                     logger.warning(
                         f"[LLM] 返回索引 {action_index} 不在合法动作 {legal} 中，忽略"
+                    )
+                    # dump: LLM 返回了非法索引
+                    self._dump_decision(
+                        decision_state=decision_state,
+                        chosen_index=action_index,
+                        resolved_index=None,
+                        fallback_used=True,
+                        fallback_reason=f"非法索引 {action_index} (合法: {legal})",
+                        total_elapsed=elapsed,
                     )
                     return None
                 candidate_name = self._get_candidate_name(
@@ -113,14 +139,77 @@ class LLMStrategy:
                     f"[LLM] {phase} 决策: 选择 #{action_index}"
                     f" ({candidate_name}) [{elapsed:.1f}s]"
                 )
+                # dump: 正常决策
+                self._dump_decision(
+                    decision_state=decision_state,
+                    chosen_index=action_index,
+                    resolved_index=action_index,
+                    resolved_name=candidate_name,
+                    total_elapsed=elapsed,
+                )
                 return action_index
 
             logger.debug(f"[LLM] {phase} 决策: 无法解析结果，交给 fallback")
+            # dump: LLM 无法解析
+            self._dump_decision(
+                decision_state=decision_state,
+                chosen_index=None,
+                resolved_index=None,
+                fallback_used=True,
+                fallback_reason="LLM 返回无法解析",
+                total_elapsed=elapsed,
+            )
             return None
 
         except Exception as exc:
             logger.warning(f"[LLM] {phase} 决策出错: {exc}")
             return None
+
+    def _dump_decision(
+        self,
+        *,
+        decision_state: dict[str, Any],
+        chosen_index: int | None,
+        resolved_index: int | None,
+        resolved_name: str = "",
+        resolved_action_id: str = "",
+        fallback_used: bool = False,
+        fallback_reason: str = "",
+        total_elapsed: float = 0.0,
+    ):
+        """将决策信息写入 dump 文件。"""
+        try:
+            dumper = DecisionDumper.get_instance()
+            if not dumper.enabled:
+                return
+            details = self._last_call_details or _LLMCallDetails()
+            # 从候选中提取 action_id
+            if not resolved_action_id and resolved_index is not None:
+                for c in decision_state.get("candidates", []):
+                    if c.get("index") == resolved_index:
+                        resolved_action_id = str(c.get("id") or c.get("action_id") or "")
+                        if not resolved_name:
+                            resolved_name = str(c.get("name") or c.get("label") or "")
+                        break
+            dumper.record(
+                decision_state=decision_state,
+                system_prompt=details.system_prompt,
+                user_prompt=details.user_prompt,
+                llm_raw_content=details.raw_content,
+                llm_raw_reasoning=details.raw_reasoning,
+                llm_cleaned_output=details.cleaned_output,
+                llm_model=self.model,
+                llm_elapsed_sec=details.elapsed_sec,
+                chosen_index=chosen_index,
+                resolved_index=resolved_index,
+                resolved_action_id=resolved_action_id,
+                resolved_name=resolved_name,
+                fallback_used=fallback_used,
+                fallback_reason=fallback_reason,
+                total_elapsed_sec=total_elapsed,
+            )
+        except Exception as exc:
+            logger.debug("[LLM] dump 写入异常: {}", exc)
 
     # ── Prompt 构建 ──────────────────────────────────────
 
@@ -218,6 +307,10 @@ class LLMStrategy:
         logger.debug("[LLM] ====== SYSTEM PROMPT [{}] ======\n{}", phase, system_prompt)
         logger.debug("[LLM] ====== USER PROMPT ======\n{}", prompt)
 
+        # 初始化本次调用详情
+        details = _LLMCallDetails(system_prompt=system_prompt, user_prompt=prompt)
+        t0 = time.monotonic()
+
         try:
             response = client.chat.completions.create(**kwargs)
         except Exception as exc:
@@ -229,23 +322,26 @@ class LLMStrategy:
             else:
                 raise
 
-        # 调试：打印原始 response 关键字段（content vs reasoning 分离验证）
+        details.elapsed_sec = time.monotonic() - t0
+
+        # 提取原始 response 关键字段（content vs reasoning 分离）
         if response and response.choices:
             _msg_dict = self._coerce_dict(
                 response.choices[0].message if hasattr(response.choices[0], "message") else response.choices[0]
             )
-            _raw_content = self._coerce_text(_msg_dict.get("content"))
-            _raw_reasoning = self._coerce_text(
+            details.raw_content = self._coerce_text(_msg_dict.get("content"))
+            details.raw_reasoning = self._coerce_text(
                 _msg_dict.get("reasoning_content") or _msg_dict.get("reasoning")
             )
-            logger.info("[LLM] content({} 字符): {}", len(_raw_content), repr(_raw_content[:300]))
-            if _raw_reasoning:
-                logger.info("[LLM] reasoning({} 字符): {}", len(_raw_reasoning), repr(_raw_reasoning[:300]))
+            logger.info("[LLM] content({} 字符): {}", len(details.raw_content), repr(details.raw_content[:300]))
+            if details.raw_reasoning:
+                logger.info("[LLM] reasoning({} 字符): {}", len(details.raw_reasoning), repr(details.raw_reasoning[:300]))
 
         # 提取最终文本（只取 content，不取 reasoning）
         final_text = self._extract_final_text(response)
         if not final_text:
             logger.debug("[LLM] 返回空文本，交给 fallback")
+            self._last_call_details = details
             return None
 
         # 去除推理标签（content 里可能还有 <think> 标签）
@@ -253,7 +349,11 @@ class LLMStrategy:
             r"<think>.*?</think>", "", final_text, flags=re.IGNORECASE | re.DOTALL
         )
         cleaned = cleaned.strip()
+        details.cleaned_output = cleaned
         logger.info("[LLM] 清理后最终输出: [{}]", cleaned[:200])
+
+        # 保存调用详情供 dump 使用
+        self._last_call_details = details
 
         # 解析动作编号
         return self._parse_action_index(cleaned, legal)
@@ -380,6 +480,8 @@ def inject_llm_strategy(
 ) -> LLMStrategy:
     """创建 LLM 策略并注入到 ProduceContext 的所有决策字段。
 
+    同时初始化 DecisionDumper session，开始记录决策。
+
     Returns:
         注入的 LLMStrategy 实例。
     """
@@ -394,6 +496,10 @@ def inject_llm_strategy(
     ctx.p_drink_strategy = strategy
     ctx.consult_strategy = strategy
     ctx.modal_strategy = strategy
+
+    # 初始化决策 dump session
+    dumper = DecisionDumper.get_instance()
+    dumper.start_session()
 
     logger.debug(
         f"[LLM] 策略已注入所有决策字段 | model={strategy.model} "

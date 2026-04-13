@@ -274,6 +274,15 @@ def decide_item_select(
     )
     if decision is not None:
         return resolve_candidate_index(decision, candidates)
+
+    # 无 LLM 决策，使用默认兜底
+    from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+    DecisionDumper.get_instance().update_last_resolved(
+        resolved_index=0,
+        resolved_name=getattr(candidates[0], "title", "") if candidates else "",
+        fallback_used=True,
+        fallback_reason="默认首选",
+    )
     return 0
 
 

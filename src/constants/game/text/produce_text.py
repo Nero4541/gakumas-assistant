@@ -183,3 +183,23 @@ class ProduceText:
     )
     TAP_TO_START = "TAP TO START"  # ライブ演出開始
     TAP_TO_START_OCR_VARIANTS = ("TAP TO START", "TAPTO START", "TAP TOSTART", "TAPTOSTART")
+
+    # ── Pドリンク詳細モーダル ──
+    P_DRINK_DETAIL = "Pドリンク詳細"  # P饮料详情模态标题
+    P_DRINK_USE = "使う"  # P饮料详情模态内的使用按钮
+
+    # ── 課程/試験 進捗サークル ──
+    # 课程画面中央的进度圆圈 OCR 文本关键词
+    PROGRESS_PERFECT = "PERFECT"  # 进度圆圈: PERFECT 阶段
+    PROGRESS_CLEAR = "CLEAR"  # 进度圆圈: CLEAR 阶段
+    PROGRESS_MADE = "まで"  # 进度圆圈: "…まで" 后缀（距离目标）
+    # OCR 抗噪变体
+    PROGRESS_PERFECT_OCR_VARIANTS = (
+        "PERFECT", "PERFEC7", "PERFECF", "PERFECI",
+        "パーフェクト", "パーフエクト",
+    )
+    PROGRESS_CLEAR_OCR_VARIANTS = (
+        "CLEAR", "C1EAR", "CIEAR",
+        "クリア", "クリァ",
+    )
+    PROGRESS_MADE_OCR_VARIANTS = ("まで", "まて", "まで")  # まで → まて 是常见 OCR 误读

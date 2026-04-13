@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING, Any, List, Set
 
 from src.constants.game.producer_gameplay import GameplayPosition
 from src.constants.game.text.produce_text import ProduceText
+from src.constants.game.text.button_text import ButtonText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.constants.yolo.labels.producer_Labels import ProducerLabels
 from src.core.tasks.producer_challenge.gameplay.common import click_relative_point
+from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
 from src.utils.logger import logger
 from src.utils.string_tools import fullwidth_to_halfwidth
 
@@ -82,12 +84,17 @@ _CARD_INFO_PANEL_LABELS = (
 )
 
 # ── 饮料模态探查常量（用于未识别 P 饮料的单击读取） ──
-_DRINK_MODAL_TAP_WAIT = 0.6    # 点击饮料后等待模态出现的秒数
-_DRINK_MODAL_INFER_WAIT = 0.5  # 等待 YOLO 推理完成的秒数（模态比面板大，稍长）
-_DRINK_MODAL_CANCEL_WAIT = 0.5  # 取消模态后等待恢复的秒数
-# 模态头 OCR 排除的文本（"Pドリンク詳細" 标题、"捨てる" 按钮等）
-_DRINK_MODAL_HEADER_TEXT = "Pドリンク詳細"
-_DRINK_MODAL_EXCLUDE_TEXTS = ("Pドリンク詳細", "捨てる", "キャンセル", "使う")
+# 纯状态驱动轮询：每次短暂 sleep 后检查 YOLO 结果，检测到目标立刻退出
+_DRINK_MODAL_POLL_SLEEP = 0.3   # 轮询间歇（仅防忙等，不作为计时依据）
+_DRINK_MODAL_MAX_POLLS = 20     # 最大轮询次数（足够覆盖慢设备，快设备会提前退出）
+# 模态头 OCR 排除的文本（标题、按钮等）
+_DRINK_MODAL_HEADER_TEXT = ProduceText.P_DRINK_DETAIL
+_DRINK_MODAL_EXCLUDE_TEXTS = (
+    ProduceText.P_DRINK_DETAIL,
+    ProduceText.P_DRINK_DISCARD,
+    ButtonText.CANCEL,
+    ProduceText.P_DRINK_USE,
+)
 
 # ── 饮料模态识别结果缓存 ──
 # 避免每次循环重复弹模态识别同一瓶饮料
@@ -642,24 +649,30 @@ def _extract_drink_modal_name(results: Any, frame: Any) -> str | None:
     return None
 
 
-def _cancel_drink_modal(app: "AppProcessor") -> None:
-    """关闭饮料详情模态（点击キャンセル按钮）。
+def _cancel_drink_modal(app: "AppProcessor") -> bool:
+    """关闭饮料详情模态——轮询点击キャンセル直到模态消失。
 
-    安全优先: 绝不点击「使う」（使用饮料），只点击「キャンセル」取消。
-    如果 YOLO 未检测到取消按钮，则点击空白区域尝试关闭。
+    纯状态驱动：每次轮询检查 YOLO 结果，检测到キャンセル就点，
+    确认 MODAL_HEADER 消失即返回。不依赖固定时间或帧率。
     """
-    results = app.latest_results
-    cancel_boxes = list(results.filter_by_label(ProducerLabels.CANCEL_BUTTON))
-    if cancel_boxes:
-        # 优先使用 YOLO 检测到的取消按钮
-        target = cancel_boxes[0]
-        app.device.click_element(target)
-        logger.debug("battle: 饮料模态点击 キャンセル 关闭")
-    else:
-        # 回退: 点击空白区域关闭模态
-        logger.warning("battle: 饮料模态未检测到取消按钮，点击空白区域尝试关闭")
-        _deselect_card(app)
-    time.sleep(_DRINK_MODAL_CANCEL_WAIT)
+    clicked = False
+    for _ in range(_DRINK_MODAL_MAX_POLLS):
+        time.sleep(_DRINK_MODAL_POLL_SLEEP)
+        results = app.latest_results
+        has_modal = bool(list(results.filter_by_label(BaseUILabels.MODAL_HEADER)))
+        if not has_modal and clicked:
+            logger.debug("battle: 饮料模态已确认关闭")
+            return True
+        cancel_boxes = list(results.filter_by_label(ProducerLabels.CANCEL_BUTTON))
+        if cancel_boxes:
+            app.device.click_element(cancel_boxes[0])
+            logger.debug("battle: 饮料模态点击 キャンセル 关闭")
+            clicked = True
+        elif not has_modal:
+            # 既没模态也没取消按钮，说明本来就没打开或已关闭
+            return True
+    logger.warning("battle: 饮料模态关闭轮询 {} 次仍未确认，可能残留", _DRINK_MODAL_MAX_POLLS)
+    return False
 
 
 def _drink_pos_key(box: Any) -> tuple[int, int]:
@@ -733,18 +746,18 @@ def _resolve_unidentified_drinks_via_modal(
 ) -> None:
     """对未识别的 P 饮料逐个单击，打开详情模态提取饮料名并匹配数据库。
 
-    工作流（镜像卡片信息面板探查）:
+    工作流:
       1. 找出 CLIP + OCR 均未能识别的饮料（db_id 为空，且未达最大探查次数）
-      2. 对每个未识别饮料单击 → 弹出「Pドリンク詳細」模态
+      2. 对每个未识别饮料单击 → 轮询等待「Pドリンク詳細」模态出现
       3. OCR 模态中的饮料名 → 走数据库匹配
       4. 匹配成功则 CLIP 学习（记忆图像 → 下次可直接识别）
       5. 点击「キャンセル」关闭模态（绝不点击「使う」使用饮料）
 
     安全机制:
+      - 使用轮询确认模态出现/关闭，避免时序问题导致模态残留
       - 模态中仅点击「キャンセル」取消，不点击「使う」（使用）
-      - 异常时也保证关闭模态
+      - 异常时也通过轮询保证关闭模态
     """
-    # 仅处理 P 饮料类型的候选（排除已达最大探查次数的）
     unresolved = [
         c for c in candidates
         if not c.db_id
@@ -763,25 +776,31 @@ def _resolve_unidentified_drinks_via_modal(
     for candidate in unresolved:
         probe_count = _increment_drink_probe(ctx, candidate.box)
         try:
-            # 单击饮料 → 弹出「Pドリンク詳細」模态
+            # 单击饮料 → 轮询等待「Pドリンク詳細」模态出现
             app.device.click_element(candidate.box)
-            time.sleep(_DRINK_MODAL_TAP_WAIT)
-            time.sleep(_DRINK_MODAL_INFER_WAIT)
+
+            # ── 轮询等待模态出现（状态驱动，不依赖固定时间/帧率） ──
+            modal_appeared = False
+            for poll_i in range(_DRINK_MODAL_MAX_POLLS):
+                time.sleep(_DRINK_MODAL_POLL_SLEEP)
+                results = app.latest_results
+                if results and list(results.filter_by_label(BaseUILabels.MODAL_HEADER)):
+                    modal_appeared = True
+                    break
+
+            if not modal_appeared:
+                logger.debug(
+                    "battle: P 饮料 #{} 点击后 {} 次轮询未检测到模态，跳过",
+                    candidate.index, _DRINK_MODAL_MAX_POLLS,
+                )
+                # 安全起见仍然尝试关闭（可能模态延迟出现）
+                _cancel_drink_modal(app)
+                continue
 
             results = app.latest_results
             frame = app.latest_frame
             if results is None or frame is None:
                 _cancel_drink_modal(app)
-                continue
-
-            # 检测模态是否成功打开
-            if not list(results.filter_by_label(BaseUILabels.MODAL_HEADER)):
-                logger.debug(
-                    "battle: P 饮料 #{} 点击后未检测到模态",
-                    candidate.index,
-                )
-                # 模态没有打开，无需取消，但等一小段时间确保稳定
-                time.sleep(_DRINK_MODAL_CANCEL_WAIT)
                 continue
 
             # 提取模态中的饮料名
@@ -804,7 +823,6 @@ def _resolve_unidentified_drinks_via_modal(
             _apply_resolution(candidate, resolution)
 
             if candidate.db_id:
-                # 匹配成功: CLIP 学习（用点击前的饮料图标图像）
                 drink_image = getattr(candidate.box, "frame", None)
                 if drink_image is not None:
                     _learn_drink_clip_from_db_id(app, drink_image, candidate.db_id)
@@ -1353,53 +1371,85 @@ def decide_lesson_card(
             return idx
         logger.warning("lesson: 决策索引 {} 已被跳过，回退到本地兜底", idx)
 
+    # ── 本地兜底逻辑（LLM 无决策或决策不可用时）──
+    fallback_index: int | None = None
+    fallback_reason = ""
+
     if not preferred_non_end_turn_indices and not retryable_non_end_turn_indices:
         for payload in decision_state.get("candidates", []) or []:
             payload_index = int(payload.get("index", -1))
             if payload_index in preferred_indices and is_end_turn_action_id(payload.get("id")):
-                logger.info("lesson: 当前无可打出的技能卡/饮料，回退为 SKIP/结束回合 [{}]", payload_index)
-                return payload_index
-        for payload in decision_state.get("candidates", []) or []:
+                fallback_index = payload_index
+                fallback_reason = "无可打出卡片，SKIP"
+                break
+        if fallback_index is None:
+            for payload in decision_state.get("candidates", []) or []:
+                payload_index = int(payload.get("index", -1))
+                if payload_index in retryable_indices and is_end_turn_action_id(payload.get("id")):
+                    fallback_index = payload_index
+                    fallback_reason = "仅剩 SKIP 可重试"
+                    break
+
+    if fallback_index is None:
+        # 决策策略返回的卡片不可用，或无决策 → 按优先级顺序尝试
+        if ctx.pending_lesson_card_index is not None and 0 <= ctx.pending_lesson_card_index < len(candidates):
+            if ctx.pending_lesson_card_index in preferred_indices:
+                fallback_index = ctx.pending_lesson_card_index
+                fallback_reason = "pending 索引"
+            elif ctx.pending_lesson_card_index in retryable_indices and not preferred_indices:
+                fallback_index = ctx.pending_lesson_card_index
+                fallback_reason = "pending 索引(重试)"
+
+    if fallback_index is None:
+        for payload in decision_state.get("candidates", []):
             payload_index = int(payload.get("index", -1))
-            if payload_index in retryable_indices and is_end_turn_action_id(payload.get("id")):
-                logger.info("lesson: 当前仅剩 SKIP/结束回合可重试，继续使用索引 {}", payload_index)
-                return payload_index
+            if bool(payload.get("recommended")) and payload_index in preferred_indices:
+                fallback_index = payload_index
+                fallback_reason = "推荐候选"
+                break
+            if (
+                bool(payload.get("recommended"))
+                and payload_index in retryable_indices
+                and not preferred_indices
+            ):
+                fallback_index = payload_index
+                fallback_reason = "推荐候选(重试)"
+                break
 
-    # 决策策略返回的卡片不可用，或无决策 → 按优先级顺序尝试
-    if ctx.pending_lesson_card_index is not None and 0 <= ctx.pending_lesson_card_index < len(candidates):
-        if ctx.pending_lesson_card_index in preferred_indices:
-            logger.debug("lesson: 回退到 pending 索引 {}", ctx.pending_lesson_card_index)
-            return ctx.pending_lesson_card_index
-        if ctx.pending_lesson_card_index in retryable_indices and not preferred_indices:
-            logger.info("lesson: 仅剩 pending 候选可重试，继续尝试索引 {}", ctx.pending_lesson_card_index)
-            return ctx.pending_lesson_card_index
+    if fallback_index is None:
+        # 回退：选第一个不在跳过列表中的可用动作（技能卡或饮料）
+        for c in candidates:
+            if c.index in preferred_indices:
+                fallback_index = c.index
+                fallback_reason = "第一个可用候选"
+                break
 
-    for payload in decision_state.get("candidates", []):
-        payload_index = int(payload.get("index", -1))
-        if bool(payload.get("recommended")) and payload_index in preferred_indices:
-            logger.debug("lesson: 回退到推荐索引 {}", int(payload["index"]))
-            return int(payload["index"])
-        if (
-            bool(payload.get("recommended"))
-            and payload_index in retryable_indices
-            and not preferred_indices
-        ):
-            logger.info("lesson: 仅剩推荐候选可重试，继续尝试索引 {}", payload_index)
-            return payload_index
+    if fallback_index is None:
+        for c in candidates:
+            if c.index in retryable_indices:
+                fallback_index = c.index
+                fallback_reason = "已尝试候选(重试)"
+                break
 
-    # 回退：选第一个不在跳过列表中的可用动作（技能卡或饮料）
-    for c in candidates:
-        if c.index in preferred_indices:
-            logger.debug("lesson: 回退到第一个可用索引 {}", c.index)
-            return c.index
+    if fallback_index is None:
+        fallback_index = -1
+        fallback_reason = "所有候选已跳过"
 
-    for c in candidates:
-        if c.index in retryable_indices:
-            logger.info("lesson: 仅剩已尝试候选可重试，继续尝试索引 {}", c.index)
-            return c.index
+    # 更新 dump 记录的最终执行结果
+    if fallback_reason:
+        _dumper = DecisionDumper.get_instance()
+        resolved_name = ""
+        if 0 <= fallback_index < len(candidates):
+            resolved_name = getattr(candidates[fallback_index], "title", "")
+        _dumper.update_last_resolved(
+            resolved_index=fallback_index,
+            resolved_name=resolved_name,
+            fallback_used=True,
+            fallback_reason=fallback_reason,
+        )
+        logger.info("lesson: 兜底决策 idx={} reason={}", fallback_index, fallback_reason)
 
-    logger.debug("lesson: 所有候选都在跳过列表中，返回 -1 等待刷新候选")
-    return -1
+    return fallback_index
 
 
 def _verify_card_played(app: "AppProcessor", timeout: float = 1.5) -> bool:

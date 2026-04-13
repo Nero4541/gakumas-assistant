@@ -633,7 +633,7 @@ def _filter_grid_cards(all_boxes: list) -> list:
 _GRAYED_CARD_V_THRESHOLD = 170
 
 
-def _is_card_grayed_out(box, frame: np.ndarray) -> bool:
+def _is_card_grayed_out(box, frame: np.ndarray, *, debugger: DebugTools | None = None) -> bool:
     """
     判断卡片缩略图是否为灰色（不可强化/已满级）。
     通过 HSV 空间的亮度(V)通道判断：灰色卡片整体明显偏暗。
@@ -648,8 +648,17 @@ def _is_card_grayed_out(box, frame: np.ndarray) -> bool:
     if center.size == 0:
         return False
     hsv = cv2.cvtColor(center, cv2.COLOR_RGB2HSV)
-    mean_v = hsv[:, :, 2].mean()
-    return mean_v < _GRAYED_CARD_V_THRESHOLD
+    mean_v = float(hsv[:, :, 2].mean())
+    grayed = mean_v < _GRAYED_CARD_V_THRESHOLD
+    if debugger is not None:
+        debugger.add_box(
+            box.x, box.y, box.w - box.x, box.h - box.y,
+            label=f"灰卡V={mean_v:.0f}" if grayed else f"正常V={mean_v:.0f}",
+            color=(128, 128, 128) if grayed else (0, 200, 0),
+            alpha=0.15,
+            duration=3.0,
+        )
+    return grayed
 
 
 # ── 交換済カード检测 ──
@@ -658,7 +667,7 @@ _EXCHANGED_CARD_V_THRESHOLD = 220
 _EXCHANGED_CARD_S_THRESHOLD = 50
 
 
-def _is_card_exchanged(box, frame: np.ndarray) -> bool:
+def _is_card_exchanged(box, frame: np.ndarray, *, debugger: DebugTools | None = None) -> bool:
     """
     判断 CARD_ITEM_EXCHANGE 框对应的卡片是否已交换（交換済）。
     已交换卡片有✓遮罩 + 交換済文字，使图标区域 V 和 S 同时偏低。
@@ -678,7 +687,16 @@ def _is_card_exchanged(box, frame: np.ndarray) -> bool:
     hsv = cv2.cvtColor(center, cv2.COLOR_RGB2HSV)
     mean_v = float(hsv[:, :, 2].mean())
     mean_s = float(hsv[:, :, 1].mean())
-    return mean_v < _EXCHANGED_CARD_V_THRESHOLD and mean_s < _EXCHANGED_CARD_S_THRESHOLD
+    exchanged = mean_v < _EXCHANGED_CARD_V_THRESHOLD and mean_s < _EXCHANGED_CARD_S_THRESHOLD
+    if debugger is not None:
+        debugger.add_box(
+            box.x, box.y, box.w - box.x, box.h - box.y,
+            label=f"交換済V={mean_v:.0f},S={mean_s:.0f}" if exchanged else f"未交換V={mean_v:.0f},S={mean_s:.0f}",
+            color=(200, 100, 0) if exchanged else (0, 200, 100),
+            alpha=0.15,
+            duration=3.0,
+        )
+    return exchanged
 
 
 def _close_modal_if_present(app: "AppProcessor") -> bool:
@@ -759,7 +777,7 @@ def _resolve_selection_targets_via_probe(
                 all_cards.append(box)
         grid_cards = _filter_grid_cards(all_cards)
         # 过滤灰色（不可强化/已满级）卡片
-        grid_cards = [b for b in grid_cards if not _is_card_grayed_out(b, frame)]
+        grid_cards = [b for b in grid_cards if not _is_card_grayed_out(b, frame, debugger=getattr(app, "debug_tools", None))]
         grid_cards = _dedup_boxes_by_position(grid_cards, tolerance=60)
         grid_cards.sort(key=lambda b: (b.cy, b.cx))
 
@@ -1087,7 +1105,7 @@ def detect_consult_actions(
         # 过滤已交换（交換済）的卡片
         frame = app.latest_frame
         for box in _sorted_boxes(app.latest_results.filter_by_label(ProducerLabels.CARD_ITEM_EXCHANGE)):
-            if frame is not None and _is_card_exchanged(box, frame):
+            if frame is not None and _is_card_exchanged(box, frame, debugger=getattr(app, "debug_tools", None)):
                 logger.debug("consult: 跳过已交换卡片 box=({},{},{},{})", box.x, box.y, box.w, box.h)
                 continue
             # 查找内层 YOLO 子检测（P Drink / Skill Card），获取更精确的图标裁切
@@ -1146,7 +1164,7 @@ def detect_consult_actions(
         # 过滤灰色（不可强化/已满级）卡片
         frame = app.latest_frame
         if frame is not None:
-            raw_boxes = [b for b in raw_boxes if not _is_card_grayed_out(b, frame)]
+            raw_boxes = [b for b in raw_boxes if not _is_card_grayed_out(b, frame, debugger=getattr(app, "debug_tools", None))]
 
         # 按位置去重（YOLO 可能对同一张卡检测出多个框）
         deduped = _dedup_boxes_by_position(raw_boxes, tolerance=60)
@@ -1278,6 +1296,10 @@ def decide_consult_action(
         else:
             return decided_index
 
+    # ── 本地兜底逻辑 ──
+    fallback_index: int | None = None
+    fallback_reason = ""
+
     if position == GameplayPosition.CONSULT_EXCHANGE:
         # 卡顿检测：如果连续多次停留在 consult_exchange，直接退出
         exchange_stuck = ctx.handler_state.get("consult_exchange_stuck", 0) + 1
@@ -1288,7 +1310,9 @@ def decide_consult_action(
             if not ctx.handler_state.get("consult_auto_used_enhancement"):
                 for idx, candidate in enumerate(candidates):
                     if candidate.kind == "enhance":
-                        return idx
+                        fallback_index = idx
+                        fallback_reason = "自动强化"
+                        break
         else:
             # 连续卡顿超过阈值，强制标记已使用过强化，后续直接退出
             logger.warning(
@@ -1297,36 +1321,75 @@ def decide_consult_action(
             )
             ctx.handler_state["consult_auto_used_enhancement"] = True
 
-        # 强化完成后，优先退出相談页面
-        for idx, candidate in enumerate(candidates):
-            if candidate.kind == "exit":
-                return idx
-        for idx, candidate in enumerate(candidates):
-            if candidate.kind == "exchange":
-                return idx
-        for idx, candidate in enumerate(candidates):
-            if candidate.kind == "enhance":
-                return idx
-        return 0
+        if fallback_index is None:
+            # 强化完成后，优先退出相談页面
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == "exit":
+                    fallback_index = idx
+                    fallback_reason = "退出相談"
+                    break
+        if fallback_index is None:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == "exchange":
+                    fallback_index = idx
+                    fallback_reason = "交换"
+                    break
+        if fallback_index is None:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == "enhance":
+                    fallback_index = idx
+                    fallback_reason = "强化"
+                    break
+        if fallback_index is None:
+            fallback_index = 0
+            fallback_reason = "默认首选"
+    else:
+        subflow_mode = _consult_subflow_mode(ctx)
+        pending_target = ctx.handler_state.get("consult_enhancement_target")
+        target_kind = _consult_target_kind_for_mode(subflow_mode)
+        confirm_kind = _consult_confirm_kind_for_mode(subflow_mode)
+        if pending_target:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == confirm_kind:
+                    fallback_index = idx
+                    fallback_reason = f"确认({confirm_kind})"
+                    break
+        if fallback_index is None:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == target_kind:
+                    fallback_index = idx
+                    fallback_reason = f"目标({target_kind})"
+                    break
+        if fallback_index is None:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == confirm_kind:
+                    fallback_index = idx
+                    fallback_reason = f"确认({confirm_kind})"
+                    break
+        if fallback_index is None:
+            for idx, candidate in enumerate(candidates):
+                if candidate.kind == "exit":
+                    fallback_index = idx
+                    fallback_reason = "退出"
+                    break
+        if fallback_index is None:
+            fallback_index = 0
+            fallback_reason = "默认首选"
 
-    subflow_mode = _consult_subflow_mode(ctx)
-    pending_target = ctx.handler_state.get("consult_enhancement_target")
-    target_kind = _consult_target_kind_for_mode(subflow_mode)
-    confirm_kind = _consult_confirm_kind_for_mode(subflow_mode)
-    if pending_target:
-        for idx, candidate in enumerate(candidates):
-            if candidate.kind == confirm_kind:
-                return idx
-    for idx, candidate in enumerate(candidates):
-        if candidate.kind == target_kind:
-            return idx
-    for idx, candidate in enumerate(candidates):
-        if candidate.kind == confirm_kind:
-            return idx
-    for idx, candidate in enumerate(candidates):
-        if candidate.kind == "exit":
-            return idx
-    return 0
+    # 更新 dump 记录
+    from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+    _dumper = DecisionDumper.get_instance()
+    resolved_name = ""
+    if 0 <= fallback_index < len(candidates):
+        resolved_name = getattr(candidates[fallback_index], "title", "") or getattr(candidates[fallback_index], "kind", "")
+    _dumper.update_last_resolved(
+        resolved_index=fallback_index,
+        resolved_name=resolved_name,
+        fallback_used=True,
+        fallback_reason=fallback_reason,
+    )
+    logger.info("consult: 兜底决策 idx={} reason={}", fallback_index, fallback_reason)
+    return fallback_index
 
 
 def execute_consult_step(

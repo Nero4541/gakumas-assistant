@@ -112,9 +112,8 @@ python app.py
 ### 核心风险与责任限制
 1.  **账号封禁风险**：**您必须清楚地认识到，使用任何形式的第三方自动操作脚本（包括本项目）都有违反《学园偶像大师》的用户协议（利用規約）的潜在风险。游戏运营商有权对使用此类脚本的账号采取惩罚措施，包括但不限于临时或永久封禁账号。对于因使用本脚本而导致的任何账号损失（如封号、数据回滚等），项目作者概不负责。**
 
-> ・对本服务的服务器等进行非法访问、窃取数据、使用使软件进行非法处理的程序、使用工具等获取信息或使用工具等不正当推进游戏的行为。
-
-> ・本サービスのサーバー等への不正アクセス行為、データ窃取行為、ソフトウェアに不正な処理を行わせるプログラムを使用する行為、ツール等を使用して情報を取得する行為またはツール等を使用して不正にゲームを有利に進める行為
+    > - 对本服务的服务器等进行非法访问、窃取数据、使用使软件进行非法处理的程序、使用工具等获取信息或使用工具等不正当推进游戏的行为。
+    > - 本サービスのサーバー等への不正アクセス行為、データ窃取行為、ソフトウェアに不正な処理を行わせるプログラムを使用する行為、ツール等を使用して情報を取得する行為またはツール等を使用して不正にゲームを有利に進める行為
 
 2. **使用限制**：本项目的全部内容**严禁用于任何商业用途或恶意破坏游戏平衡的行为**。任何将本项目用于此类活动的行为，均可能构成对版权方的侵权和对游戏运营商的违约，由此产生的一切法律责任由使用者自行承担。
 
@@ -226,3 +225,14 @@ Android 控制、触控与投屏相关能力
 Web UI 基础设施
 
 随包分发的二进制依赖来源与版权说明见 [bin/THIRD_PARTY_NOTICES.md](./bin/THIRD_PARTY_NOTICES.md)。
+
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Pigeon-Server%2Fgakumas-assistant&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=Pigeon-Server/gakumas-assistant&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=Pigeon-Server/gakumas-assistant&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=Pigeon-Server/gakumas-assistant&type=date&legend=top-left" />
+ </picture>
+</a>

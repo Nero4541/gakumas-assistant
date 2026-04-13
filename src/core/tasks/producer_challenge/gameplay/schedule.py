@@ -1695,24 +1695,56 @@ def decide_schedule_action(
                 recovery_plan[0],
                 recovery_plan[1],
             )
+            from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+            DecisionDumper.get_instance().update_last_resolved(
+                resolved_index=recovery_plan[0],
+                resolved_name=getattr(candidates[recovery_plan[0]], "title", "") if recovery_plan[0] < len(candidates) else "",
+                fallback_used=True,
+                fallback_reason=f"体力恢复覆盖({recovery_plan[1]})",
+            )
             return recovery_plan[0]
         return resolved_index
 
+    # 无 LLM 决策，使用本地兜底
+    from src.core.tasks.producer_challenge.gameplay.llm.decision_dumper import DecisionDumper
+    fallback_index: int | None = None
+    fallback_reason = ""
+
     if recovery_plan is not None:
-        return recovery_plan[0]
+        fallback_index = recovery_plan[0]
+        fallback_reason = f"体力恢复({recovery_plan[1]})"
 
-    if ctx.pending_schedule_index is not None and 0 <= ctx.pending_schedule_index < len(candidates):
-        return ctx.pending_schedule_index
+    if fallback_index is None and ctx.pending_schedule_index is not None and 0 <= ctx.pending_schedule_index < len(candidates):
+        fallback_index = ctx.pending_schedule_index
+        fallback_reason = "pending 索引"
 
-    recommended_index = first_matching_index(candidates, kind=_detect_recommended_kind(app))
-    if recommended_index is not None:
-        return recommended_index
+    if fallback_index is None:
+        recommended_index = first_matching_index(candidates, kind=_detect_recommended_kind(app))
+        if recommended_index is not None:
+            fallback_index = recommended_index
+            fallback_reason = "推荐类型"
 
-    for idx, candidate in enumerate(candidates):
-        if candidate.recommended:
-            return idx
+    if fallback_index is None:
+        for idx, candidate in enumerate(candidates):
+            if candidate.recommended:
+                fallback_index = idx
+                fallback_reason = "推荐候选"
+                break
 
-    return 0
+    if fallback_index is None:
+        fallback_index = 0
+        fallback_reason = "默认首选"
+
+    resolved_name = ""
+    if 0 <= fallback_index < len(candidates):
+        resolved_name = getattr(candidates[fallback_index], "title", "")
+    DecisionDumper.get_instance().update_last_resolved(
+        resolved_index=fallback_index,
+        resolved_name=resolved_name,
+        fallback_used=True,
+        fallback_reason=fallback_reason,
+    )
+    return fallback_index
 
 
 def execute_schedule_step(

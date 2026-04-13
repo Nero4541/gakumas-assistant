@@ -1799,6 +1799,61 @@ def _extract_first_int(text: str) -> int:
     return int(match.group()) if match else 0
 
 
+# ── 课程画面进度圆圈解析 ──
+# PC_TRAINING_SCORE 在课程中检测到的是中央进度圆圈，
+# OCR 文本示例: "CLEARまで10", "PERFECTまで175CLEAR"
+
+
+def _match_any_variant(text_upper: str, variants: tuple[str, ...]) -> bool:
+    """检查 text_upper 是否包含 variants 中的任意一个（大小写不敏感）。"""
+    return any(v.upper() in text_upper for v in variants)
+
+
+def _parse_progress_circle(score_text: str) -> dict | None:
+    """尝试将 PC_TRAINING_SCORE 的 OCR 文本解析为进度圆圈信息。
+
+    课程画面的进度圆圈显示 "CLEARまで XX" 或 "PERFECTまで XX CLEAR"，
+    其中的数字是 **距离目标的剩余分数**，而非当前累计分数。
+    使用 ProduceText 中定义的 OCR 抗噪变体进行模糊匹配。
+
+    Returns:
+        dict with keys: clear_achieved, remaining_to_clear, remaining_to_perfect
+        如果文本不是进度圆圈格式则返回 None。
+    """
+    if not score_text:
+        return None
+    normalized = (score_text or "").replace(" ", "").replace("　", "").upper()
+    # 使用抗噪变体检测关键词
+    has_made = _match_any_variant(normalized, ProduceText.PROGRESS_MADE_OCR_VARIANTS)
+    has_perfect = _match_any_variant(normalized, ProduceText.PROGRESS_PERFECT_OCR_VARIANTS)
+    has_clear = _match_any_variant(normalized, ProduceText.PROGRESS_CLEAR_OCR_VARIANTS)
+    # 检测是否包含进度圆圈标志性关键词
+    if not has_made and not has_clear and not has_perfect:
+        return None
+    # 从 "まで"（或其变体）之后的文本提取数字，
+    # 避免抓到关键词里的噪点数字（如 "PERFEC7" 中的 7）
+    made_end = 0
+    for v in ProduceText.PROGRESS_MADE_OCR_VARIANTS:
+        idx = normalized.find(v.upper())
+        if idx >= 0:
+            made_end = max(made_end, idx + len(v))
+    number = _extract_first_int(normalized[made_end:]) if made_end > 0 else _extract_first_int(score_text)
+    # "PERFECTまで175CLEAR" → 已 CLEAR, 距 PERFECT 还需 175
+    # "CLEARまで10" → 未 CLEAR, 距 CLEAR 还需 10
+    if has_perfect:
+        return {
+            "clear_achieved": True,
+            "remaining_to_clear": 0,
+            "remaining_to_perfect": number,
+        }
+    else:
+        return {
+            "clear_achieved": False,
+            "remaining_to_clear": number,
+            "remaining_to_perfect": 0,
+        }
+
+
 def _build_noisy_stamina_candidates(digits: str) -> list[int]:
     """从可能粘连/夹噪的数字串里枚举候选当前体力。"""
     if not digits:
@@ -2392,6 +2447,18 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
         upper_bound=parameter_upper_bound,
     )
 
+    # ── 解析进度圆圈（课程画面） ──
+    # score_text 可能是 "PERFECTまで175CLEAR" 或 "CLEARまで10"
+    progress_info = _parse_progress_circle(score_text)
+    if progress_info is not None:
+        # 进度圆圈模式: 数字是"距离目标的剩余分数"，不是当前累计分数
+        score_value = 0
+        score_observed = False
+    else:
+        # 普通模式: 数字就是当前分数（日程/考核画面）
+        score_value = _extract_first_int(score_text)
+        score_observed = bool(str(score_text or "").strip())
+
     return {
         "stamina": stamina_value,
         "max_stamina": max_stamina_value,
@@ -2402,8 +2469,8 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
         "p_point_observed": bool(str(p_point_text or "").strip()),
         "target_score": _extract_first_int(target_text),
         "target_score_observed": bool(str(target_text or "").strip()),
-        "score": _extract_first_int(score_text),
-        "score_observed": bool(str(score_text or "").strip()),
+        "score": score_value,
+        "score_observed": score_observed,
         "remaining_turns": _extract_first_int(remaining_turns_text),
         "remaining_turns_observed": bool(str(remaining_turns_text or "").strip()),
         "turn_color": turn_color,
@@ -2418,6 +2485,8 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
         "has_progress_hud": results.exists_label(ProducerLabels.PC_PROGRESS),
         "recommend_action_text": recommend_text,
         "recommend_action_kind": infer_param_kind(recommend_text) if recommend_text else "",
+        # 课程进度圆圈解析结果
+        "progress_circle": progress_info,
     }
 
 
@@ -3848,6 +3917,21 @@ def _build_llm_snapshot(
         grave_cards=grave_cards,
         offensive_counts=offensive_counts,
     )
+    # 优先使用本帧观测到的 target_score，未观测时回退到 ctx 缓存的上次值
+    effective_target = hud_state.get("target_score") or getattr(ctx, "hud_target_score", 0) or 0
+
+    # ── 课程进度圆圈信息 ──
+    progress_circle = hud_state.get("progress_circle")  # _parse_progress_circle 的结果
+    if progress_circle is not None:
+        # 进度圆圈模式: score=0, 使用 remaining_to_clear / remaining_to_perfect
+        clear_achieved = progress_circle["clear_achieved"]
+        remaining_to_clear = progress_circle["remaining_to_clear"]
+        remaining_to_perfect = progress_circle["remaining_to_perfect"]
+    else:
+        clear_achieved = None
+        remaining_to_clear = 0
+        remaining_to_perfect = 0
+
     snapshot = {
         "phase": phase_key,
         "position": position,
@@ -3867,12 +3951,16 @@ def _build_llm_snapshot(
         "battle_kind": "exam" if phase_key == GameplayPhase.EXAM else "lesson",
         "battle_kind_label": "試験" if phase_key == GameplayPhase.EXAM else "レッスン",
         "score": hud_state.get("score", 0),
-        "target": hud_state.get("target_score", 0),
+        "target": effective_target,
         "ratio": (
-            f"{(hud_state.get('score', 0) / max(hud_state.get('target_score', 1), 1)):.0%}"
-            if hud_state.get("target_score")
-            else "0%"
+            f"{(hud_state.get('score', 0) / max(effective_target, 1)):.0%}"
+            if effective_target
+            else "未知"
         ),
+        # 课程进度圆圈
+        "clear_achieved": clear_achieved,
+        "remaining_to_clear": remaining_to_clear,
+        "remaining_to_perfect": remaining_to_perfect,
         "p_point": hud_state.get("p_point", 0),
         "stamina": hud_state.get("stamina", 0),
         "max_stamina": hud_state.get("max_stamina", 0),
@@ -3993,7 +4081,10 @@ def build_decision_state(
     if bool(hud_state.get("p_point_observed", True)):
         ctx.hud_p_point = hud_state["p_point"]
         ctx.consult_remaining_p_points = hud_state["p_point"]
-    ctx.hud_target_score = hud_state["target_score"]
+    # 仅在本帧实际观测到目标分数时才更新；课程打牌画面 PC_TARGET 不可检测，
+    # 保留上一次（日程页面等）观测到的值
+    if hud_state.get("target_score_observed") and hud_state["target_score"] > 0:
+        ctx.hud_target_score = hud_state["target_score"]
     ctx.economy_state = {
         "stamina": ctx.hud_stamina,
         "max_stamina": ctx.hud_max_stamina,
