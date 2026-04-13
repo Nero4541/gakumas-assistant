@@ -22,7 +22,19 @@ class MacOS_App(BaseDevice):
     实现截屏、点击、滑动等操作。
     """
 
+    _host: str = "localhost"
+    _port: int = 0
+    _adapter: Optional[MacPlayToolsAdapter] = None
+    _unavailable_reason: str = ""
+    _unavailable_code: str = ""
+
     def __init__(self, host: str = "localhost", port: int = 0):
+        self._host = host
+        self._port = port
+        self._adapter = None
+        self._unavailable_reason = ""
+        self._unavailable_code = ""
+
         config_service = ConfigService()
         if port == 0:
             port = int(config_service.base.playtools_port or 0)
@@ -50,11 +62,13 @@ class MacOS_App(BaseDevice):
         self.close()
 
     def close(self):
-        if self._adapter is not None:
-            self._adapter.disconnect()
+        adapter = self._adapter
+        if adapter is not None:
+            adapter.disconnect()
+            self._adapter = None
 
     def __bool__(self) -> bool:
-        return self._adapter.connected
+        return bool(self._adapter and self._adapter.connected)
 
     def get_unavailable_reason(self) -> str:
         return self._unavailable_reason
@@ -65,9 +79,10 @@ class MacOS_App(BaseDevice):
     # ── 应用状态 ──────────────────────────────────────────────
 
     def is_app_focused(self) -> bool:
-        if not self._adapter.connected:
+        adapter = self._adapter
+        if adapter is None or not adapter.connected:
             return False
-        bundle_id = self._adapter.get_bundle_id()
+        bundle_id = adapter.get_bundle_id()
         if not bundle_id:
             return False
         # 通过 lsappinfo 检查前台应用是否包含目标 bundle id
@@ -79,18 +94,19 @@ class MacOS_App(BaseDevice):
             return bundle_id in result.stdout
         except Exception:
             # 无法确认前台, 只要连接正常就假定在前台
-            return self._adapter.connected
+            return adapter.connected
 
     def is_app_running(self) -> bool:
-        return self._adapter.connected
+        return bool(self._adapter and self._adapter.connected)
 
     def start_game(self):
         logger.info("MacPlayTools 模式下请手动通过 PlayCover 启动游戏")
 
     def bring_to_front(self):
-        if not self._adapter.connected:
+        adapter = self._adapter
+        if adapter is None or not adapter.connected:
             return
-        bundle_id = self._adapter.get_bundle_id()
+        bundle_id = adapter.get_bundle_id()
         if bundle_id:
             try:
                 subprocess.run(
@@ -103,7 +119,10 @@ class MacOS_App(BaseDevice):
     # ── 屏幕尺寸 ──────────────────────────────────────────────
 
     def get_window_size(self):
-        w, h = self._adapter.screen_size
+        adapter = self._adapter
+        if adapter is None:
+            return 0, 0
+        w, h = adapter.screen_size
         if w == 0 or h == 0:
             logger.warning("MacPlayTools 屏幕尺寸未知")
         return w, h
@@ -111,14 +130,15 @@ class MacOS_App(BaseDevice):
     # ── 截屏 ──────────────────────────────────────────────────
 
     def capture(self) -> Optional[np.ndarray]:
-        if not self._adapter.connected:
+        adapter = self._adapter
+        if adapter is None or not adapter.connected:
             return None
         # 优先使用 BGR 截屏 (MaaTools v3)，减少一次颜色空间转换
-        frame = self._adapter.screencap_bgr()
+        frame = adapter.screencap_bgr()
         if frame is not None:
             return frame
         # 回退到 RGBX 截屏
-        frame = self._adapter.screencap_rgbx()
+        frame = adapter.screencap_rgbx()
         return frame
 
     # ── 触控操作 ──────────────────────────────────────────────

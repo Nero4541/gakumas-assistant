@@ -144,12 +144,27 @@ class SelectMemoriesStep(ProduceStep):
 
         该弹窗在记忆编成完成后可能出现，提示有可租赁的支援卡/记忆。
         可能依次弹出多个（先レンタル可能再レンタル確認），逐个确认。
+        弹窗可能需要几秒才出现，因此第一轮需要带超时等待。
         """
-        sleep(1)
-        for _ in range(3):
+        # 第一轮：带超时等待弹窗出现（最多等 5 秒）
+        modal = None
+        deadline = 5.0
+        poll = 0.6
+        elapsed = 0.0
+        while elapsed < deadline:
+            sleep(poll)
+            elapsed += poll
             modal = app.game_utils.try_get_modal(no_body=True)
+            if modal is not None:
+                break
+        if modal is None:
+            logger.debug("未检测到レンタル弹窗（等待超时）")
+            return
+
+        # 逐个处理可能连续出现的 rental 弹窗
+        for _ in range(3):
             if modal is None:
-                logger.debug("未检测到レンタル弹窗")
+                logger.debug("后续无更多レンタル弹窗")
                 return
 
             if modal.modal_title and string_match(
@@ -162,6 +177,7 @@ class SelectMemoriesStep(ProduceStep):
                 if not click_modal_action_with_retry(app, modal, action_name="memory rental modal"):
                     raise TimeoutError(f"{modal.modal_title!r} 弹窗未能关闭")
                 sleep(1)
+                modal = app.game_utils.try_get_modal(no_body=True)
             else:
                 logger.debug(f"弹窗标题不匹配レンタル: {modal.modal_title!r}")
                 return

@@ -10,6 +10,7 @@ import numpy as np
 import torch
 from torch import nn
 
+from .data import RUNS_DIR
 from .model import MaskedPolicyValueNet, tensorize_observation
 
 
@@ -33,7 +34,7 @@ class ActorCriticTrainer:
         value_coef: float = 0.5,
         entropy_coef: float = 0.01,
         device: str = 'cpu',
-        run_dir: str | Path = 'train/gakumas_rl/runs',
+        run_dir: str | Path = '',
     ):
         """根据环境观测维度初始化模型、优化器与输出目录。"""
 
@@ -42,7 +43,7 @@ class ActorCriticTrainer:
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         self.device = torch.device(device)
-        self.run_dir = Path(run_dir)
+        self.run_dir = Path(run_dir) if run_dir else RUNS_DIR
         self.run_dir.mkdir(parents=True, exist_ok=True)
         global_dim = int(env.observation_space['global'].shape[0])
         action_dim = int(env.observation_space['action_features'].shape[-1])

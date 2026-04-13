@@ -1,5 +1,20 @@
 import axiosplus from "@/scripts/utils/axios.js";
 
+function freshGet(url, forceFresh = false) {
+  if (!forceFresh) {
+    return axiosplus.get(url);
+  }
+  return axiosplus.get(url, {
+    params: {
+      _fresh: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    },
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
+}
+
 /**
  * 开始执行任务队列
  * @return {Promise<AxiosResponse<any, any>>}
@@ -117,22 +132,36 @@ function get_all_adb_device(only_usb_device=false) {
 /**
  * 获取所有物品列表
  */
-function get_all_item() {
-  return axiosplus.get("/api/item/list");
+function get_all_item(forceFresh = false) {
+  return freshGet("/api/item/list", forceFresh);
+}
+
+/**
+ * 获取所有偶像卡列表
+ */
+function get_all_idol_card(forceFresh = false) {
+  return freshGet("/api/idol_card/list", forceFresh);
 }
 
 /**
  * 获取所有支援卡列表
  */
-function get_all_support_card() {
-  return axiosplus.get("/api/support_card/list");
+function get_all_support_card(forceFresh = false) {
+  return freshGet("/api/support_card/list", forceFresh);
 }
 
 /**
  * 获取游戏资源下载状态
  */
-function get_game_asset_status() {
-  return axiosplus.get("/api/game_asset/status");
+function get_game_asset_status(forceFresh = false) {
+  return freshGet("/api/game_asset/status", forceFresh);
+}
+
+/**
+ * 触发下载偶像卡缩略图
+ */
+function download_idol_card_assets() {
+  return axiosplus.post("/api/game_asset/download_idol_cards");
 }
 
 /**
@@ -154,6 +183,13 @@ function download_support_card_full_assets() {
  */
 function download_single_card_full(cardId) {
   return axiosplus.post(`/api/game_asset/download_card_full/${cardId}`);
+}
+
+/**
+ * 按需下载单张偶像卡全尺寸图片
+ */
+function download_single_idol_card_full(cardId, skin = 0) {
+  return axiosplus.post(`/api/game_asset/download_idol_card_full/${cardId}?skin=${skin}`);
 }
 
 /**
@@ -214,11 +250,14 @@ export default {
   save_task_config,
   get_all_adb_device,
   get_all_item,
+  get_all_idol_card,
   get_all_support_card,
   get_game_asset_status,
+  download_idol_card_assets,
   download_support_card_assets,
   download_support_card_full_assets,
   download_single_card_full,
+  download_single_idol_card_full,
   auto_download_assets,
   refresh_ddm_player_token,
   get_resource_update_status,

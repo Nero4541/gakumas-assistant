@@ -15,7 +15,7 @@
 {% if fan_vote_baseline != '0' or fan_vote_requirement != '0' or fan_votes != '0' -%}
 ファン投票: {{ fan_votes }}{% if fan_vote_requirement != '0' %} | 入场门槛={{ fan_vote_requirement }}{% endif %}{% if fan_vote_baseline != '0' %} | 基准={{ fan_vote_baseline }}{% endif %}
 {% endif -%}
-参数面板: ボーカル={{ parameter_stats.vocal }}, ダンス={{ parameter_stats.dance }}, ビジュアル={{ parameter_stats.visual }}
+参数面板: ボーカル={{ parameter_stats.vocal }}{{ '/%s'|format(parameter_stats.vocal_max) if parameter_stats.vocal_max is defined and parameter_stats.vocal_max != '' else '' }}, ダンス={{ parameter_stats.dance }}{{ '/%s'|format(parameter_stats.dance_max) if parameter_stats.dance_max is defined and parameter_stats.dance_max != '' else '' }}, ビジュアル={{ parameter_stats.visual }}{{ '/%s'|format(parameter_stats.visual_max) if parameter_stats.visual_max is defined and parameter_stats.visual_max != '' else '' }}
 
 {% if loadout -%}
 ### 配装 / 考前上下文

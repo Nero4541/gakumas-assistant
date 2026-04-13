@@ -18,7 +18,13 @@ from typing import TYPE_CHECKING
 from src.entity.Config import Config
 from src.utils.adb_runtime import describe_adb_error
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
-from src.utils.game_database_tools import GakumasDatabase_ItemDataUtils, GakumasDatabase_SupportCardDataUtils
+from src.utils.game_database_tools import (
+    GakumasDatabase_IdolCardDataUtils,
+    GakumasDatabase_ItemDataUtils,
+    GakumasDatabase_ProduceItemDataUtils,
+    GakumasDatabase_SupportCardDataUtils,
+    _concat_produce_descriptions,
+)
 from src.utils.opencv_tools import get_black_image
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_data_str, resolve_runtime_str
@@ -46,6 +52,16 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         if not processor.is_resource_ready():
             raise RuntimeError("游戏数据库资源尚未就绪")
         return GakumasDatabase_SupportCardDataUtils()
+
+    def _get_idol_card_db():
+        if not processor.is_resource_ready():
+            raise RuntimeError("游戏数据库资源尚未就绪")
+        return GakumasDatabase_IdolCardDataUtils()
+
+    def _get_produce_item_db():
+        if not processor.is_resource_ready():
+            raise RuntimeError("游戏数据库资源尚未就绪")
+        return GakumasDatabase_ProduceItemDataUtils()
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
@@ -357,6 +373,104 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
                 "gameAssetImage": game_asset_service.has_item_image(item.id),
             })
         return _api_return(True, "OK", all_items)
+
+    @app.get("/api/idol_card/list")
+    def get_all_idol_cards():
+        """获取所有偶像卡列表（用于自动培育目标卡浏览器）。"""
+        try:
+            produce_item_db = _get_produce_item_db()
+            cards = _get_idol_card_db().get_all_item()
+        except RuntimeError as exc:
+            return _api_return(False, str(exc))
+
+        def _primary_attribute(card):
+            stats = {
+                "vocal": getattr(card, "produceVocal", 0) or 0,
+                "dance": getattr(card, "produceDance", 0) or 0,
+                "visual": getattr(card, "produceVisual", 0) or 0,
+            }
+            return max(stats, key=stats.get)
+
+        def _character_name(card):
+            character = getattr(card, "characterCls", None)
+            if character is None:
+                return ""
+            localization = getattr(character, "localization", None)
+            localized_name = f"{getattr(localization, 'lastName', '')}{getattr(localization, 'firstName', '')}".strip()
+            if localized_name:
+                return localized_name
+            return f"{getattr(character, 'lastName', '')}{getattr(character, 'firstName', '')}".strip()
+
+        def _serialize_produce_card(source):
+            if source is None:
+                return None
+            localization = getattr(source, "localization", None)
+            asset_key = (getattr(source, "assetId", "") or "").replace("img_general_", "")
+            return {
+                "id": source.id,
+                "name": source.name,
+                "assetId": source.assetId,
+                "description": _concat_produce_descriptions(getattr(source, "produceDescriptions", []), produce_item_db),
+                "translation": {
+                    "name": localization.name,
+                    "description": _concat_produce_descriptions(getattr(localization, "produceDescriptions", []), produce_item_db),
+                } if localization else {},
+                "hasImage": bool(asset_key) and game_asset_service.has_skill_card_image(asset_key),
+            }
+
+        def _serialize_produce_item(source):
+            if source is None:
+                return None
+            localization = getattr(source, "localization", None)
+            asset_key = (getattr(source, "assetId", "") or "").replace("img_general_", "")
+            return {
+                "id": source.id,
+                "name": source.name,
+                "assetId": source.assetId,
+                "description": _concat_produce_descriptions(getattr(source, "produceDescriptions", []), produce_item_db),
+                "translation": {
+                    "name": localization.name,
+                    "description": _concat_produce_descriptions(getattr(localization, "produceDescriptions", []), produce_item_db),
+                } if localization else {},
+                "hasImage": bool(asset_key) and os.path.exists(
+                    resolve_data_str("game_assets", "items", f"{asset_key}.png")
+                ),
+            }
+
+        all_cards = []
+        for card in cards:
+            clip_exists = os.path.exists(os.path.join(processor.data_path, f"CLIP/idol_cards/{card.id}.png"))
+            full_image_exists = os.path.exists(
+                resolve_data_str("game_assets", "idol_cards_full", f"{card.id}_0.png")
+            )
+            all_cards.append({
+                "id": card.id,
+                "name": card.name,
+                "assetId": card.assetId,
+                "rarity": card.rarity,
+                "planType": card.planType,
+                "characterId": card.characterId,
+                "characterName": _character_name(card),
+                "examEffectType": card.examEffectType,
+                "isLimited": card.isLimited,
+                "primaryAttribute": _primary_attribute(card),
+                "produceVocal": card.produceVocal,
+                "produceDance": card.produceDance,
+                "produceVisual": card.produceVisual,
+                "produceVocalGrowthRatePermil": card.produceVocalGrowthRatePermil,
+                "produceDanceGrowthRatePermil": card.produceDanceGrowthRatePermil,
+                "produceVisualGrowthRatePermil": card.produceVisualGrowthRatePermil,
+                "produceStamina": card.produceStamina,
+                "translation": {
+                    "name": card.localization.name,
+                } if card.localization else {},
+                "produceCard": _serialize_produce_card(getattr(card, "produceCardCls", None)),
+                "beforeProduceItem": _serialize_produce_item(getattr(card, "beforeProduceItemCls", None)),
+                "afterProduceItem": _serialize_produce_item(getattr(card, "afterProduceItemCls", None)),
+                "hasImage": clip_exists,
+                "hasFullImage": full_image_exists,
+            })
+        return _api_return(True, "OK", all_cards)
 
     @app.get("/api/support_card/list")
     def get_all_support_cards():

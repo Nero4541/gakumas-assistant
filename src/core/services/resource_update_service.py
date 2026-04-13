@@ -572,6 +572,7 @@ class ResourceUpdateService:
         def _worker():
             for download_fn, subdir in [
                 (game_asset_service.download_support_card_images, game_asset_service.SUPPORT_CARD_SUBDIR),
+                (game_asset_service.download_idol_card_images, game_asset_service.IDOL_CARD_SUBDIR),
                 (game_asset_service.download_item_images, game_asset_service.ITEM_SUBDIR),
                 (game_asset_service.download_skill_card_images, game_asset_service.SKILL_CARD_SUBDIR),
             ]:

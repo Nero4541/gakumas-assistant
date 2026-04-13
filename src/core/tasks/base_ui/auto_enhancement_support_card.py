@@ -398,14 +398,22 @@ def _click_level_down_button(app: "AppProcessor") -> bool:
     return False
 
 
-def _check_confirm_enabled(app: "AppProcessor") -> tuple[bool, Optional["ButtonList"]]:
+def _check_confirm_enabled(app: "AppProcessor") -> tuple[str, Optional["ButtonList"]]:
     """Check if the Lv強化 confirm button on enhancement page is enabled.
-    Returns (is_enabled, ButtonList) so caller can reuse the buttons."""
+    Returns (status, ButtonList) where status is one of:
+        "enabled"   - button found and clickable
+        "disabled"  - button found but greyed out (no materials)
+        "not_found" - button text not detected (OCR failure or wrong page)
+    """
     buttons = ButtonList(app.latest_results)
     confirm = buttons.get_button_by_text(SupportCardText.LV_ENHANCE, _FUZZ_CONFIG)
     if confirm is None:
-        return False, buttons
-    return not confirm.is_disabled(), buttons
+        btn_texts = [b.text for b in buttons.buttons]
+        logger.debug(f"Lv強化 button not found among detected buttons: {btn_texts}")
+        return "not_found", buttons
+    if confirm.is_disabled():
+        return "disabled", buttons
+    return "enabled", buttons
 
 
 def _confirm_enhancement(app: "AppProcessor") -> bool:
@@ -448,19 +456,29 @@ def _enhance_single_card(app: "AppProcessor") -> str:
     if not _enter_enhance_page(app):
         return "at_cap"
 
-    # 先检查默认等级（+1）时确认按钮是否可用
-    enabled, _ = _check_confirm_enabled(app)
-    if not enabled:
+    # 先检查默认等级（+1）时确认按钮是否可用（带重试）
+    status = "not_found"
+    for _attempt in range(3):
+        status, _ = _check_confirm_enabled(app)
+        if status != "not_found":
+            break
+        sleep(0.5)
+        app.game_utils.wait_frame_stable(stable_count=2)
+    if status == "disabled":
         # 连 +1 级都做不了 → 真的没材料
         logger.info("Lv強化 confirm disabled at default level → 资源不足")
         _go_back_via_cancel(app)
         return "no_materials"
+    if status == "not_found":
+        logger.warning("Lv強化 confirm button not found after retries → 页面异常")
+        _go_back_via_cancel(app)
+        return "failed"
 
     # 尝试 ">>" 跳到最大等级
     clicked_max = _click_max_level_button(app)
     if clicked_max:
-        enabled, _ = _check_confirm_enabled(app)
-        if not enabled:
+        status, _ = _check_confirm_enabled(app)
+        if status != "enabled":
             # ">>" 后资源不够 → 用 '<' 逐级递减，找到最高可负担等级
             logger.info("Lv強化 confirm disabled at max → 逐级递减寻找可负担等级")
             found_affordable = False
@@ -468,8 +486,8 @@ def _enhance_single_card(app: "AppProcessor") -> str:
                 if not _click_level_down_button(app):
                     logger.debug(f"'<' not found after {step} steps, giving up step-down")
                     break
-                enabled, _ = _check_confirm_enabled(app)
-                if enabled:
+                status, _ = _check_confirm_enabled(app)
+                if status == "enabled":
                     logger.info(f"Lv強化 re-enabled after {step + 1} level-down steps")
                     found_affordable = True
                     break

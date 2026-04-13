@@ -35,6 +35,10 @@ LOCALIZATION_DIR = Path(
     os.getenv('GAKUMAS_RL_LOCALIZATION_DIR')
     or (ROOT_DIR / 'assets' / 'GakumasTranslationData' / 'local-files' / 'masterTrans')
 )
+OUTPUT_DIR = Path(os.getenv('GAKUMAS_RL_OUTPUT_DIR') or ROOT_DIR)
+RUNS_DIR = OUTPUT_DIR / 'runs'
+TRAJECTORIES_DIR = OUTPUT_DIR / 'trajectories'
+CHECKPOINTS_DIR = OUTPUT_DIR / 'checkpoints'
 MASTERDATA_CACHE_VERSION = 1
 
 _SHARED_TABLE_CACHE: dict[tuple[str, int, int, int], 'TableIndex'] = {}
@@ -332,6 +336,11 @@ class MasterDataRepository:
             row_id = row.get('id')
             if row_id is not None:
                 mapping[str(row_id)] = row
+                # 当存在 upgradeCount 时，额外存储复合键 "{id}.{upgradeCount}"
+                # 以区分同 id 不同升级等级的本地化名称
+                upgrade_count = row.get('upgradeCount')
+                if upgrade_count is not None:
+                    mapping[f'{row_id}.{int(upgrade_count)}'] = row
         self._localization_cache[table_name] = mapping
         _SHARED_LOCALIZATION_CACHE[source_key] = mapping
         self._write_disk_cache(self._serialized_cache_path('localization', table_name), source_key, mapping)
@@ -829,9 +838,15 @@ class MasterDataRepository:
         return self.load_localization('ProduceItem')
 
     def card_name(self, card: dict[str, Any]) -> str:
-        """返回卡牌的优先本地化名称。"""
+        """返回卡牌的优先本地化名称（区分升级等级）。"""
 
         item_id = str(card.get('id') or '')
+        upgrade_count = card.get('upgradeCount')
+        # 优先使用 "{id}.{upgradeCount}" 复合键查找精确升级等级的翻译
+        if upgrade_count is not None:
+            loc = self.produce_card_localization.get(f'{item_id}.{int(upgrade_count)}', {})
+            if loc:
+                return str(loc.get('name') or card.get('name') or item_id)
         loc = self.produce_card_localization.get(item_id, {})
         return str(loc.get('name') or card.get('name') or item_id)
 

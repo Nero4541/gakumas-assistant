@@ -17,15 +17,15 @@ class ProduceExamEffect:
     # 持续回合
     effectTurn: int
     # 目标卡牌ID（空 = 通用效果，非特定卡牌）
-    targetProduceCardId: str = ""
+    targetProduceCardId: str
     # 目标卡牌所需强化等级（未指定目标卡时无效）
-    targetUpgradeCount: int = 0
+    targetUpgradeCount: int
     # 要修改的目标效果类型（未知 = 未使用）
-    targetExamEffectType: str = ""
+    targetExamEffectType: str
     # 用于筛选受影响卡牌的搜索规则ID
-    produceCardSearchId: str = ""
+    produceCardSearchId: str
     # 应用效果后卡牌移动的位置
-    movePositionType: str = ""
+    movePositionType: str
     pickRangeType: str = ""
     pickCountType: str = ""
     pickCountReferenceProduceCardSearchId: str = ""

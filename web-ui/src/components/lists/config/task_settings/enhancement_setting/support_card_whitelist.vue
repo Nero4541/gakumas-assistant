@@ -314,6 +314,7 @@ function openDialog() {
   localSelection.value = [...(props.data.whitelist_card_ids.value || [])]
   detailCard.value = null
   displayCount.value = BATCH_SIZE
+  assetAutoTriggered.value = false
   dialog.value = true
   nextTick(() => setupObserver())
 }
@@ -343,13 +344,15 @@ function clearAll() {
 // Game asset download status (for bulk downloads triggered from settings)
 const assetStatus = ref({ available: false, downloadedCount: 0, downloading: false })
 const assetDownloading = ref(false)
+const assetAutoTriggered = ref(false)
+const assetImageVersion = ref(0)
 let downloadPolling = null
 
 // Per-card on-demand full image download
 const downloadingFullImageFor = ref(null)  // card_id currently being downloaded
 
-function refreshAssetStatus() {
-  apis.get_game_asset_status().then(res => {
+function refreshAssetStatus(forceFresh = false) {
+  apis.get_game_asset_status(forceFresh).then(res => {
     assetStatus.value = res.data
     assetDownloading.value = res.data.downloading
   }).catch(() => {})
@@ -393,15 +396,16 @@ function startPolling() {
   if (downloadPolling) return
   assetDownloading.value = true
   downloadPolling = setInterval(() => {
-    apis.get_game_asset_status().then(res => {
+    apis.get_game_asset_status(true).then(res => {
       assetStatus.value = res.data
       if (!res.data.downloading) {
         assetDownloading.value = false
         clearInterval(downloadPolling)
         downloadPolling = null
         // 刷新卡片数据（图片标志已更新）
-        apis.get_all_support_card().then(r => {
+        apis.get_all_support_card(true).then(r => {
           cards.value = r.data
+          assetImageVersion.value++
           if (detailCard.value) {
             const refreshed = r.data.find(c => c.id === detailCard.value.id)
             if (refreshed) detailCard.value = refreshed
@@ -425,21 +429,32 @@ function triggerDownload() {
   })
 }
 
+const assetDownloadEnabled = computed(() => store.config.base?.enable_game_asset_download?.value ?? false)
 const preferGameAsset = computed(() => store.config.base?.prefer_game_asset_image?.value ?? false)
+const hasMissingGameAsset = computed(() => cards.value.some(card => !card.gameAssetImage))
+
+function ensureAutoDownload() {
+  if (!dialog.value) return
+  if (assetAutoTriggered.value || assetDownloading.value) return
+  if (!assetDownloadEnabled.value || !assetStatus.value.available) return
+  if (!hasMissingGameAsset.value) return
+  assetAutoTriggered.value = true
+  triggerDownload()
+}
 
 function cardImageSrc(card) {
   if (preferGameAsset.value) {
-    if (card.gameAssetImage) return `/api/game_assets/support_cards/${card.id}.png`
-    if (card.image) return `/api/clip_image/support_cards/${card.id}.png`
+    if (card.gameAssetImage) return `/api/game_assets/support_cards/${card.id}.png?v=${assetImageVersion.value}`
+    if (card.image) return `/api/clip_image/support_cards/${card.id}.png?v=${assetImageVersion.value}`
   } else {
-    if (card.image) return `/api/clip_image/support_cards/${card.id}.png`
-    if (card.gameAssetImage) return `/api/game_assets/support_cards/${card.id}.png`
+    if (card.image) return `/api/clip_image/support_cards/${card.id}.png?v=${assetImageVersion.value}`
+    if (card.gameAssetImage) return `/api/game_assets/support_cards/${card.id}.png?v=${assetImageVersion.value}`
   }
   return null
 }
 
 function cardFullImageSrc(card) {
-  if (card.gameAssetFullImage) return `/api/game_assets/support_cards_full/${card.id}.png`
+  if (card.gameAssetFullImage) return `/api/game_assets/support_cards_full/${card.id}.png?v=${assetImageVersion.value}`
   return cardImageSrc(card)
 }
 
@@ -450,6 +465,20 @@ onBeforeUnmount(() => {
     downloadPolling = null
   }
 })
+
+watch(
+  [
+    dialog,
+    hasMissingGameAsset,
+    assetDownloadEnabled,
+    () => assetStatus.value.available,
+    assetDownloading,
+  ],
+  () => {
+    ensureAutoDownload()
+  },
+  { immediate: true },
+)
 
 // Load cards
 apis.get_all_support_card().then(res => {

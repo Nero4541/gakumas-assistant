@@ -1,0 +1,249 @@
+## 当前局面
+阶段: {{ phase }} | 位置: {{ position }} | 剧本: {{ scenario }} | 难度: {{ difficulty }} | 已完成{{ week }}周{% if remaining_weeks is defined and remaining_weeks is not none %}（剩余{{ remaining_weeks }}周）{% endif %}{{ '' }}
+{% if stage_context.label %}
+阶段语义: {{ stage_context.label }}{% if stage_context.description %} | {{ stage_context.description }}{% endif %}{{ '' }}
+{% endif %}
+{% if stage_context.available_action_summary %}
+当前可执行: {{ stage_context.available_action_summary }}
+{% endif %}
+{% if stage_context.interaction_hint %}
+交互方式: {{ stage_context.interaction_hint }}
+{% endif %}
+{% if stage_context.system_recommendation %}
+系统推荐: {{ stage_context.system_recommendation }}
+{% endif %}
+{% if idol_plan_label %}
+当前流派: {{ idol_plan_label }}{% if idol_plan_focus %} | 核心资源: {{ idol_plan_focus }}{% endif %}{% if idol_plan_description %} | {{ idol_plan_description }}{% endif %}{{ '' }}
+{% endif %}
+{% if phase == 'lesson' or phase == 'exam' %}
+{% if turn is not none %}
+回合: {{ turn }}{% if max_turns %}/{{ max_turns }}{% endif %}{% if remaining %} (剩余{{ remaining }}回合){% endif %}{{ '' }}
+{% elif remaining %}
+剩余回合: {{ remaining }}
+{% endif %}
+模式: {{ battle_kind_label }}
+分数: {{ score }}/{{ target }} ({{ ratio }})
+体力: {{ stamina }}{% if max_stamina %}/{{ max_stamina }}{% endif %}{{ '' }}
+{% if genki is not none %}
+元气: {{ genki }}
+{% endif %}
+{% if play_limit_total is not none %}
+本回合剩余スキルカード使用数: {{ play_limit_remaining }}/{{ play_limit_total }}
+{% endif %}
+{% if turn_color_display_label %}
+当前回合颜色: {{ turn_color_display_label }}
+{% endif %}
+{% if score_bonus_multiplier %}
+スコアボーナス倍率: x{{ score_bonus_multiplier }}
+{% endif %}
+{% if exam_ranking %}
+当前考试排名: 第{{ exam_ranking }}位
+{% endif %}
+{% if phase == 'exam' %}
+{% if exam_wheel is defined and exam_wheel and exam_wheel.queue %}
+
+### 考试轮盘队列（逆时针）
+{% set param_map = {'vocal': 'ボーカル', 'dance': 'ダンス', 'visual': 'ビジュアル'} %}
+当前指针参数: {{ param_map.get(exam_wheel.current_param, exam_wheel.current_param) or '未知' }}{% if exam_wheel.bonus_pct %} (加成{{ exam_wheel.bonus_pct }}%){% endif %}{{ '' }}
+
+轮盘剩余回合: {{ exam_wheel.remaining_turns if exam_wheel.remaining_turns is not none else '未知' }}
+队列: {% for seg in exam_wheel.queue %}{{ param_map.get(seg, seg) }}{% if not loop.last %} → {% endif %}{% endfor %}{{ '' }}
+
+{% if exam_prep_bonuses is defined and exam_prep_bonuses %}
+参数加成倍率: ボーカル={{ exam_prep_bonuses.vocal }}% / ダンス={{ exam_prep_bonuses.dance }}% / ビジュアル={{ exam_prep_bonuses.visual }}%
+{% endif %}
+轮盘置信度: {{ exam_wheel.confidence }}
+{% endif %}
+
+### 考试决策焦点
+- 过线压力: 剩余{{ remaining if remaining is not none else '未知' }}回合，分数{{ score }}/{{ target }}{% if exam_ranking %}，当前排名第{{ exam_ranking }}位{% endif %}{{ '' }}
+- 本回合动作窗口: 剩余スキルカード使用数={{ play_limit_remaining if play_limit_remaining is not none else '未知' }}{% if play_limit_total is not none %}/{{ play_limit_total }}{% endif %}{% if drinks %}，另有{{ drinks|length }}瓶饮料可比较{% endif %}{{ '' }}
+- 火力储备: 手牌={{ offensive_counts.hand }}, 牌库={{ offensive_counts.deck }}, 弃牌={{ offensive_counts.grave }}, 保留={{ offensive_counts.hold }}
+- 资源兑现提醒: 剩余回合越少，纯好印象 / 集中 / 元気 / 好調铺垫越需要确认后续是否还有火力牌可以兑现
+{% elif phase == 'lesson' %}
+
+### レッスン决策焦点
+- 目标压力: 剩余{{ remaining if remaining is not none else '未知' }}回合，分数{{ score }}/{{ target }} ({{ ratio }})
+- 本回合动作窗口: 剩余スキルカード使用数={{ play_limit_remaining if play_limit_remaining is not none else '未知' }}{% if play_limit_total is not none %}/{{ play_limit_total }}{% endif %}{% if drinks %}，另有{{ drinks|length }}瓶饮料可比较{% endif %}{{ '' }}
+- 火力储备: 手牌={{ offensive_counts.hand }}, 牌库={{ offensive_counts.deck }}, 弃牌={{ offensive_counts.grave }}, 保留={{ offensive_counts.hold }}
+- 资源兑现提醒: 临近结束时优先考虑直接推进目标 / Perfect 的动作，不要机械继续空铺
+{% endif %}
+{% elif phase == 'consult' %}
+培育进度: 已完成{{ week }}周{% if remaining_weeks is defined and remaining_weeks is not none %}（剩余{{ remaining_weeks }}周）{% endif %}{{ '' }}
+{% if p_point is defined and p_point is not none %}
+Pポイント残高: {{ p_point }}
+{% endif %}
+{% if consult_session is defined and consult_session %}
+### 本次相談进度
+{% if consult_session.exchanged_items %}
+已兑换: {% for item in consult_session.exchanged_items %}{{ item }}{% if not loop.last %}, {% endif %}{% endfor %}{{ '' }}
+{% endif %}
+強化: {{ '已使用' if consult_session.used_enhancement else '未使用（可用1次）' }}
+削除: {{ '已使用' if consult_session.used_remove else '未使用（可用1次）' }}
+{% if consult_session.actions_taken == 0 %}
+（本次相談尚未执行任何操作）
+{% endif %}
+{% endif %}
+{% elif phase == 'schedule' %}
+培育进度: 已完成{{ week }}周{% if remaining_weeks is defined and remaining_weeks is not none %}（剩余{{ remaining_weeks }}周）{% endif %}{{ '' }}
+体力: {{ stamina }}{% if max_stamina %}/{{ max_stamina }}{% endif %}{{ '' }}
+{% if p_point is defined and p_point is not none %}
+Pポイント: {{ p_point }}
+{% endif %}
+{% elif phase == 'p_drink' or phase == 'skill_reward' %}
+培育进度: 已完成{{ week }}周{% if remaining_weeks is defined and remaining_weeks is not none %}（剩余{{ remaining_weeks }}周）{% endif %}{{ '' }}
+体力: {{ stamina }}{% if max_stamina %}/{{ max_stamina }}{% endif %}{{ '' }}
+{% endif %}
+{% if parameter_stats.vocal != '' or parameter_stats.dance != '' or parameter_stats.visual != '' %}
+参数面板: ボーカル={{ parameter_stats.vocal }}{% if parameter_stats.vocal_max != '' %}/{{ parameter_stats.vocal_max }}{% endif %}, ダンス={{ parameter_stats.dance }}{% if parameter_stats.dance_max != '' %}/{{ parameter_stats.dance_max }}{% endif %}, ビジュアル={{ parameter_stats.visual }}{% if parameter_stats.visual_max != '' %}/{{ parameter_stats.visual_max }}{% endif %}{{ '' }}
+{% endif %}
+
+{% if p_items %}
+### Pアイテム
+{% for item in p_items %}
+- {{ item.name }}{% if item.description %}: {{ item.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% endif %}
+
+{% if formation_abilities %}
+### 编成支援能力
+{% for a in formation_abilities %}
+- {{ a.name }}
+{% endfor %}
+{% endif %}
+
+{% if formation_events %}
+### 编成支援イベント
+{% for sc in formation_events %}
+**{{ sc.card_name }}**:
+{% for ev in sc.events %}
+- {{ ev }}
+{% endfor %}
+{% endfor %}
+{% endif %}
+
+{% if phase == 'skill_reward' %}
+### 已知牌组快照（用于评估候选卡与现有牌组的协同）
+牌组总数: {{ deck_count }}
+{% if deck_summary %}
+牌组摘要: {{ deck_summary }}
+{% endif %}
+{% if deck_cards %}
+{% for c in deck_cards[:12] %}
+- {{ c.name }}{% if c.category %} ({{ c.category }}){% endif %}{% if c.description %}: {{ c.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% if deck_cards|length > 12 %}
+... 以及其他 {{ deck_cards|length - 12 }} 张
+{% endif %}
+{% else %}
+未知
+{% endif %}
+
+{% if drinks %}
+### 当前Pドリンク库存 ({{ drinks|length }}瓶)
+{% for d in drinks %}
+- {{ d.name }}{% if d.description %}: {{ d.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% endif %}
+{% elif phase == 'p_drink' %}
+{% if deck_cards %}
+### 已知牌组快照（参考饮料与牌组的协同）
+牌组总数: {{ deck_count }}
+{% if deck_summary %}
+牌组摘要: {{ deck_summary }}
+{% endif %}
+{% for c in deck_cards[:8] %}
+- {{ c.name }}{% if c.category %} ({{ c.category }}){% endif %}{{ '' }}
+{% endfor %}
+{% if deck_cards|length > 8 %}
+... 以及其他 {{ deck_cards|length - 8 }} 张
+{% endif %}
+{% endif %}
+{% if drinks %}
+### 当前已持有Pドリンク ({{ drinks|length }}瓶)
+{% for d in drinks %}
+- {{ d.name }}{% if d.description %}: {{ d.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% endif %}
+{% elif phase == 'lesson' or phase == 'exam' %}
+### 手牌 ({{ hand|length }}张)
+{% if hand %}
+{% for c in hand %}
+- {{ c.name }}{{ '[+%d]'|format(c.upgrade_count) if c.upgrade_count else '' }}{{ ' (' + c.category + ')' if c.category else '' }}{{ '\n  说明: ' + c.description if c.description else '' }}{{ '\n  消耗: ' + c.cost|string if c.cost else '' }}{{ '\n  效果轴: ' + c.effect_types|join(' / ') if c.effect_types else '' }}
+{% endfor %}
+{% else %}
+(空)
+{% endif %}
+
+### 已知牌组快照
+牌组总数: {{ deck_count }}
+{% if deck_summary %}
+牌组摘要: {{ deck_summary }}
+{% endif %}
+{% if deck_cards %}
+{% for c in deck_cards[:12] %}
+- {{ c.name }}{% if c.category %} ({{ c.category }}){% endif %}{% if c.description %}: {{ c.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% if deck_cards|length > 12 %}
+... 以及其他 {{ deck_cards|length - 12 }} 张
+{% endif %}
+{% else %}
+未知
+{% endif %}
+
+### 牌区计数
+牌库={{ zone_counts.deck }}, 弃牌={{ zone_counts.grave }}, 保留={{ zone_counts.hold }}, 除外={{ zone_counts.lost }}
+火力牌统计: 手牌={{ offensive_counts.hand }}, 牌库={{ offensive_counts.deck }}, 弃牌={{ offensive_counts.grave }}, 保留={{ offensive_counts.hold }}
+{% if reshuffle_hint %}
+洗牌提示: {{ reshuffle_hint }}
+{% endif %}
+{% if grave_cards %}
+弃牌堆: {% for c in grave_cards[:8] -%}{{ c.name }}{% if not loop.last %} / {% endif %}{% endfor -%}
+{% endif %}
+{% if hold_cards %}
+保留区: {% for c in hold_cards[:8] -%}{{ c.name }}{% if not loop.last %} / {% endif %}{% endfor -%}
+{% endif %}
+{% if lost_cards %}
+除外区: {% for c in lost_cards[:8] -%}{{ c.name }}{% if not loop.last %} / {% endif %}{% endfor -%}
+{% endif %}
+
+### 资源 / 指针
+好調={{ resources.parameter_buff if resources.parameter_buff is not none and resources.parameter_buff != '' else '未知' }}, 集中={{ resources.review if resources.review is not none and resources.review != '' else '未知' }}, 好印象={{ resources.aggressive if resources.aggressive is not none and resources.aggressive != '' else '未知' }}, 元気={{ resources.block if resources.block is not none and resources.block != '' else '未知' }}
+パラメータ上昇量増加={{ resources.lesson_buff if resources.lesson_buff is not none and resources.lesson_buff != '' else '未知' }}, 熱意={{ resources.enthusiastic if resources.enthusiastic is not none and resources.enthusiastic != '' else '未知' }}, 全力値={{ resources.full_power_point if resources.full_power_point is not none and resources.full_power_point != '' else '未知' }}
+指针: {{ stance_desc or '未知' }}
+
+{% if negatives %}
+### 负面状态
+{{ negatives }}
+{% endif %}
+
+{% if active_effects %}
+### 活跃效果 ({{ active_effects|length }}个)
+{% for eff in active_effects[:15] %}
+- {{ eff }}
+{% endfor %}
+{% if active_effects|length > 15 %}
+...及其他{{ active_effects|length - 15 }}个
+{% endif %}
+{% endif %}
+
+{% if drinks %}
+### Pドリンク库存 ({{ drinks|length }}瓶)
+{% for d in drinks %}
+- {{ d.name }}{% if d.description %}: {{ d.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% endif %}
+
+### 观测说明
+牌库顺序已知: {{ '是' if observability.deck_order_known else '否' }}
+资源面板已解析: {{ '是' if observability.resource_panel_parsed else '否' }}
+考试排名已观测: {{ '是' if observability.exam_ranking_observed else '否' }}
+回合颜色已观测: {{ '是' if observability.turn_color_observed else '否' }}
+底栏饮料库存已观测: {{ '是' if observability.drink_inventory_observed else '否' }}
+无手牌提示已观测: {{ '是' if observability.empty_hand_observed else '否' }}
+{% elif drinks %}
+### 已知Pドリンク库存 ({{ drinks|length }}瓶)
+{% for d in drinks %}
+- {{ d.name }}{% if d.description %}: {{ d.description }}{% endif %}{{ '' }}
+{% endfor %}
+{% endif %}

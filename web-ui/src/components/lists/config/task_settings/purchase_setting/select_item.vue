@@ -27,7 +27,9 @@ function filter(value, queryText, item) {
 }
 
 function itemImageSrc(item) {
-  return `/api/image/items/${item.id}.png`
+  if (item.gameAssetImage) return `/api/game_assets/items/${item.id}.png`
+  if (item.image) return `/api/clip_image/items/${item.id}.png`
+  return null
 }
 </script>
 

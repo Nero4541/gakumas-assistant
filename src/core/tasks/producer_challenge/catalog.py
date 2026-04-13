@@ -12,6 +12,7 @@ from src.utils.game_database_tools import (
     GakumasDatabase_ProduceDrinkDataUtils,
     GakumasDatabase_ProduceItemDataUtils,
     GakumasDatabase_ProduceSkillDataUtils,
+    GakumasDatabase_SupportCardDataUtils,
     _concat_produce_descriptions,
     build_support_card_events,
     build_support_card_skill_descriptions,
@@ -40,6 +41,7 @@ class ProduceRouteDefinition:
     produce_group_id: str
     produce_group_name: str
     produce_group_type: str
+    parameter_growth_limit: int
 
     def to_context_dict(self) -> dict[str, Any]:
         return {
@@ -50,6 +52,7 @@ class ProduceRouteDefinition:
             "produce_group_id": self.produce_group_id,
             "produce_group_name": self.produce_group_name,
             "produce_group_type": self.produce_group_type,
+            "parameter_growth_limit": self.parameter_growth_limit,
         }
 
 
@@ -192,6 +195,7 @@ def get_produce_route_definitions() -> dict[tuple[str, str], ProduceRouteDefinit
             produce_group_id=group_id,
             produce_group_name=group.name,
             produce_group_type=group.type,
+            parameter_growth_limit=int(getattr(produce, "idolCardParameterGrowthLimit", 0) or 0),
         )
     return definitions
 
@@ -520,3 +524,60 @@ def match_support_abilities(texts: Sequence[str], threshold: float = 74) -> list
 
 def match_support_events(texts: Sequence[str], threshold: float = 65) -> list[dict[str, Any]]:
     return _match_lines_against_catalog(texts, get_support_event_catalog(), threshold)
+
+
+# ---------------------------------------------------------------------------
+# Support card name catalog — matches OCR'd support card names from the
+# イベント tab yellow bars to database support card IDs.
+# ---------------------------------------------------------------------------
+
+@lru_cache(maxsize=1)
+def get_support_card_name_catalog() -> tuple[CatalogEntry, ...]:
+    """Build a catalog of support card names for OCR matching."""
+    db = GakumasDatabase_SupportCardDataUtils()
+    events_map = build_support_card_events()
+    entries: list[CatalogEntry] = []
+    for sc in db._data:
+        if not getattr(sc, "id", None):
+            continue
+        name_ja = getattr(sc, "name", "") or ""
+        loc = getattr(sc, "localization", None)
+        name_loc = getattr(loc, "name", "") if loc else ""
+        if not name_ja and not name_loc:
+            continue
+        lookup: set[str] = set()
+        if name_ja:
+            lookup.add(name_ja)
+        if name_loc:
+            lookup.add(name_loc)
+
+        sc_events = events_map.get(sc.id, [])
+        event_summaries = []
+        for ev in sc_events:
+            summary: dict[str, Any] = {
+                "number": ev.get("number", 0),
+                "title": ev.get("title", ""),
+                "descriptions": ev.get("descriptions", []),
+            }
+            if ev.get("title_ja"):
+                summary["title_ja"] = ev["title_ja"]
+            event_summaries.append(summary)
+
+        entries.append(
+            CatalogEntry(
+                kind="support_card",
+                id=sc.id,
+                display_name=name_loc or name_ja,
+                lookup_texts=_dedupe_strings(lookup),
+                metadata={
+                    "name_ja": name_ja,
+                    "events": event_summaries,
+                },
+            )
+        )
+    return tuple(entries)
+
+
+def match_support_card_names(texts: Sequence[str], threshold: float = 68) -> list[dict[str, Any]]:
+    """Match OCR texts against support card names. Used for the event tab."""
+    return _match_lines_against_catalog(texts, get_support_card_name_catalog(), threshold)

@@ -13,6 +13,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
+from .data import CHECKPOINTS_DIR
 from .model import MaskedPolicyValueNet
 from .service import build_env_from_config
 
@@ -202,7 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--gamma', type=float, default=0.99, help='Discount factor for return computation')
     parser.add_argument('--value-loss-weight', type=float, default=0.5)
     parser.add_argument('--hidden-dim', type=int, default=128)
-    parser.add_argument('--output', default='checkpoints/bc_pretrained.pt')
+    parser.add_argument('--output', default=str(CHECKPOINTS_DIR / 'bc_pretrained.pt'))
     parser.add_argument('--mode', choices=('exam', 'lesson'), default='exam')
     parser.add_argument('--scenario', default='nia_master')
     parser.add_argument('--stage-type', default=None, help='exam 模式下用于推断环境维度的考试阶段；lesson 模式下忽略')

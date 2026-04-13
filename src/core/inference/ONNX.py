@@ -190,7 +190,8 @@ class YoloModelFromONNX:
             iou_threshold: float,
             ratio: float,
             dw: float,
-            dh: float
+            dh: float,
+            agnostic_nms_groups: list[set[int]] | None = None,
     ) -> ONNXYoloResult:
         """
         后处理模型输出
@@ -198,6 +199,8 @@ class YoloModelFromONNX:
         :param results: 模型推理结果
         :param conf_threshold: 得分阈值
         :param iou_threshold: NMS阈值
+        :param agnostic_nms_groups: 跨类别NMS分组，每个 set 内的 class_id 视为同类进行NMS。
+                                    例如 [{0, 1, 2}] 表示 class 0/1/2 之间的重叠框会互相抑制。
         :return:
         """
         outputs = np.transpose(np.squeeze(results[0]))
@@ -237,22 +240,34 @@ class YoloModelFromONNX:
         nms_scores = []
         nms_class_ids = []
 
-        # 获取所有类别的唯一类别 ID
-        unique_class_ids = np.unique(class_ids)
+        # ── 构建 class_id → agnostic group 的映射 ──
+        agnostic_map: dict[int, int] = {}  # class_id → group index
+        if agnostic_nms_groups:
+            for gi, group in enumerate(agnostic_nms_groups):
+                for cid in group:
+                    agnostic_map[cid] = gi
 
-        for class_id in unique_class_ids:
-            # 获取当前类别的所有框、分数和类别ID
-            class_boxes = [boxes[i] for i in range(len(boxes)) if class_ids[i] == class_id]
-            class_scores = [scores[i] for i in range(len(scores)) if class_ids[i] == class_id]
-            class_class_ids = [class_ids[i] for i in range(len(class_ids)) if class_ids[i] == class_id]
+        # ── 按 NMS 组分类：agnostic 组内合并，其余按原类别 ──
+        # key: ("agnostic", group_idx) 或 ("class", class_id)
+        grouped: dict[tuple, list[int]] = {}
+        for i, cid in enumerate(class_ids):
+            if cid in agnostic_map:
+                key = ("agnostic", agnostic_map[cid])
+            else:
+                key = ("class", int(cid))
+            grouped.setdefault(key, []).append(i)
 
-            # 应用 NMS
-            indices = cv2.dnn.NMSBoxes(class_boxes, class_scores, conf_threshold, iou_threshold)
+        for key, indices_in_group in grouped.items():
+            group_boxes = [boxes[i] for i in indices_in_group]
+            group_scores = [scores[i] for i in indices_in_group]
+            group_class_ids = [class_ids[i] for i in indices_in_group]
 
-            # 保存当前类别的 NMS 结果
-            nms_boxes.extend([class_boxes[i] for i in indices])
-            nms_scores.extend([class_scores[i] for i in indices])
-            nms_class_ids.extend([class_class_ids[i] for i in indices])
+            # 应用 NMS（agnostic 组内不同类别的框也会互相抑制）
+            keep = cv2.dnn.NMSBoxes(group_boxes, group_scores, conf_threshold, iou_threshold)
+
+            nms_boxes.extend([group_boxes[i] for i in keep])
+            nms_scores.extend([group_scores[i] for i in keep])
+            nms_class_ids.extend([group_class_ids[i] for i in keep])
 
         return ONNXYoloResult(
             np.array(nms_boxes),
@@ -262,13 +277,15 @@ class YoloModelFromONNX:
             input_image
         )
 
-    def __call__(self, img: np.ndarray, conf_threshold: float = 0.5, iou_threshold: float = 0.5) -> ONNXYoloResult:
+    def __call__(self, img: np.ndarray, conf_threshold: float = 0.5, iou_threshold: float = 0.5,
+                 agnostic_nms_groups: list[set[int]] | None = None) -> ONNXYoloResult:
         input_tensor, ratio, dw, dh = self._preprocess(img)
         outputs = DMLManager.run(
             self._engine,
             {self._model_input_name: input_tensor}
         )
-        return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh)
+        return self._postprocess(img, outputs, conf_threshold, iou_threshold, ratio, dw, dh,
+                                 agnostic_nms_groups=agnostic_nms_groups)
 
 class YoloClassifyModelFromONNX:
     _model_meta: ONNXYoloModelMeta

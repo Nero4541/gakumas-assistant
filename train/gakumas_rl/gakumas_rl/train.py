@@ -30,7 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument('--rollout-steps', type=int, default=512)
     parser.add_argument('--learning-rate', type=float, default=1e-4)
     parser.add_argument('--device', default='cpu')
-    parser.add_argument('--run-dir', default='runs')
+    parser.add_argument('--run-dir', default='')
     parser.add_argument('--auto-resume', action='store_true')
     parser.add_argument('--rllib-num-workers', type=int, default=0)
     parser.add_argument('--rllib-num-envs-per-worker', type=int, default=1)

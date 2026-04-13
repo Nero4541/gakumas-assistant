@@ -651,12 +651,21 @@ def build_support_card_skill_descriptions() -> dict[str, list[dict]]:
                     source = skill.localization if skill.localization else skill
                     desc_list = getattr(source, "produceDescriptions", [])
                     combined = _concat_produce_descriptions(desc_list)
-                    if combined:
-                        levels.append({
+                    # Also collect Japanese description for OCR matching
+                    combined_ja = ""
+                    if getattr(skill, "localization", None):
+                        combined_ja = _concat_produce_descriptions(
+                            getattr(skill, "produceDescriptions", [])
+                        )
+                    if combined or combined_ja:
+                        entry_dict: dict[str, Any] = {
                             "cardLevel": sl.supportCardLevel or 1,
                             "skillLevel": sl.produceSkillLevel or 1,
-                            "description": combined,
-                        })
+                            "description": combined or combined_ja,
+                        }
+                        if combined_ja:
+                            entry_dict["description_ja"] = combined_ja
+                        levels.append(entry_dict)
                 if levels:
                     slots.append({"order": order, "levels": levels})
         if slots:
@@ -974,14 +983,18 @@ def build_support_card_events() -> dict[str, list[dict]]:
 
         # 事件标题
         title = ""
+        title_ja = ""
         if story_id:
             story = story_db.get_by_id(story_id)
             if story:
                 loc = getattr(story, "localization", None)
                 if loc and getattr(loc, "title", None):
                     title = loc.title
-                elif getattr(story, "title", None):
-                    title = story.title
+                # Japanese title from base (non-localized) object
+                if getattr(story, "title", None):
+                    title_ja = story.title
+                if not title:
+                    title = title_ja
 
         # 事件效果描述：将所有 token 拼接为单一字符串（ProduceItem 类型用本地化名称替换）
         descriptions = []
@@ -991,12 +1004,15 @@ def build_support_card_events() -> dict[str, list[dict]]:
             if concat:
                 descriptions = [concat]
 
-        result[card_id].append({
+        event_entry: dict[str, Any] = {
             "number": number,
             "supportCardLevel": unlock_level,
             "title": title or f"イベント{number}",
             "descriptions": descriptions,
-        })
+        }
+        if title_ja:
+            event_entry["title_ja"] = title_ja
+        result[card_id].append(event_entry)
 
     # 按 number 排序
     for k in result:

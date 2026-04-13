@@ -147,6 +147,25 @@ class DebugTools(metaclass=SingletonMeta):
         with self._lock:
             self._elements.append(DebugBox(x=x, y=y, w=w, h=h, **kwargs))
 
+    # add_rect 是 add_box 的别名，保持向后兼容
+    add_rect = add_box
+
+    def add_text(self, x: int, y: int, text: str, **kwargs):
+        """绘制调试文本，使用 DebugBox 实现（label 即文本内容）"""
+        # 将 font_size 传入 DebugBox，通过 label 渲染文本
+        font_size = kwargs.pop("font_size", 16)
+        color = kwargs.pop("color", (255, 255, 255))
+        duration = kwargs.pop("duration", 5.0)
+        # 估算文本宽度，避免 label 被截断
+        est_width = max(len(text) * font_size, 200)
+        with self._lock:
+            self._elements.append(DebugBox(
+                x=x, y=y, w=x + est_width, h=y + font_size + 4,
+                label=text, font_size=font_size, text_color=color,
+                color=(0, 0, 0), alpha=0.3, thickness=0,
+                duration=duration, **kwargs,
+            ))
+
     def add_line(self, start_x: int, start_y: int, end_w: int, end_h: int, **kwargs):
         """绘制调试线 (start_x, start_y, end_x, end_y)"""
         with self._lock:

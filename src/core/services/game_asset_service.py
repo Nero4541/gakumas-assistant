@@ -1,16 +1,13 @@
 """
 游戏资源下载服务
 
-通过 GkmasObjectManager (vendor/GkmasObjectManager git 子模块) 从游戏服务器获取：
-  - 支援卡方形缩略图
-  - 道具图片
-  - 技能卡图片
-
+通过 GkmasObjectManager从游戏服务器获取游戏资源素材
 下载采用线程池并行加速，已存在的文件自动跳过（可通过 force=True 强制重新下载）。
 下载完成后可触发 CLIP 训练，将新图片导入记忆库（已学习条目自动跳过）。
 """
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -36,20 +33,23 @@ _download_lock = Lock()
 
 GAME_ASSETS_DIR = "game_assets"
 SUPPORT_CARD_SUBDIR = "support_cards"
+IDOL_CARD_SUBDIR = "idol_cards"
 ITEM_SUBDIR = "items"
 SKILL_CARD_SUBDIR = "skill_cards"
 
 # GkmasObjectManager manifest.search() 使用 re.match（自动锚定行首），资源名含 .unity3d 后缀
 SUPPORT_CARD_THUMB_PATTERN = r"img_general_csprt.*thumb-square"
+IDOL_CARD_THUMB_PATTERN = r"img_general_cidol.*thumb-square"
 SUPPORT_CARD_FULL_PATTERN = r"img_general_csprt-\d+-\d{4}_full\."
 ITEM_THUMB_PATTERN = r"img_general_item_"
 PITEM_THUMB_PATTERN = r"img_general_pitem_"
 SKILL_CARD_THUMB_PATTERN = r"img_general_skillcard_"
 
 SUPPORT_CARD_FULL_SUBDIR = "support_cards_full"
+IDOL_CARD_FULL_SUBDIR = "idol_cards_full"
 
 # 并行下载线程数（避免对服务端造成过大压力）
-_DOWNLOAD_WORKERS = min(8, (os.cpu_count() or 4))
+_DOWNLOAD_WORKERS = min(2, os.cpu_count())
 
 
 # ---------------------------------------------------------------------------
@@ -101,6 +101,17 @@ def has_support_card_image(card_id: str) -> bool:
     return get_support_card_image_path(card_id) is not None
 
 
+def get_idol_card_image_path(card_id: str) -> Optional[Path]:
+    """若偶像卡游戏资源缩略图已缓存，返回本地路径；否则返回 None。"""
+    path = _get_asset_subdir(IDOL_CARD_SUBDIR) / f"{card_id}.png"
+    return path if path.exists() else None
+
+
+def has_idol_card_image(card_id: str) -> bool:
+    """判断指定偶像卡的游戏资源缩略图是否已缓存。"""
+    return get_idol_card_image_path(card_id) is not None
+
+
 def get_support_card_full_image_path(card_id: str) -> Optional[Path]:
     """若支援卡全尺寸游戏资源图片已缓存，返回本地路径；否则返回 None。"""
     path = _get_asset_subdir(SUPPORT_CARD_FULL_SUBDIR) / f"{card_id}.png"
@@ -110,6 +121,17 @@ def get_support_card_full_image_path(card_id: str) -> Optional[Path]:
 def has_support_card_full_image(card_id: str) -> bool:
     """判断指定支援卡的全尺寸图片是否已缓存。"""
     return get_support_card_full_image_path(card_id) is not None
+
+
+def get_idol_card_full_image_path(card_id: str, skin: int = 0) -> Optional[Path]:
+    """若偶像卡全尺寸图片已缓存，返回本地路径；否则返回 None。"""
+    path = _get_asset_subdir(IDOL_CARD_FULL_SUBDIR) / f"{card_id}_{skin}.png"
+    return path if path.exists() else None
+
+
+def has_idol_card_full_image(card_id: str, skin: int = 0) -> bool:
+    """判断指定偶像卡的全尺寸图片是否已缓存。"""
+    return get_idol_card_full_image_path(card_id, skin) is not None
 
 
 def get_item_image_path(item_id: str) -> Optional[Path]:
@@ -426,6 +448,25 @@ def download_support_card_images(
     )
 
 
+def download_idol_card_images(
+    card_db_list: list | None = None,
+    force: bool = False,
+) -> bool:
+    """下载偶像卡缩略图到 game_assets/idol_cards。"""
+    return _download_typed_assets(
+        pattern=IDOL_CARD_THUMB_PATTERN,
+        subdir=IDOL_CARD_SUBDIR,
+        name_transform=lambda bare: re.sub(
+            r"_\d+-thumb-square$",
+            "",
+            bare.replace("img_general_", ""),
+        ),
+        db_list=card_db_list,
+        force=force,
+        label="偶像卡缩略图",
+    )
+
+
 def download_item_images(
     item_db_list: list | None = None,
     force: bool = False,
@@ -550,6 +591,41 @@ def download_single_support_card_full_image(card_id: str, asset_id: str) -> bool
         return False
     except Exception as exc:
         logger.debug(f"[GameAsset] Failed single full image for {card_id}: {exc}")
+        return False
+
+
+def download_single_idol_card_full_image(card_id: str, asset_id: str, skin: int = 0) -> bool:
+    """按需下载单张偶像卡的全尺寸图片。"""
+    target = _get_asset_subdir(IDOL_CARD_FULL_SUBDIR) / f"{card_id}_{skin}.png"
+    if target.exists():
+        return True
+
+    if not _is_gom_available():
+        return False
+
+    try:
+        import GkmasObjectManager as gom
+
+        manifest = gom.fetch()
+        pattern = rf"img_general_{re.escape(asset_id)}_{skin}-full\."
+        objects = manifest.search(pattern)
+        if not objects:
+            logger.warning(
+                f"[GameAsset] No idol full image found for {card_id} "
+                f"(assetId={asset_id}, skin={skin})"
+            )
+            return False
+
+        obj = objects[0]
+        with tempfile.TemporaryDirectory() as tmp:
+            obj.download(path=tmp, categorize=False, image_format="PNG")
+            for f in Path(tmp).rglob("*.png"):
+                shutil.move(str(f), str(target))
+                logger.success(f"[GameAsset] Downloaded idol full image for {card_id} skin={skin}")
+                return True
+        return False
+    except Exception as exc:
+        logger.debug(f"[GameAsset] Failed idol full image for {card_id}: {exc}")
         return False
 
 
@@ -738,6 +814,23 @@ def download_support_card_images_async(
     return thread
 
 
+def download_idol_card_images_async(
+    card_db_list: list | None = None,
+    force: bool = False,
+    clip_manager: "CLIPServiceManager | None" = None,
+) -> Thread:
+    """在后台线程异步下载偶像卡缩略图，并在完成后触发 CLIP 训练。"""
+
+    def _worker():
+        download_idol_card_images(card_db_list, force)
+        if clip_manager is not None:
+            train_clip_from_game_assets(clip_manager, IDOL_CARD_SUBDIR)
+
+    thread = Thread(target=_worker, daemon=True)
+    thread.start()
+    return thread
+
+
 def download_item_images_async(
     item_db_list: list | None = None,
     force: bool = False,
@@ -818,6 +911,7 @@ def train_clip_from_game_assets(
     import cv2
 
     from src.utils.game_database_tools import (
+        GakumasDatabase_IdolCardDataUtils,
         GakumasDatabase_ItemDataUtils,
         GakumasDatabase_ProduceCardDataUtils,
         GakumasDatabase_SupportCardDataUtils,
@@ -838,6 +932,18 @@ def train_clip_from_game_assets(
             for e in (db.get_all_item() or [])
             if getattr(e, 'assetId', None)
         }
+        def _get_payload(file_stem: str):
+            return db.get_by_id(file_stem) or _asset_id_fallback.get(file_stem)
+
+    elif subdir == IDOL_CARD_SUBDIR:
+        clip_svc = clip_manager.idol_card_clip
+        db = GakumasDatabase_IdolCardDataUtils()
+        _asset_id_fallback = {
+            getattr(e, 'assetId', None): e
+            for e in (db.get_all_item() or [])
+            if getattr(e, 'assetId', None)
+        }
+
         def _get_payload(file_stem: str):
             return db.get_by_id(file_stem) or _asset_id_fallback.get(file_stem)
 
@@ -870,11 +976,12 @@ def train_clip_from_game_assets(
         return 0
 
     added = 0
+    missing_entries: list[str] = []
     for png_path in png_files:
         file_stem = png_path.stem  # 文件名去 .png
         payload = _get_payload(file_stem)
         if payload is None:
-            logger.debug(f"[GameAsset CLIP] No DB entry for {file_stem}, skipping")
+            missing_entries.append(file_stem)
             continue
 
         image = cv2.imread(str(png_path))
@@ -889,6 +996,14 @@ def train_clip_from_game_assets(
                 logger.debug(f"[GameAsset CLIP] Trained: {file_stem}")
         except Exception as exc:
             logger.debug(f"[GameAsset CLIP] Error training {file_stem}: {exc}")
+
+    if missing_entries:
+        sample = ", ".join(missing_entries[:8])
+        logger.debug(
+            f"[GameAsset CLIP] {subdir}: skipped {len(missing_entries)} cache files "
+            f"without current DB entry"
+            + (f" (samples: {sample})" if sample else "")
+        )
 
     logger.info(
         f"[GameAsset CLIP] {subdir}: {added} new entries added "
@@ -917,4 +1032,3 @@ def train_clip_from_game_assets_async(
     )
     thread.start()
     return thread
-

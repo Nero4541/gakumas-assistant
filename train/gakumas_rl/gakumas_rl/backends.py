@@ -12,6 +12,7 @@ import importlib.util
 import hashlib
 import json
 
+from .data import RUNS_DIR
 from .service import build_env_from_config
 from .auto_training import (
     AutoTrainingConfig,
@@ -40,7 +41,7 @@ class TrainingSpec:
     rollout_steps: int = 512
     learning_rate: float = 3e-4
     device: str = 'cpu'
-    run_dir: str | Path = 'train/gakumas_rl/runs'
+    run_dir: str | Path = ''
     auto_resume: bool = False
     seed: int | None = None
     rllib_num_workers: int = 0
@@ -184,7 +185,8 @@ def _spec_run_dir(spec: TrainingSpec) -> Path:
     mode = str(spec.env_config.get('mode') or 'exam')
     backend = spec.backend
     suffix = hashlib.sha1(json.dumps(spec.env_config, sort_keys=True).encode('utf-8')).hexdigest()[:10]
-    run_dir = Path(spec.run_dir) / f'{backend}_{mode}_{scenario}_{suffix}'
+    base_dir = Path(spec.run_dir) if spec.run_dir else RUNS_DIR
+    run_dir = base_dir / f'{backend}_{mode}_{scenario}_{suffix}'
     run_dir.mkdir(parents=True, exist_ok=True)
     return run_dir
 

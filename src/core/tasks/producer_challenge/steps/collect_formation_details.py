@@ -16,7 +16,7 @@ from src.core.tasks.producer_challenge.catalog import (
     match_memory_abilities,
     match_memory_tags,
     match_support_abilities,
-    match_support_events,
+    match_support_card_names,
 )
 from src.core.tasks.producer_challenge.steps.base import ProduceStep
 from src.core.tasks.producer_challenge.ui import (
@@ -49,6 +49,7 @@ _ITEM_LABELS = frozenset({BaseUILabels.SPECIAL_ITEMS})
 _ALL_CARD_ITEM_LABELS = _SKILL_CARD_LABELS | _ITEM_LABELS
 _CLIP_BOX_MIN_SIZE = 40
 _CLIP_BOX_OVERLAP_THRESHOLD = 0.6
+_SHOWCASE_DRIFT_TOLERANCE = 0.05  # fraction of frame height
 
 _TAB_CARD_ITEM = ProduceText.TAB_CARD_ITEM
 _TAB_ABILITY = ProduceText.TAB_ABILITY
@@ -56,7 +57,7 @@ _TAB_EVENT = ProduceText.TAB_EVENT
 _TAB_FUZZ = 65
 _SECTION_FUZZ = 70
 _MAX_SCROLL_ROUNDS = 10
-_NO_PROGRESS_LIMIT = 2
+_NO_PROGRESS_LIMIT = 1          # 滚动后画面未变化1次即停止
 _SCROLL_SSIM_THRESHOLD = 0.992
 _CARD_SOURCE_HEADERS = {
     "initial_owned": (ProduceText.OWNED_AT_START, ProduceText.OWNED_AT_START_SHORT),
@@ -112,17 +113,38 @@ class CollectFormationDetailsStep(ProduceStep):
 
         if self._click_tab(app, _TAB_EVENT, tab_index=2):
             event_texts = self._collect_tab_with_scroll(app, section_label="formation:event")
-            matched_events = match_support_events(event_texts)
-            event_details = {
-                "raw_texts": event_texts,
-                "matched_entries": matched_events,
-                "event_ids": self._collect_entry_ids(matched_events),
+            matched_cards = match_support_card_names(event_texts)
+            support_card_events: list[dict[str, Any]] = []
+            for mc in matched_cards:
+                card_events = mc.get("metadata", {}).get("events", [])
+                support_card_events.append({
+                    "id": mc["id"],
+                    "name": mc["name"],
+                    "name_ja": mc.get("metadata", {}).get("name_ja", ""),
+                    "events": card_events,
+                })
+            event_details: dict[str, Any] = {
+                "support_cards": support_card_events,
+                "support_card_ids": [sc["id"] for sc in support_card_events],
             }
             details["tabs"]["event"] = event_details
             details["events"] = event_details
-            logger.info(f"編成詳細-イベント 收集到 {len(event_texts)} 条文本")
+            logger.info(
+                f"編成詳細-イベント 识别支援卡 {len(support_card_events)} 张: "
+                + ", ".join(sc["name_ja"] or sc["name"] for sc in support_card_events)
+            )
         else:
             logger.warning("切换到イベント 子页签失败")
+
+        # Supplement P-items that CLIP couldn't identify, using the game DB
+        card_details = details.get("cards_and_items")
+        if card_details is not None:
+            support_card_ids = (
+                details.get("events", {}).get("support_card_ids")
+            )
+            self._supplement_produce_items_from_db(
+                card_details, ctx, support_card_ids=support_card_ids,
+            )
 
         memory_summary_entries = self._build_memory_fallback(
             details.get("cards_and_items", {}),
@@ -207,7 +229,6 @@ class CollectFormationDetailsStep(ProduceStep):
 
         all_texts: list[str] = []
         seen: set[str] = set()
-        no_progress_rounds = 0
 
         for scroll_round in range(_MAX_SCROLL_ROUNDS):
             frame = app.latest_frame
@@ -215,13 +236,11 @@ class CollectFormationDetailsStep(ProduceStep):
                 sleep(0.4)
                 continue
 
-            new_found = False
             for text in self._extract_unique_texts(frame):
                 if text in seen:
                     continue
                 seen.add(text)
                 all_texts.append(text)
-                new_found = True
 
             if scroll_round == _MAX_SCROLL_ROUNDS - 1:
                 break
@@ -247,21 +266,13 @@ class CollectFormationDetailsStep(ProduceStep):
             )
 
             next_frame = app.latest_frame
-            frame_unchanged = False
             if next_frame is not None and next_frame.size > 0:
                 next_crop = self._crop_scroll_area(next_frame)
                 if prev_crop.shape == next_crop.shape:
-                    frame_unchanged = compute_ssim_score(prev_crop, next_crop) > _SCROLL_SSIM_THRESHOLD
-
-            if not new_found and frame_unchanged:
-                no_progress_rounds += 1
-                logger.debug(f"[{section_label}] 本轮无新增且滚动区域未变化 ({no_progress_rounds}/{_NO_PROGRESS_LIMIT})")
-            else:
-                no_progress_rounds = 0
-
-            if no_progress_rounds >= _NO_PROGRESS_LIMIT:
-                logger.debug(f"[{section_label}] 连续无进展，结束滚动采集")
-                break
+                    if compute_ssim_score(prev_crop, next_crop) > _SCROLL_SSIM_THRESHOLD:
+                        # 滚动后画面未变化，说明已到底，立即停止
+                        logger.debug(f"[{section_label}] 滚动后画面未变化，已到底")
+                        break
 
         return all_texts
 
@@ -280,7 +291,7 @@ class CollectFormationDetailsStep(ProduceStep):
         seen_clip_ids: set[str] = set()
         all_texts: list[str] = []
         seen_texts: set[str] = set()
-        no_progress_rounds = 0
+        showcase_center: tuple[float, float] | None = None
 
         clip_manager = getattr(app, "clip_manager", None)
 
@@ -290,15 +301,12 @@ class CollectFormationDetailsStep(ProduceStep):
                 sleep(0.4)
                 continue
 
-            new_found = False
-
             # ---- CLIP identification of visible card/item icons ----
             if clip_manager is not None:
-                new_clip = self._clip_identify_visible_cards(
+                _new_clip, showcase_center = self._clip_identify_visible_cards(
                     app, frame, clip_manager, clip_entries, seen_clip_ids,
+                    showcase_center,
                 )
-                if new_clip:
-                    new_found = True
 
             # ---- OCR text collection (same as _collect_tab_with_scroll) ----
             for text in self._extract_unique_texts(frame):
@@ -306,7 +314,6 @@ class CollectFormationDetailsStep(ProduceStep):
                     continue
                 seen_texts.add(text)
                 all_texts.append(text)
-                new_found = True
 
             if scroll_round == _MAX_SCROLL_ROUNDS - 1:
                 break
@@ -327,26 +334,13 @@ class CollectFormationDetailsStep(ProduceStep):
             )
 
             next_frame = app.latest_frame
-            frame_unchanged = False
             if next_frame is not None and next_frame.size > 0:
                 next_crop = self._crop_scroll_area(next_frame)
                 if prev_crop.shape == next_crop.shape:
-                    frame_unchanged = (
-                        compute_ssim_score(prev_crop, next_crop) > _SCROLL_SSIM_THRESHOLD
-                    )
-
-            if not new_found and frame_unchanged:
-                no_progress_rounds += 1
-                logger.debug(
-                    f"[{section_label}] 无新增且画面未变 "
-                    f"({no_progress_rounds}/{_NO_PROGRESS_LIMIT})"
-                )
-            else:
-                no_progress_rounds = 0
-
-            if no_progress_rounds >= _NO_PROGRESS_LIMIT:
-                logger.debug(f"[{section_label}] 连续无进展，结束滚动采集")
-                break
+                    if compute_ssim_score(prev_crop, next_crop) > _SCROLL_SSIM_THRESHOLD:
+                        # 滚动后画面未变化，说明已到底，立即停止
+                        logger.debug(f"[{section_label}] 滚动后画面未变化，已到底")
+                        break
 
         logger.info(
             f"[{section_label}] CLIP identified {len(clip_entries)} entries, "
@@ -361,22 +355,34 @@ class CollectFormationDetailsStep(ProduceStep):
         clip_manager: Any,
         clip_entries: list[dict[str, Any]],
         seen_clip_ids: set[str],
-    ) -> bool:
+        showcase_center: tuple[float, float] | None = None,
+    ) -> tuple[bool, tuple[float, float] | None]:
         """Run YOLO detection + CLIP retrieval on visible card/item icons.
 
-        Mutates *clip_entries* and *seen_clip_ids* in place; returns ``True``
-        if any new cards were identified this round.
+        When CLIP retrieval misses, falls back to OCR on the card image and
+        triggers auto-learning so the card is recognised by CLIP next time.
+
+        Mutates *clip_entries* and *seen_clip_ids* in place; returns
+        ``(found_new, showcase_center)`` where *showcase_center* is the cached
+        center of the showcase card (or ``None`` if not yet detected).
         """
         results = app.latest_results
         if results is None:
-            return False
+            return False, showcase_center
 
         card_item_boxes = results.filter_by_labels(list(_ALL_CARD_ITEM_LABELS))
         if not card_item_boxes:
-            return False
+            return False, showcase_center
 
         h_frame, w_frame = frame.shape[:2]
         found_new = False
+        unmatched_cards: list[dict[str, Any]] = []
+        drift_tol = h_frame * _SHOWCASE_DRIFT_TOLERANCE
+
+        # Anchor check: detect address bar above / button below to identify
+        # the showcase display area (not a grid card).
+        anchors_above = results.filter_by_labels([BaseUILabels.CURRENT_LOCATION])
+        anchors_below = results.filter_by_labels([BaseUILabels.BUTTON])
 
         for box in card_item_boxes:
             x1 = max(0, int(box.x))
@@ -386,6 +392,22 @@ class CollectFormationDetailsStep(ProduceStep):
             bw, bh = x2 - x1, y2 - y1
             if bw < _CLIP_BOX_MIN_SIZE or bh < _CLIP_BOX_MIN_SIZE:
                 continue
+
+            cx, cy = float(box.cx), float(box.cy)
+
+            # Fast path: match against cached showcase position
+            if showcase_center is not None:
+                if (abs(cx - showcase_center[0]) < drift_tol
+                        and abs(cy - showcase_center[1]) < drift_tol):
+                    continue
+
+            # Slow path: anchor-based detection for first occurrence
+            if showcase_center is None:
+                has_bar_above = any(int(a.h) <= y1 + bh for a in anchors_above)
+                has_btn_below = any(int(b.y) >= y2 - bh for b in anchors_below)
+                if has_bar_above and has_btn_below:
+                    showcase_center = (cx, cy)
+                    continue
 
             card_img = frame[y1:y2, x1:x2]
             if card_img.size == 0:
@@ -397,7 +419,9 @@ class CollectFormationDetailsStep(ProduceStep):
                 matched = clip_manager.skill_card_clip.retrieve(card_img)
                 entry_kind = "produce_card"
             elif box.label in _ITEM_LABELS:
-                matched = clip_manager.item_clip.retrieve(card_img)
+                produce_item_clip = getattr(clip_manager, "produce_item_clip", None)
+                if produce_item_clip is not None:
+                    matched = produce_item_clip.retrieve(card_img)
                 entry_kind = "produce_item"
 
             if matched is not None and hasattr(matched, "id"):
@@ -422,13 +446,264 @@ class CollectFormationDetailsStep(ProduceStep):
                         f"(id={matched.id}) at ({box.cx},{box.cy})"
                     )
             else:
+                # --- OCR fallback on thumbnail ---
+                ocr_entry = CollectFormationDetailsStep._ocr_fallback_and_learn(
+                    app, card_img, entry_kind, clip_manager,
+                )
+                if ocr_entry is not None and ocr_entry["id"] not in seen_clip_ids:
+                    seen_clip_ids.add(ocr_entry["id"])
+                    ocr_entry["yolo_label"] = box.label
+                    ocr_entry["position"] = (box.cx, box.cy)
+                    clip_entries.append(ocr_entry)
+                    found_new = True
+                    _debugger.add_box(
+                        x1, y1, x2, y2,
+                        label=f"OCR→CLIP:{ocr_entry['name'][:10]}",
+                        color=(0, 200, 255), alpha=0.4, duration=3.0,
+                    )
+                else:
+                    # Collect for click + detail-OCR fallback
+                    unmatched_cards.append({
+                        "box": box,
+                        "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                        "card_img": card_img,
+                        "entry_kind": entry_kind,
+                    })
+
+        # --- Second pass: click unmatched skill cards for detail OCR ---
+        # P-items are skipped here (detail OCR layout differs); they will be
+        # supplemented from the game database instead.
+        for info in unmatched_cards:
+            box = info["box"]
+            if info["entry_kind"] == "produce_item":
                 _debugger.add_box(
-                    x1, y1, x2, y2,
-                    label=f"CLIP:unmatched",
+                    info["x1"], info["y1"], info["x2"], info["y2"],
+                    label="P-item:DB补全",
+                    color=(0, 100, 255), alpha=0.25, duration=2.0,
+                )
+                continue
+            detail_entry = CollectFormationDetailsStep._click_and_ocr_card_detail(
+                app, box.cx, box.cy, info["entry_kind"],
+                info["card_img"], clip_manager,
+            )
+            if detail_entry is not None and detail_entry["id"] not in seen_clip_ids:
+                seen_clip_ids.add(detail_entry["id"])
+                detail_entry["yolo_label"] = box.label
+                detail_entry["position"] = (box.cx, box.cy)
+                clip_entries.append(detail_entry)
+                found_new = True
+                _debugger.add_box(
+                    info["x1"], info["y1"], info["x2"], info["y2"],
+                    label=f"Detail:{detail_entry['id'][:14]}",
+                    color=(255, 200, 0), alpha=0.4, duration=3.0,
+                )
+            else:
+                _debugger.add_box(
+                    info["x1"], info["y1"], info["x2"], info["y2"],
+                    label="CLIP:unmatched",
                     color=(0, 100, 255), alpha=0.25, duration=2.0,
                 )
 
-        return found_new
+        return found_new, showcase_center
+
+    # ------------------------------------------------------------------
+    # OCR fallback helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _ocr_fallback_and_learn(
+        app: "AppProcessor",
+        card_img: np.ndarray,
+        entry_kind: str | None,
+        clip_manager: Any,
+    ) -> dict[str, Any] | None:
+        """OCR the card image, match against catalog, and auto-learn into CLIP.
+
+        Returns a ``clip_entries``-compatible dict on success, or ``None``.
+        """
+        try:
+            ocr_result = ocr_service.ocr(card_img)
+        except Exception:  # noqa: BLE001
+            return None
+
+        texts = [
+            item.text.strip()
+            for item in ocr_result.results
+            if item.text.strip() and (item.confidence is None or item.confidence >= 0.25)
+        ]
+        if not texts:
+            return None
+
+        catalog_match = match_card_and_item_entries(texts, threshold=72)
+        if entry_kind is not None:
+            catalog_match = [e for e in catalog_match if e["kind"] == entry_kind]
+        if not catalog_match:
+            return None
+
+        # Pick the best scoring catalog match
+        catalog_match.sort(key=lambda e: float(e.get("score") or 0), reverse=True)
+        best = catalog_match[0]
+        card_id = str(best["id"])
+        card_name = str(best.get("name") or card_id)
+
+        # Auto-learn into CLIP memory
+        CollectFormationDetailsStep._learn_clip_from_ocr(
+            app, card_img, card_id, best["kind"], clip_manager,
+        )
+
+        logger.info(
+            f"[formation] CLIP未命中 → OCR回退成功: {card_name} "
+            f"(id={card_id}, kind={best['kind']}, score={best.get('score')})"
+        )
+
+        return {
+            "id": card_id,
+            "name": card_name,
+            "kind": best["kind"],
+            "source": "ocr_learned",
+        }
+
+    @staticmethod
+    def _learn_clip_from_ocr(
+        app: "AppProcessor",
+        card_img: np.ndarray,
+        card_id: str,
+        kind: str,
+        clip_manager: Any,
+    ) -> None:
+        """Register the card image into CLIP memory so future hits are instant."""
+        try:
+            if kind == "produce_card":
+                from src.utils.game_database_tools import GakumasDatabase_ProduceCardDataUtils
+                payload = GakumasDatabase_ProduceCardDataUtils().get_by_id(f"{card_id}.0")
+                if payload is None:
+                    return
+                skill_card_clip = getattr(clip_manager, "skill_card_clip", None)
+                if skill_card_clip is not None:
+                    skill_card_clip.add_to_memory(card_img, payload, similarity_threshold=0.98)
+                    logger.debug(f"[formation] CLIP自动学习 produce_card: {card_id}")
+            elif kind == "produce_item":
+                from src.utils.game_database_tools import GakumasDatabase_ProduceItemDataUtils
+                payload = GakumasDatabase_ProduceItemDataUtils().get_by_id(str(card_id))
+                if payload is None:
+                    return
+                produce_item_clip = getattr(clip_manager, "produce_item_clip", None)
+                if produce_item_clip is not None:
+                    produce_item_clip.add_to_memory(card_img, payload, similarity_threshold=0.98)
+                    logger.debug(f"[formation] CLIP自动学习 produce_item: {card_id}")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(f"[formation] CLIP自动学习失败 {kind}:{card_id}: {exc}")
+
+    @staticmethod
+    def _click_and_ocr_card_detail(
+        app: "AppProcessor",
+        cx: float,
+        cy: float,
+        entry_kind: str | None,
+        card_img: np.ndarray,
+        clip_manager: Any,
+    ) -> dict[str, Any] | None:
+        """Click a card thumbnail and OCR the detail area to identify it.
+
+        After clicking, uses the topmost YOLO-detected card/item icon as an
+        anchor (the detail-area card icon), then OCRs the rectangular region
+        to its right (where the card name is displayed).  Falls back to a
+        fixed region when no YOLO anchor is found.
+        """
+        app.device.click(cx, cy, "formation-card-detail")
+        sleep(0.4)
+        app.game_utils.wait_frame_stable(stable_count=1, timeout=2.0)
+
+        frame = app.latest_frame
+        results = app.latest_results
+        if frame is None or frame.size == 0:
+            return None
+
+        h, w = frame.shape[:2]
+
+        # Find the detail card icon: topmost YOLO card/item box in the
+        # top portion of the screen (detail area above the grid).
+        anchor_box = None
+        top_limit = h * 0.28
+        if results is not None:
+            detail_boxes = results.filter_by_labels(list(_ALL_CARD_ITEM_LABELS))
+            for box in sorted(detail_boxes, key=lambda b: b.y):
+                # Both top and bottom edges must be within the detail area
+                if box.y < top_limit and box.h < top_limit:
+                    anchor_box = box
+                    break
+
+        if anchor_box is not None:
+            # OCR the region to the right of the card icon
+            # w axis → right edge of icon to 80% of screen width
+            # y axis → icon top to icon bottom
+            ocr_x1 = min(w, int(anchor_box.w))
+            ocr_y1 = max(0, int(anchor_box.y))
+            ocr_x2 = int(w * 0.80)
+            ocr_y2 = min(h, int(anchor_box.h))
+        else:
+            # Fallback: fixed region for the detail card name area
+            ocr_x1 = int(w * 0.16)
+            ocr_y1 = int(h * 0.04)
+            ocr_x2 = int(w * 0.65)
+            ocr_y2 = int(h * 0.14)
+
+        detail_region = frame[ocr_y1:ocr_y2, ocr_x1:ocr_x2]
+        if detail_region.size == 0:
+            return None
+
+        _debugger.add_box(
+            ocr_x1, ocr_y1, ocr_x2, ocr_y2,
+            label="detail-ocr-region",
+            color=(255, 255, 0), alpha=0.3, duration=2.0,
+        )
+
+        try:
+            ocr_result = ocr_service.ocr(detail_region)
+        except Exception:  # noqa: BLE001
+            return None
+
+        # Collect texts sorted by confidence (highest first)
+        candidates = [
+            (item.text.strip(), item.confidence or 0)
+            for item in ocr_result.results
+            if item.text.strip() and (item.confidence is None or item.confidence >= 0.4)
+        ]
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        texts = [c[0] for c in candidates]
+
+        catalog_match = match_card_and_item_entries(texts, threshold=72)
+        if entry_kind is not None:
+            filtered = [e for e in catalog_match if e["kind"] == entry_kind]
+            if filtered:
+                catalog_match = filtered
+        if not catalog_match:
+            logger.debug(f"[formation] 详情OCR文本无法匹配: {texts}")
+            return None
+
+        catalog_match.sort(key=lambda e: float(e.get("score") or 0), reverse=True)
+        best = catalog_match[0]
+        card_id = str(best["id"])
+
+        # Auto-learn the original thumbnail into CLIP
+        CollectFormationDetailsStep._learn_clip_from_ocr(
+            app, card_img, card_id, best["kind"], clip_manager,
+        )
+
+        logger.info(
+            f"[formation] 点击详情OCR成功: {card_id} "
+            f"(kind={best['kind']}, score={best.get('score')})"
+        )
+
+        return {
+            "id": card_id,
+            "name": str(best.get("name") or card_id),
+            "kind": best["kind"],
+            "source": "detail_ocr",
+        }
 
     @staticmethod
     def _build_card_item_details(
@@ -443,11 +718,11 @@ class CollectFormationDetailsStep(ProduceStep):
             merged: list[dict[str, Any]] = [
                 {
                     "id": e["id"],
-                    "name": e["name"],
+                    "name": e.get("name", e["id"]),
                     "kind": e["kind"],
-                    "matched_text": f"[CLIP] {e['name']}",
+                    "matched_text": f"[CLIP] {e.get('name', e['id'])}",
                     "match_score": 100,
-                    "source": "clip",
+                    "source": e.get("source", "clip"),
                 }
                 for e in clip_entries
             ]
@@ -473,22 +748,105 @@ class CollectFormationDetailsStep(ProduceStep):
         }
 
     @staticmethod
+    def _supplement_produce_items_from_db(
+        card_details: dict[str, Any],
+        ctx: "ProduceContext",
+        support_card_ids: list[str] | None = None,
+    ) -> None:
+        """Supplement produce_item_ids with DB-derived P-items.
+
+        Sources:
+        1. Idol card → ``beforeProduceItemId``, ``afterProduceItemId``
+        2. Support card events → P-items granted by support card events
+        """
+        from src.utils.game_database_tools import (
+            GakumasDatabase_IdolCardDataUtils,
+            GakumasDatabase_ProduceItemDataUtils,
+            build_support_card_event_items,
+        )
+
+        existing_ids: set[str] = set(card_details.get("produce_item_ids", []))
+        added: list[str] = []
+
+        # --- 1. Idol card P-items ---
+        idol_card_id = ctx.target_idol_card_id
+        if idol_card_id:
+            idol_db = GakumasDatabase_IdolCardDataUtils()
+            idol_card = idol_db.get_by_id(idol_card_id)
+            if idol_card is not None:
+                for attr in ("beforeProduceItemId", "afterProduceItemId"):
+                    pid = getattr(idol_card, attr, None)
+                    if pid and pid not in existing_ids:
+                        existing_ids.add(pid)
+                        added.append(pid)
+
+        # --- 2. Support card event P-items ---
+        if support_card_ids:
+            event_items = build_support_card_event_items()
+            for sc_id in support_card_ids:
+                for item_entry in event_items.get(sc_id, []):
+                    if item_entry.get("kind") == "item":
+                        pid = str(item_entry["id"])
+                        if pid not in existing_ids:
+                            existing_ids.add(pid)
+                            added.append(pid)
+
+        if added:
+            # Resolve names via DB for matched_entries
+            item_db = GakumasDatabase_ProduceItemDataUtils()
+            for pid in added:
+                card_details["produce_item_ids"].append(pid)
+                item = item_db.get_by_id(pid)
+                name = pid
+                if item is not None:
+                    if item.localization and getattr(item.localization, "name", None):
+                        name = item.localization.name
+                    elif item.name:
+                        name = item.name
+                card_details.setdefault("matched_entries", []).append({
+                    "id": pid,
+                    "name": name,
+                    "kind": "produce_item",
+                    "matched_text": f"[DB] {name}",
+                    "match_score": 100,
+                    "source": "db_supplement",
+                })
+                card_details.setdefault("entry_ids", []).append(pid)
+            logger.info(
+                f"[formation] DB补全 P物品 {len(added)} 件: "
+                + ", ".join(added)
+            )
+
+    @staticmethod
     def _build_ability_details(texts: list[str], ctx: "ProduceContext") -> dict[str, Any]:
         sections = {
+            "p_idol_abilities": [],
             "lesson_support": [],
             "support_abilities": [],
             "memory_abilities": [],
         }
         current_section: str | None = None
 
+        # Strict matching for section headers: disable substring fallback
+        # to prevent content like "...スキルカードサポート発生率..." from
+        # being misidentified as a section header.
+        _header_cfg = MatchConfig(fuzz_threshold=_SECTION_FUZZ, use_contains=False)
+
         for text in texts:
-            if string_match(text, ProduceText.LESSON_SUPPORT, MatchConfig(fuzz_threshold=_SECTION_FUZZ)):
+            if string_match(text, ProduceText.P_IDOL_ABILITY, _header_cfg):
+                current_section = "p_idol_abilities"
+                continue
+            if string_match(
+                text,
+                [ProduceText.SKILL_CARD_SUPPORT, ProduceText.LESSON_SUPPORT],
+                _header_cfg,
+            ):
                 current_section = "lesson_support"
                 continue
-            if string_match(text, ProduceText.SUPPORT_ABILITY, MatchConfig(fuzz_threshold=_SECTION_FUZZ)):
+            if string_match(text, ProduceText.SUPPORT_ABILITY, _header_cfg):
                 current_section = "support_abilities"
                 continue
-            if string_match(text, ProduceText.MEMORY_ABILITY, MatchConfig(fuzz_threshold=_SECTION_FUZZ)):
+            if string_match(text, ProduceText.MEMORY_ABILITY, _header_cfg):
                 current_section = "memory_abilities"
                 continue
             if current_section is not None:
@@ -519,9 +877,15 @@ class CollectFormationDetailsStep(ProduceStep):
                 memory_match_scope = "raw_texts_unmatched"
         lesson_support_matches = match_support_abilities(sections["lesson_support"])
         support_ability_matches = match_support_abilities(sections["support_abilities"])
+        p_idol_matches = match_support_abilities(sections["p_idol_abilities"])
 
         return {
             "raw_texts": texts,
+            "p_idol_abilities": {
+                "raw_texts": sections["p_idol_abilities"],
+                "matched_entries": p_idol_matches,
+                "entry_ids": CollectFormationDetailsStep._collect_entry_ids(p_idol_matches),
+            },
             "lesson_support": {
                 "raw_texts": sections["lesson_support"],
                 "matched_entries": lesson_support_matches,

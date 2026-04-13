@@ -39,20 +39,24 @@
 >   - 自动交换多余的支援卡
 >   - 自动学习支援卡信息
 > - 自动竞技场
-> 
+> - 自动培育
+>   - LLM自动决策
+>   - 使用视觉模型自动分析并选择记忆卡卡面
+
 ### 待实现/待完善：
 > - 工具框架
 >   - 任务错误回退
 > - 完善任务
 > - 新竞技场
-> - 自动P卡
 
 ## 注意事项
-> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`。  
+> 现已支持 `Windows`、`macOS`、`Linux` 启动与打包；其中 `PC / DMM` 模式仅支持 `Windows`，`PlayCover+MaaTools`仅支持MacOS平台。  
 
-> 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件上传并截图进行反馈。
+> 安卓模拟器开发是基于 `MuMu12` 模拟器测试的，因此推荐使用 MuMu12 运行游戏。 其他模拟器若出现问题，请第一时间把脚本根目录下`logs`中的最新的日志文件和相关的`dump`文件上传并截图进行反馈。
 
-> 汉化插件暂不支持，请关闭汉化插件后使用
+> 安卓实体机测试已使用小米9完成
+
+> 汉化插件暂不支持，请手动关闭汉化插件后使用
 
 > 本项目使用 `Yolov11n` 模型进行图像识别。Windows 会优先尝试 `DirectML`，macOS 会优先尝试 `CoreML`，其余平台会自动回退到 `CPUExecutionProvider`。
 
@@ -90,6 +94,7 @@ python app.py
 - macOS 上主 ONNX 模型与 OCR 模型都会优先尝试 `CoreMLExecutionProvider`；运行时会在用户缓存目录中保存 ONNX Runtime / CoreML 缓存，若该目录不可写则自动回退到项目内 `.cache`。
 - OCR 后端现支持 `auto / rapidocr / vision` 三种策略：`auto` 会在 macOS 上优先尝试原生 `Vision`，失败时自动回退到 `RapidOCR`；其他平台默认继续使用 `RapidOCR`。也可通过环境变量 `GAKUMAS_OCR_BACKEND` 强制覆盖。
 - 若环境中尚未缓存 RapidOCR 模型，程序会在首次实际调用 OCR 时按 RapidOCR 默认机制准备模型；执行 `build_app.py` 时也会自动补齐并打包这些模型。
+- 在使用LLM自动决策前，建议使用14B以上的模型，保证较高的性能，使用过程中可能会消耗较多的Token，建议本地部署LLM模型
 
 ## 免责声明
 **请在使用本项目前仔细阅读以下内容。使用本脚本将带来包括但不限于账号被封禁的风险。**

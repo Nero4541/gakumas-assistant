@@ -256,6 +256,45 @@ def _ocr_match_current_idol_card(app: "AppProcessor") -> tuple[Optional["IdolCar
     return _resolve_idol_card_from_texts(texts), texts
 
 
+_GRID_TOP_SAME_SIDE_X_RATIO = 0.15
+
+
+def _ocr_match_grid_selected_card(app: "AppProcessor") -> tuple[Optional["IdolCard"], list[str]]:
+    """网格视图专用 OCR：取网格上方区域最顶部同侧两行（角色名 + 偶像卡名）。"""
+    frame = getattr(app, "latest_frame", None)
+    if frame is None or frame.size == 0:
+        return None, []
+
+    h, w = frame.shape[:2]
+    grid_top = max(1, int(h * _IDOL_LIST_GRID_REGION[0]))
+    top_region = frame[:grid_top, :].copy()
+
+    ocr_result = ocr_service.ocr(top_region)
+    raw_results = sorted(
+        [item for item in getattr(ocr_result, "results", []) if item.text.strip()],
+        key=lambda item: (item.cy, item.x),
+    )
+    if not raw_results:
+        return None, []
+
+    first = raw_results[0]
+    texts = [first.text.strip()]
+    x_threshold = w * _GRID_TOP_SAME_SIDE_X_RATIO
+    for item in raw_results[1:]:
+        if abs(item.x - first.x) < x_threshold:
+            texts.append(item.text.strip())
+            break
+
+    card = _resolve_idol_card_from_texts(texts)
+    if card is not None:
+        return card, texts
+
+    all_texts = _dedupe_preserve_order(
+        [item.text.strip() for item in raw_results]
+    )
+    return _resolve_idol_card_from_texts(all_texts), all_texts
+
+
 def _try_clip_identify(app: "AppProcessor", card_image: np.ndarray) -> Optional["IdolCard"]:
     try:
         return app.clip_manager.idol_card_clip.retrieve(card_image)
@@ -555,7 +594,7 @@ def _learn_idol_card_variants_from_list(app: "AppProcessor") -> tuple[int, int]:
     learned = 0
     failed = 0
     previous_grid: Optional[np.ndarray] = None
-    previous_selected_card, _ = _ocr_match_current_idol_card(app)
+    previous_selected_card, _ = _ocr_match_grid_selected_card(app)
     previous_selected_id = previous_selected_card.id if previous_selected_card is not None else None
 
     for scroll_index in range(_IDOL_LIST_MAX_SCROLLS):
@@ -579,7 +618,7 @@ def _learn_idol_card_variants_from_list(app: "AppProcessor") -> tuple[int, int]:
             sleep(0.35)
             app.game_utils.wait_frame_stable(stable_count=2)
 
-            current_card, texts = _ocr_match_current_idol_card(app)
+            current_card, texts = _ocr_match_grid_selected_card(app)
             current_frame = getattr(app, "latest_frame", None)
             region_changed = False
             if current_frame is not None and current_frame.size > 0:

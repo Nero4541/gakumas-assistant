@@ -251,10 +251,11 @@ def register_tasks(processor: "AppProcessor"):
         goto__claim_pass_rewards(app)
         claim_pass_rewards(app)
 
-    @processor.task_queue.register_task("auto_producer", "自动培育", 600)
+    @processor.task_queue.register_task("auto_producer", "自动培育", -1)
     def _task__auto_producer(app: "AppProcessor"):
         from src.core.tasks.producer_challenge import build_produce_pipeline
         from src.core.tasks.producer_challenge.context import ProduceContext
+        from src.core.tasks.producer_challenge.gameplay.llm_strategy import inject_llm_strategy
 
         cfg = app.config_service().task__auto_producer
         # NIA 使用独立的 nia_difficulty 配置
@@ -267,11 +268,22 @@ def register_tasks(processor: "AppProcessor"):
             difficulty=difficulty,
             target_idol_card_id=cfg.target_idol_card_id.value,
             support_card_mode=cfg.support_card_mode.value,
-            support_card_preset_index=int(cfg.support_card_preset_index.value),
+            support_card_preset_index=cfg.support_card_preset_index.value,
             memory_mode=cfg.memory_mode.value,
-            memory_preset_index=int(cfg.memory_preset_index.value),
+            memory_preset_index=cfg.memory_preset_index.value,
             use_rental=cfg.use_rental.value,
             use_boost_items=cfg.use_boost_items.value,
+        )
+        base = app.config_service().base
+        inject_llm_strategy(
+            ctx,
+            base_url=str(base.llm_base_url),
+            model=str(base.llm_model),
+            api_key=str(base.llm_api_key),
+            timeout=float(base.llm_timeout),
+            max_tokens=int(base.llm_max_tokens),
+            num_ctx=int(base.llm_num_ctx),
+            temperature=float(base.llm_temperature),
         )
 
         pipeline = build_produce_pipeline()

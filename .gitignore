@@ -25,8 +25,10 @@ dist/
 /train/gakumas_rl/.claude/
 /train/gakumas_rl/.gakumas_rl_cache/
 /nuitka-crash-report.xml
-/tests/_artifacts/modal_debug/*.png
-/tests/_artifacts/support_card_level/*.png
-E:\Projects\gkmas-auto\.git\hooks/
+/tests/_artifacts/*
+/train/gakumas_rl/*.egg-info/
+E:\\Projects\\gkmas-auto\\.git\\hooks/
 */.DS_Store
 .DS_Store
+/tests/produce_gameplay_captures/*
+_debug*

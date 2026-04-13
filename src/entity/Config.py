@@ -502,6 +502,72 @@ class _Base(_BaseConfigGroup):
         )
     )
 
+    # --- LLM 决策配置 ---
+    llm_base_url = ConfigItem(
+        default_value="http://127.0.0.1:11434/v1/",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="LLM API 地址",
+            hint="OpenAI 兼容 API 端点（Ollama / vLLM / OpenAI 等）",
+            order=300,
+        ),
+    )
+    llm_model = ConfigItem(
+        default_value="gpt-oss:20b",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="LLM 模型",
+            hint="模型名称（如 gpt-oss:20b, qwen3:4b 等）",
+            order=310,
+        ),
+    )
+    llm_api_key = ConfigItem(
+        default_value="ollama",
+        data_type=str,
+        ui=ConfigItemUI(
+            label="LLM API Key",
+            hint="API 密钥（Ollama 默认 ollama）",
+            order=320,
+        ),
+    )
+    llm_timeout = ConfigItem(
+        default_value=60.0,
+        data_type=float,
+        ui=ConfigItemUI(
+            label="LLM 超时(秒)",
+            hint="API 请求超时时间",
+            order=330,
+        ),
+    )
+    llm_max_tokens = ConfigItem(
+        default_value=4096,
+        data_type=int,
+        ui=ConfigItemUI(
+            label="LLM 最大输出 Token",
+            hint="输出 token 上限（包含思考+回答）",
+            order=340,
+        ),
+    )
+    llm_num_ctx = ConfigItem(
+        default_value=8192,
+        data_type=int,
+        ui=ConfigItemUI(
+            label="LLM 上下文窗口",
+            hint="上下文窗口大小（Ollama 专用，影响显存占用）",
+            order=350,
+        ),
+    )
+    llm_temperature = ConfigItem(
+        default_value=0.3,
+        data_type=float,
+        ui=ConfigItemUI(
+            label="LLM 温度",
+            hint="生成温度，越低越确定（0.0 ~ 1.0）",
+            order=360,
+        ),
+    )
+
+
 
 class _Task:
     """任务配置"""
@@ -692,6 +758,38 @@ class _Task:
                 hint="開始確認页面是否使用加成道具（編成詳细按钮上方）",
                 component="switch",
                 order=80,
+            ),
+        )
+        # 记忆卡面（フォト）选择模式
+        memory_photo_mode = ConfigItem(
+            default_value="first",
+            data_type=str,
+            verify=r"first|vl",
+            use_verify=True,
+            ui=ConfigItemUI(
+                label="记忆卡面选择",
+                hint="培育结束后选择记忆卡面的方式",
+                component="select",
+                options=[
+                    {"title": "默认选择第一个", "value": "first"},
+                    {"title": "VL 视觉模型自动选择最优卡面", "value": "vl"},
+                ],
+                order=85,
+            ),
+        )
+        # VL 模型自定义提示词
+        memory_photo_vl_prompt = ConfigItem(
+            default_value=(
+                "以下图片是游戏中可选的记忆卡照片缩略图列表。"
+                "请选出构图最好、角色表情最生动、最具观赏性的一张照片。"
+                "只需要返回你选择的照片编号（从1开始），不要返回其他内容。"
+            ),
+            data_type=str,
+            ui=ConfigItemUI(
+                label="VL 选卡面提示词",
+                hint="自定义 VL 模型选择卡面时使用的提示词（留空使用默认）",
+                visible_if={"task__auto_producer.memory_photo_mode": "vl"},
+                order=86,
             ),
         )
 

@@ -33,6 +33,18 @@ class CLIPayload_SupportCard(_BaseCLIPPayload):
 class CLIPayload_IdolCard(_BaseCLIPPayload):
     id = CharField(unique=True)
 
+class CLIPayload_ProduceDrink(_BaseCLIPPayload):
+    id = CharField(unique=True)
+
+class CLIPayload_ProduceItem(_BaseCLIPPayload):
+    id = CharField(unique=True)
+
+class CLIPayload_ScheduleAction(_BaseCLIPPayload):
+    """周行動アイコン CLIP ペイロード。action_id をキーとして保持。"""
+    action_id = CharField(unique=True)
+    param_kind = CharField(default="")
+    rl_action_type = CharField(default="")
+
 class CLIPMemory(BaseModel):
     uuid = UUIDField(default=uuid4, unique=True, primary_key=True)
     clip_name = CharField()

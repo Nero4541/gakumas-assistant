@@ -1,0 +1,13 @@
+{{ snapshot }}
+
+## 合法动作
+{% for a in actions -%}
+{{ a.index }}: {{ a.label }}{% if a.kind %} ({{ a.kind }}){% endif %}{% if a.recommended %} [系统推荐]{% endif %}{% if a.selected %} [已选中]{% endif %}{% if not a.available %} [当前不可用]{% endif %}{% if a.description %} - {{ a.description }}{% endif %}{% if a.operation_meaning %}；操作含义：{{ a.operation_meaning }}{% endif %}{{ '' }}
+{% endfor %}
+
+## 决策要求
+- 只从上面的合法动作中选择。
+- 只输出一个动作编号，不要解释，不要附加文本。
+- 如果当前信息不足，选你认为最稳妥的合法动作。
+
+请选择当前最优动作，只输出动作编号：

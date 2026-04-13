@@ -58,11 +58,16 @@ class GameplayPosition:
     SCHEDULE_SELECTED = "schedule_selected"
     SCHEDULE_RECOMMEND = "schedule_recommend"
     SCHEDULE_IDLE = "schedule_idle"
+    SCHEDULE_PRESENT_SUPPORT = "schedule_present_support"
+    SCHEDULE_PRESENT_SUPPORT_SHOWCASE = "schedule_present_support_showcase"
     SCHEDULE_EVENT_OPTIONS = "schedule_event_options"    # 行程事件对话选项（おでかけ等）
     SCHEDULE_EVENT_DIALOGUE = "schedule_event_dialogue"  # 行程事件对话文本推进
+    SCHEDULE_LESSON_OPTIONS = "schedule_lesson_options"  # 授業課程選項（ボーカル/ダンス/ビジュアル）
+    SCHEDULE_LESSON_SELECTED = "schedule_lesson_selected"  # 授業選項已選中（信息面板表示中）
 
     LESSON_SELECTED = "lesson_selected"
     LESSON_IDLE = "lesson_idle"
+    LESSON_SUMMARY_SHOWCASE = "lesson_summary_showcase"
 
     DIALOGUE_OPTIONS = "dialogue_options"
     DIALOGUE_CONTINUE = "dialogue_continue"
@@ -72,6 +77,7 @@ class GameplayPosition:
 
     SKILL_REWARD_SELECTED = "skill_reward_selected"
     SKILL_REWARD_IDLE = "skill_reward_idle"
+    SKILL_REWARD_SHOWCASE = "skill_reward_showcase"
 
     CONSULT_EXCHANGE = "consult_exchange"
     CONSULT_ENHANCEMENT_READY = "consult_enhancement_ready"
@@ -83,6 +89,7 @@ class GameplayPosition:
 
     EXAM_SELECTED = "exam_selected"
     EXAM_IDLE = "exam_idle"
+    EXAM_PREP = "exam_prep"  # 考试准备页面（显示参数加成倍率，YOLO 无法检测）
 
     LIVE_TAP_TO_START = "live_tap_to_start"   # ライブ開始待ち
     LIVE_PERFORMING = "live_performing"         # ライブ演出中
@@ -90,6 +97,8 @@ class GameplayPosition:
 
     RESULT = "result"
     RESULT_EXAM_FAILURE = "result_exam_failure"
+    RESULT_EXAM_SUMMARY_SHOWCASE = "result_exam_summary_showcase"
+    RESULT_EXAM_RANKING_SUMMARY = "result_exam_ranking_summary"
     RESULT_MEMORY_GENERATION = "result_memory_generation"
     RESULT_MEMORY_PAGE = "result_memory_page"
     RESULT_FINAL_EVALUATION = "result_final_evaluation"
@@ -98,6 +107,7 @@ class GameplayPosition:
     RESULT_EVENT_REWARD_PROGRESS = "result_event_reward_progress"
     TRANSITION_EMPTY = "transition_empty"
     TRANSITION_HUD = "transition_hud"
+    TRANSITION_RESUME_TITLE = "transition_resume_title"
 
 
 class ProduceExamType:

@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 
+from .data import RUNS_DIR
 from .service import LoadoutConfig, build_env_from_config
 
 _RESOURCE_KEYS = (
@@ -257,7 +258,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def _default_output_path(checkpoint_path: Path | None, backend: str, scenario: str) -> Path:
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     if checkpoint_path is None:
-        return Path('standalone/gakumas_rl/runs') / f'demo_{backend}_{scenario}_{stamp}.json'
+        return RUNS_DIR / f'demo_{backend}_{scenario}_{stamp}.json'
     parent = checkpoint_path.parent if checkpoint_path.is_dir() else checkpoint_path.parent
     return parent / f'demo_{backend}_{scenario}_{stamp}.json'
 

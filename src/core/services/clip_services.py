@@ -1,5 +1,8 @@
 from src.core.services.clip.idol_card import IdolCardCLIP
 from src.core.services.clip.item import ItemCLIP
+from src.core.services.clip.produce_drink import ProduceDrinkCLIP
+from src.core.services.clip.produce_item import ProduceItemCLIP
+from src.core.services.clip.schedule_action import ScheduleActionCLIP
 from src.core.services.clip.skill_card import SkillCardCLIP
 from src.core.services.clip.support_card import SupportCardCLIP
 from src.core.inference.ONNX import CLIPModelFromONNX
@@ -11,6 +14,9 @@ class CLIPServiceManager:
     _model_session: CLIPModelFromONNX
     skill_card_clip: SkillCardCLIP
     item_clip: ItemCLIP
+    produce_drink_clip: ProduceDrinkCLIP
+    produce_item_clip: ProduceItemCLIP
+    schedule_action_clip: ScheduleActionCLIP
     support_card_clip: SupportCardCLIP
     idol_card_clip: IdolCardCLIP
 
@@ -19,5 +25,8 @@ class CLIPServiceManager:
         self._model_session = CLIPModelFromONNX()
         self.skill_card_clip = SkillCardCLIP(self._model_session)
         self.item_clip = ItemCLIP(self._model_session)
+        self.produce_drink_clip = ProduceDrinkCLIP(self._model_session)
+        self.produce_item_clip = ProduceItemCLIP(self._model_session)
+        self.schedule_action_clip = ScheduleActionCLIP(self._model_session)
         self.support_card_clip = SupportCardCLIP(self._model_session)
         self.idol_card_clip = IdolCardCLIP(self._model_session)

@@ -1,22 +1,34 @@
 <script setup>
-  import { computed, onBeforeUnmount, ref } from 'vue'
+  import { computed, onBeforeUnmount, ref, watch } from 'vue'
   import CardSelectorDialog from '@/components/dialogs/CardSelectorDialog.vue'
   import apis from '@/scripts/apis.js'
   import { probeImage } from '@/scripts/utils/image.js'
+  import { useAppStore } from '@/stores/app.ts'
+
+  const store = useAppStore()
 
   const props = defineProps({
     data: Object,
+    taskName: {
+      type: String,
+      default: 'auto_producer',
+    },
   })
 
   const dialog = ref(false)
   const idolCards = ref([])
   const idolCardsLoading = ref(true)
   const downloadingFullImageFor = ref(null)
+  const assetStatus = ref({ available: false, downloadedCount: 0, downloading: false })
+  const assetDownloading = ref(false)
+  const assetAutoTriggered = ref(false)
   const idolCardSkin = ref(0)
+  const assetImageVersion = ref(0)
   const imageRetryKey = ref(0)
 
   const managedTimers = new Set()
   let imageRetryTimer = null
+  let downloadPolling = null
 
   function startManagedTimer (callback, delay) {
     const timer = window.setTimeout(() => {
@@ -36,6 +48,9 @@
   const idolCardField = computed(() =>
     props.data?.target_idol_card_id ?? props.data?.target_idol_card_name ?? null,
   )
+  const assetDownloadEnabled = computed(() => store.config.base?.enable_game_asset_download?.value ?? false)
+  const preferGameAsset = computed(() => store.config.base?.prefer_game_asset_image?.value ?? false)
+  const hasMissingGameAsset = computed(() => idolCards.value.some(card => !card.gameAssetImage))
 
   apis.get_all_idol_card().then(res => {
     idolCards.value = (res.data || []).map(card => ({
@@ -137,13 +152,19 @@
   ])
 
   function idolCardImageSrc (card) {
-    if (!card?.hasImage) return null
-    return `/api/image/idol_cards/${card.id}.png`
+    if (preferGameAsset.value) {
+      if (card?.gameAssetImage) return `/api/game_assets/idol_cards/${card.id}.png?v=${assetImageVersion.value}`
+      if (card?.hasImage) return `/api/clip_image/idol_cards/${card.id}.png?v=${assetImageVersion.value}`
+    } else {
+      if (card?.hasImage) return `/api/clip_image/idol_cards/${card.id}.png?v=${assetImageVersion.value}`
+      if (card?.gameAssetImage) return `/api/game_assets/idol_cards/${card.id}.png?v=${assetImageVersion.value}`
+    }
+    return null
   }
 
   function idolCardFullImageTriggerSrc (card, skin = idolCardSkin.value) {
     const version = card?._fullImageVersion || 0
-    return `/api/image/idol_cards_full/${card.id}_${skin}.png?v=${version}`
+    return `/api/game_assets/idol_cards_full/${card.id}_${skin}.png?v=${version}`
   }
 
   function idolCardFullImageSrc (card, skin = idolCardSkin.value) {
@@ -167,13 +188,15 @@
   }
 
   function skillCardImageSrc (card) {
-    if (!card?.assetId) return null
-    return `/api/image/skill_cards/${card.assetId}.png?v=${imageRetryKey.value}`
+    if (!card?.assetId || !card?.hasImage) return null
+    const stripped = card.assetId.replace('img_general_', '')
+    return `/api/game_assets/skill_cards/${stripped}.png?v=${imageRetryKey.value}`
   }
 
   function produceItemImageSrc (item) {
-    if (!item?.assetId) return null
-    return `/api/image/items/${item.assetId}.png?v=${imageRetryKey.value}`
+    if (!item?.assetId || !item?.hasImage) return null
+    const stripped = item.assetId.replace('img_general_', '')
+    return `/api/game_assets/items/${stripped}.png?v=${imageRetryKey.value}`
   }
 
   function idolCardDisplayName (card) {
@@ -219,14 +242,65 @@
     }
   }
 
+  function refreshAssetStatus (forceFresh = false) {
+    apis.get_game_asset_status(forceFresh).then(res => {
+      assetStatus.value = res.data
+      assetDownloading.value = res.data.downloading
+    }).catch(() => {})
+  }
+
+  function startPolling () {
+    if (downloadPolling) return
+    assetDownloading.value = true
+    downloadPolling = window.setInterval(() => {
+      apis.get_game_asset_status(true).then(res => {
+        assetStatus.value = res.data
+        if (!res.data.downloading) {
+          assetDownloading.value = false
+          window.clearInterval(downloadPolling)
+          downloadPolling = null
+          apis.get_all_idol_card(true).then(r => {
+            idolCards.value = (r.data || []).map(card => ({
+              ...card,
+              _hasFullImage: !!card.hasFullImage,
+              _fullImageVersion: 0,
+            }))
+            assetImageVersion.value++
+          }).catch(() => {})
+        }
+      }).catch(() => {
+        window.clearInterval(downloadPolling)
+        downloadPolling = null
+        assetDownloading.value = false
+      })
+    }, 2000)
+  }
+
+  function triggerDownload () {
+    assetDownloading.value = true
+    apis.download_idol_card_assets().then(() => {
+      startPolling()
+    }).catch(() => {
+      assetDownloading.value = false
+    })
+  }
+
+  function ensureAutoDownload () {
+    if (!dialog.value) return
+    if (assetAutoTriggered.value || assetDownloading.value) return
+    if (!assetDownloadEnabled.value || !assetStatus.value.available) return
+    if (!hasMissingGameAsset.value) return
+    assetAutoTriggered.value = true
+    triggerDownload()
+  }
+
   function triggerIdolCardFullImageDownload (card, skin = idolCardSkin.value) {
     const downloadKey = `${card.id}_${skin}`
     if (downloadingFullImageFor.value === downloadKey) return
 
     downloadingFullImageFor.value = downloadKey
-    const triggerUrl = idolCardFullImageTriggerSrc(card, skin)
     const fullImageUrl = idolCardFullImageSrc(card, skin)
-    probeImage(triggerUrl).catch(() => {})
+    apis.download_single_idol_card_full(card.id, skin).catch(() => {})
 
     let attempts = 0
     const maxAttempts = 20
@@ -260,13 +334,16 @@
 
   function onIdolCardDetail (card) {
     idolCardSkin.value = 0
-    if (!card._hasFullImage) {
+    if (!card._hasFullImage && assetDownloadEnabled.value && assetStatus.value.available) {
       triggerIdolCardFullImageDownload(card, 0)
     }
   }
 
   function onIdolCardDetailImageError (card) {
-    triggerIdolCardFullImageDownload(card)
+    if (card?._hasFullImage) {
+      card._hasFullImage = false
+      scheduleImageRetry()
+    }
   }
 
   function clearSelectedCard () {
@@ -293,14 +370,50 @@
     return idolCards.value.find(card => card.id === cardId) || null
   })
 
+  function openDialog () {
+    assetAutoTriggered.value = false
+    dialog.value = true
+    ensureAutoDownload()
+  }
+
   onBeforeUnmount(() => {
     clearManagedTimer(imageRetryTimer)
     imageRetryTimer = null
+    if (downloadPolling) {
+      window.clearInterval(downloadPolling)
+      downloadPolling = null
+    }
     for (const timer of managedTimers) {
       window.clearTimeout(timer)
     }
     managedTimers.clear()
   })
+
+  watch(
+    () => idolCardField.value?.value ?? '',
+    (value, previousValue) => {
+      if (value === previousValue || !props.taskName) {
+        return
+      }
+      void store.save_task_config(props.taskName)
+    },
+  )
+
+  watch(
+    [
+      dialog,
+      hasMissingGameAsset,
+      assetDownloadEnabled,
+      () => assetStatus.value.available,
+      assetDownloading,
+    ],
+    () => {
+      ensureAutoDownload()
+    },
+    { immediate: true },
+  )
+
+  refreshAssetStatus()
 </script>
 
 <template>
@@ -332,7 +445,7 @@
       prepend-icon="md:person_search"
       size="small"
       variant="tonal"
-      @click="dialog = true"
+      @click="openDialog"
     >
       选择目标偶像卡
     </v-btn>

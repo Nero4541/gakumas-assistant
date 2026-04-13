@@ -94,15 +94,16 @@ const showMemoryPreset = computed(() => task_config.value?.memory_mode?.value ==
         />
       </v-col>
       <v-col cols="12" v-if="idolCardField">
-        <v-text-field
-          label="目标偶像卡"
-          hint="目标 P アイドル ID（留空使用默认选中的卡；需先执行「刷新偶像卡存储」学习卡片特征）"
-          :color="themeColor"
-          density="comfortable"
-          persistent-hint
-          clearable
-          v-model="idolCardField.value"
-        />
+<!--        <v-text-field-->
+<!--          label="目标偶像卡"-->
+<!--          hint="目标 P アイドル ID（留空使用默认选中的卡；需先执行「刷新偶像卡存储」学习卡片特征）"-->
+<!--          :color="themeColor"-->
+<!--          density="comfortable"-->
+<!--          persistent-hint-->
+<!--          clearable-->
+<!--          v-model="idolCardField.value"-->
+<!--        />-->
+        <idol_card_browser :data="task_config"/>
       </v-col>
       <v-col cols="12">
         <v-select

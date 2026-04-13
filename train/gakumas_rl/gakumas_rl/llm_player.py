@@ -18,6 +18,7 @@ import numpy as np
 from openai import OpenAI
 
 from .state_snapshot import build_state_snapshot, format_action_list, extract_action_list_context, action_label_for_llm
+from .data import TRAJECTORIES_DIR
 from .service import build_env_from_config, get_repository, get_scenario, resolve_idol_card_pool
 from .prompt_renderer import render, load_system_prompt
 
@@ -1049,7 +1050,7 @@ def parse_args() -> argparse.Namespace:
         help='API key for the OpenAI-compatible endpoint',
     )
     parser.add_argument('--timeout', type=float, default=15.0)
-    parser.add_argument('--output', default='trajectories/llm_demo.jsonl')
+    parser.add_argument('--output', default=str(TRAJECTORIES_DIR / 'llm_demo.jsonl'))
     parser.add_argument('--workers', type=int, default=1, help='parallel episodes to generate in parallel')
     parser.add_argument('--idol-card-id', default='')
     parser.add_argument('--producer-level', type=int, default=35)

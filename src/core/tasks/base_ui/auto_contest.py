@@ -239,9 +239,37 @@ def _start_battle(app: "AppProcessor", width: int, height: int):
                 app.device.click_element(check_box)
         except Exception as e:
             logger.error(f"not find checkbox: {e}")
-    _click_skip_until_disappears(app)
-    app.device.click(width // 2, height // 2)
-    sleep(1)
+    # 处理所有对战Stage（竞技场通常有3个Stage）
+    for stage_round in range(5):
+        _click_skip_until_disappears(app)
+        app.device.click(width // 2, height // 2)
+        sleep(1)
+
+        # 检查是否有「対戦開始」按钮（多Stage模式的继续按钮）
+        battle_btn = _try_find_battle_start_button(app)
+        if battle_btn is None:
+            logger.debug(f"No 対戦開始 button found after round {stage_round + 1}, all stages complete")
+            break
+        logger.info(f"Multi-stage contest: clicking 対戦開始 for remaining stages (round {stage_round + 1})")
+        app.device.click_element(battle_btn)
+        sleep(1)
+
+
+def _try_find_battle_start_button(app: "AppProcessor", retries: int = 3, interval: float = 0.5):
+    """
+    在多Stage对战概览画面寻找「対戦開始」按钮。
+    因为画面过渡可能有延迟，会重试几次。
+    """
+    for i in range(retries):
+        buttons = ButtonList(app.latest_results)
+        btn = buttons.get_button_by_text(
+            ButtonText.BATTLE_START,
+            match_config=MatchConfig(fuzz_threshold=85),
+        )
+        if btn is not None:
+            return btn
+        sleep(interval)
+    return None
 
 
 def _finish_battle(app: "AppProcessor"):
@@ -254,7 +282,8 @@ def _finish_battle(app: "AppProcessor"):
     """
     # 阶段1: 持续点击屏幕中心，等待"次へ"按钮出现
     count = 0
-    while True:
+    max_phase1_attempts = 60
+    while count < max_phase1_attempts:
         buttons = ButtonList(app.latest_results)
         if button := buttons.get_button_by_text(ButtonText.NEXT):
             logger.debug("Found NEXT button, clicking.")
@@ -262,6 +291,20 @@ def _finish_battle(app: "AppProcessor"):
             app.device.click_element(button)
             sleep(1)
             break
+        # 安全兜底：如果仍有「対戦開始」按钮，说明多Stage还没打完
+        if button := buttons.get_button_by_text(
+            ButtonText.BATTLE_START,
+            match_config=MatchConfig(fuzz_threshold=85),
+        ):
+            logger.info("Found 対戦開始 in finish phase, clicking to continue remaining stages")
+            record_task_step(app, "auto_contest.finish.phase1.click_battle_start", attempts=count)
+            app.device.click_element(button)
+            sleep(1)
+            _click_skip_until_disappears(app)
+            app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)
+            sleep(1)
+            count = 0
+            continue
         if count == 0 or count % 10 == 0:
             record_task_step(app, "auto_contest.finish.phase1.wait_next", attempts=count)
         app.device.click(app.latest_frame.shape[1] // 2, app.latest_frame.shape[0] // 2)

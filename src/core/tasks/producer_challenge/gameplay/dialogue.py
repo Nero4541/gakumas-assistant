@@ -1,18 +1,28 @@
-"""对话 / コミュ handler。
+"""対話 / コミュ handler。
 
-对话画面包括:
-  - 2-3 个可选选项 (Universal Options)
-  - 快进按钮 (Fast Forward)
-  - 可点击推进的剧情文本
+対話画面包括:
+  - 2-3 个可選選項 (Universal Options)
+  - 快進按鈕 (Fast Forward)
+  - 可点击推進的劇情文本
 
-交互模式（经 ADB 实测确认）:
-  - 选项需要双击: 第一次点击高亮选中，第二次点击确认。
-  - 快进: 单击切换自动推进。
-  - 纯剧情文本: 点击任意位置继续。
+交互模式（経 ADB 実測確認）:
+  - 選項需要双击: 第一次点击高亮選中，第二次点击確認。
+  - 快進: 単击切換自動推進。
+  - 純劇情文本: 点击任意位置継続。
+
+おでかけ（外出）選項探査:
+  外出画面会顯示 2-3 個選項（如「いちごミルク -100P」「キャラメル -50P」），
+  選項名是劇情台詞（不在 DB 中），但:
+    1. 選項框內 OCR 可提取選項名 + P 点消耗
+    2. YOLO「Action Info」區域包含当前高亮選項的効果描述
+    3. 通過逐個点击選項（探査），可采集所有効果描述
+    4. 将 P 点成本 + 効果描述注入候選項 metadata，提供給 LLM 決策
 """
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, List
 
@@ -27,6 +37,7 @@ from src.core.tasks.producer_challenge.gameplay.common import (
 from src.core.tasks.producer_challenge.gameplay.decision import (
     build_decision_state,
     hydrate_dialogue_candidates,
+    hydrate_outing_candidates,
 )
 from src.core.tasks.producer_challenge.gameplay.handler_base import (
     GameplayHandler,
@@ -61,6 +72,180 @@ class DialogueOptionCandidate:
 class DialogueStepResult:
     status: str  # "selected" | "confirmed" | "fast_forward" | "advanced"
     candidate: DialogueOptionCandidate | None = None
+
+
+# ────────────────────────────────────────────────────────────
+# おでかけ探査 — 定数 / 正規表現
+# ────────────────────────────────────────────────────────────
+
+# P 点消耗パターン: "P-100", "PP-100", "P 50", "-100"(P被OCR截断) 等
+# ^[-ー] は選項先頭のマイナス記号（P が別行に分離した場合）を拾う
+_P_COST_RE = re.compile(r"(?:P{1,2}\s*[-ー]?\s*|^[-ー]\s*)(\d+)", re.MULTILINE)
+
+# おでかけ探査: 点击後 UI 刷新等待
+_OUTING_PROBE_TAP_WAIT = 0.5
+# おでかけ探査: 推理等待（Yolo再検出）
+_OUTING_PROBE_INFER_WAIT = 0.3
+
+# Debug 可視化
+from src.utils.debug_tools import DebugTools
+_debugger = DebugTools()
+
+
+# ────────────────────────────────────────────────────────────
+# おでかけ探査 — 工具函数
+# ────────────────────────────────────────────────────────────
+
+def _is_outing_context(app: "AppProcessor", position: str) -> bool:
+    """判断当前是否為おでかけ（外出）画面。
+
+    条件:
+      - position 为 schedule_event_options（行程事件対話選項）
+      - YOLO 検出到 Action Info 区域
+    """
+    if position != "schedule_event_options":
+        return False
+    info_boxes = app.latest_results.filter_by_label(ProducerLabels.PC_ACTION_INFO)
+    return bool(info_boxes)
+
+
+def _extract_p_cost(text: str) -> int | None:
+    """从选项 OCR 文本中提取 P 点消耗。
+
+    例:
+      "PP-100 いちごミルク" → 100
+      "P 50 キャラメル" → 50
+      "激あまアンコ" → None (免费)
+    """
+    match = _P_COST_RE.search(text or "")
+    return int(match.group(1)) if match else None
+
+
+def _extract_action_info_description(app: "AppProcessor") -> str:
+    """OCR 读取 Action Info 区域的効果描述文本。
+
+    Action Info 区域由 YOLO 検出，包含当前高亮選項的効果描述。
+    """
+    info_boxes = app.latest_results.filter_by_label(ProducerLabels.PC_ACTION_INFO)
+    if not info_boxes:
+        return ""
+    info_box = info_boxes.first()
+    frame = getattr(info_box, "frame", None)
+    if frame is None or getattr(frame, "size", 0) <= 0:
+        return ""
+    text = ocr_text(frame)
+
+    # Debug 可視化: Action Info 区域 + OCR 結果
+    _debugger.add_box(
+        info_box.x, info_box.y, info_box.w, info_box.h,
+        color=(0, 200, 255), thickness=2, duration=3,
+        label=f"ActionInfo: {text[:30]}",
+    )
+    return text.strip()
+
+
+def _probe_outing_options(
+    app: "AppProcessor",
+    candidates: List[DialogueOptionCandidate],
+) -> None:
+    """逐個点击おでかけ選項，采集 Action Info 効果描述 + P 点成本。
+
+    流程:
+      1. 解析每個選項的 P 点消耗（从 title OCR 中提取）
+      2. 逐個点击選項 → 等待 UI 刷新 → OCR Action Info 区域
+      3. 将 P 成本 + 効果描述写入候選項 metadata
+
+    注意:
+      - 第一個選項通常已預選（Action Info 已顯示其效果），先読取
+      - 点击只切換高亮（不確認），安全
+    """
+    if not candidates:
+        return
+
+    logger.info("dialogue: おでかけ探査開始 — {} 個選項", len(candidates))
+
+    # 第一個選項通常已預選 → 先直接読取 Action Info
+    first_desc = _extract_action_info_description(app)
+    if first_desc:
+        candidates[0].metadata["outing_effect"] = first_desc
+        logger.debug(
+            "dialogue: おでかけ選項 #0 効果(預選): {}",
+            first_desc[:60],
+        )
+
+    # 逐個点击残りの選項
+    for candidate in candidates:
+        # 提取 P 点消耗
+        p_cost = _extract_p_cost(candidate.title)
+        if p_cost is not None:
+            candidate.metadata["p_cost"] = p_cost
+
+        # 已取得効果描述的（第一個預選項）跳過
+        if candidate.metadata.get("outing_effect"):
+            continue
+
+        try:
+            # 点击切換高亮
+            app.device.click_element(candidate.box)
+            time.sleep(_OUTING_PROBE_TAP_WAIT)
+            time.sleep(_OUTING_PROBE_INFER_WAIT)
+
+            # 読取 Action Info
+            desc = _extract_action_info_description(app)
+            if desc:
+                candidate.metadata["outing_effect"] = desc
+                logger.debug(
+                    "dialogue: おでかけ選項 #{} 効果: {}",
+                    candidate.index, desc[:60],
+                )
+            else:
+                logger.debug(
+                    "dialogue: おでかけ選項 #{} Action Info 未検出",
+                    candidate.index,
+                )
+
+            # Debug 可視化: 選項框 + P 成本
+            cost_label = f"-{p_cost}P" if p_cost is not None else "Free"
+            _debugger.add_box(
+                candidate.box.x, candidate.box.y,
+                candidate.box.w, candidate.box.h,
+                color=(255, 165, 0), thickness=2, duration=3,
+                label=f"Outing#{candidate.index} {cost_label}",
+            )
+        except Exception as exc:
+            logger.warning(
+                "dialogue: おでかけ選項 #{} 探査異常: {}",
+                candidate.index, exc,
+            )
+
+    # 生成探査結果摘要
+    probed = [c for c in candidates if c.metadata.get("outing_effect")]
+    logger.info(
+        "dialogue: おでかけ探査完了 — {}/{} 個取得効果描述",
+        len(probed), len(candidates),
+    )
+
+
+def _enrich_outing_descriptions(candidates: List[DialogueOptionCandidate]) -> None:
+    """将おでかけ探査结果注入候選項的 title / metadata，供 LLM 決策。
+
+    增強后的 candidate:
+      - metadata["p_cost"]: int — P 点消耗
+      - metadata["outing_effect"]: str — 効果描述
+      - metadata["description"]: str — 組合描述（用於 LLM prompt）
+    """
+    for candidate in candidates:
+        parts: list[str] = []
+        p_cost = candidate.metadata.get("p_cost")
+        if p_cost is not None:
+            parts.append(f"消耗{p_cost}Pポイント")
+        else:
+            parts.append("免费")
+        effect = candidate.metadata.get("outing_effect", "")
+        if effect:
+            parts.append(f"効果: {effect}")
+        if parts:
+            candidate.metadata["description"] = " | ".join(parts)
 
 
 # ────────────────────────────────────────────────────────────
@@ -154,6 +339,22 @@ def _reset_dialogue_stuck(ctx: "ProduceContext") -> None:
     ctx.handler_state.pop("dialogue_skip_indices", None)
 
 
+def _set_dialogue_transition_retry_override(
+    ctx: "ProduceContext",
+    *,
+    reason: str,
+) -> None:
+    ctx.handler_state["unknown_retry_override"] = {
+        "reason": reason,
+        "retry_limit": int(
+            ctx.handler_state.get("dialogue_transition_unknown_retry_limit", 8) or 8
+        ),
+        "retry_sleep": float(
+            ctx.handler_state.get("dialogue_transition_unknown_retry_sleep", 0.7) or 0.7
+        ),
+    }
+
+
 def execute_dialogue_step(
     app: "AppProcessor",
     ctx: "ProduceContext",
@@ -175,6 +376,32 @@ def execute_dialogue_step(
     candidates = collect_dialogue_option_candidates(app, ctx, position=position)
 
     if candidates:
+        # ── 刚确认过选项，等待画面切换，不要重新调 LLM ──
+        just_confirmed = ctx.handler_state.get("dialogue_just_confirmed")
+        if just_confirmed is not None and ctx.pending_dialogue_option_index is None:
+            grace = ctx.handler_state.get("dialogue_confirm_grace", 0) + 1
+            if grace <= 3:
+                ctx.handler_state["dialogue_confirm_grace"] = grace
+                logger.debug(
+                    "dialogue: 确认后等待画面切换 ({}/3)，跳过重复推理", grace,
+                )
+                return DialogueStepResult(status="waiting_transition")
+            # 超过等待次数，认为确认未生效，清除状态重新选择
+            logger.warning("dialogue: 确认后画面未切换，重置状态重新选择")
+            ctx.handler_state.pop("dialogue_just_confirmed", None)
+            ctx.handler_state.pop("dialogue_confirm_grace", None)
+
+        # ── おでかけ探査: 在第一次選択前采集效果描述 ──
+        if (
+            ctx.pending_dialogue_option_index is None
+            and _is_outing_context(app, position)
+            and not any(c.metadata.get("outing_effect") for c in candidates)
+        ):
+            _probe_outing_options(app, candidates)
+            _enrich_outing_descriptions(candidates)
+            # おでかけ DB マッチング: 効果描述 + P 成本 → 安定的 DB ID
+            hydrate_outing_candidates(candidates)
+
         # ── 第二次点击: 确认已选中选项 ──
         if ctx.pending_dialogue_option_index is not None:
             target_index = ctx.pending_dialogue_option_index
@@ -201,6 +428,9 @@ def execute_dialogue_step(
                     )
                     ctx.dialogue_choices_made += 1
                     ctx.clear_dialogue_pending()
+                    # 标记刚确认，防止画面未切换时重复推理
+                    ctx.handler_state["dialogue_just_confirmed"] = target.index
+                    ctx.handler_state.pop("dialogue_confirm_grace", None)
                     return DialogueStepResult(status="confirmed", candidate=target)
             else:
                 # 待确认索引超出范围 — 重置并重新选择
@@ -232,8 +462,10 @@ def execute_dialogue_step(
         return DialogueStepResult(status="selected", candidate=target)
 
     # ── 没有选项可见 — 快进或点击推进 ──
-    # 选项消失表示对话已推进，重置卡住状态
+    # 选项消失表示对话已推进，重置卡住状态和确认等待状态
     _reset_dialogue_stuck(ctx)
+    ctx.handler_state.pop("dialogue_just_confirmed", None)
+    ctx.handler_state.pop("dialogue_confirm_grace", None)
 
     # 纯剧情对话（非行程上下文）— 可以使用快进
     ff_buttons = app.latest_results.filter_by_label(BaseUILabels.PLOT_FAST_FORWARD_BUTTON)
@@ -268,4 +500,9 @@ class DialogueHandler(GameplayHandler):
         result = execute_dialogue_step(app, ctx, position=position)
         if result is None:
             return HandlerResult.no_action("no dialogue elements")
+        if result.status in {"selected", "confirmed", "fast_forward", "skipped", "advanced"}:
+            _set_dialogue_transition_retry_override(
+                ctx,
+                reason=f"dialogue_{result.status}",
+            )
         return HandlerResult.ok(f"dialogue {result.status}", sleep_after=0.6)

@@ -664,9 +664,13 @@ class GameUtils:
             sleep(1)
 
     def wait_frame_stable(self, threshold=0.98, stable_count=3, timeout=5,
-                          exclude_region=None):
+                          exclude_region=None, min_stable_duration=0):
         """
         等待画面稳定（SSIM）
+
+        通过比较来自不同 YOLO 推理周期的帧来判断画面是否稳定。
+        使用 latest_results 对象身份来确保每次比较的是不同的推理帧，
+        避免因高帧率下多次读取同一缓存帧而误判为稳定。
 
         Args:
             threshold: 画面相似度阈值
@@ -675,21 +679,36 @@ class GameUtils:
             exclude_region: 可选 (x, y, w, h) 比例元组 (0~1)，
                            将该区域遮黑后再算 SSIM，用于排除动画区域（如 Live2D 卡面）。
                            例如 (0.1, 0.2, 0.8, 0.7) 表示排除 10%~90% 宽、20%~90% 高的中心区域。
+            min_stable_duration: 最小稳定持续时间（秒），要求画面稳定持续至少这么长时间才返回。
+                                用于滚动列表等场景，防止动画中的短暂停顿被误判为稳定。
         """
         start = time()
         prev_frame = None
+        prev_results = None
         stable_times = 0
+        stable_since = None
 
         while True:
-            curr_frame = self._app_processor.latest_frame
+            curr_results = self._app_processor.latest_results
+            if curr_results is None:
+                sleep(0.05)
+                continue
+
+            # 确保是不同的推理周期产生的帧，避免比较同一缓存帧
+            if curr_results is prev_results:
+                sleep(0.05)
+                continue
+
+            curr_frame = curr_results.frame
             if curr_frame is None:
+                prev_results = curr_results
                 sleep(0.05)
                 continue
 
             # 第一帧，无对比，跳过
             if prev_frame is None:
                 prev_frame = curr_frame.copy()
-                sleep(0.05)
+                prev_results = curr_results
                 continue
 
             a = prev_frame
@@ -708,14 +727,19 @@ class GameUtils:
             logger.debug(f"SSIM: {score}")
             if score >= threshold:
                 stable_times += 1
+                if stable_since is None:
+                    stable_since = time()
             else:
                 stable_times = 0
-            # 判断是否连续稳定
+                stable_since = None
+            # 判断是否连续稳定且持续时间足够
             if stable_times >= stable_count:
-                return True
+                if min_stable_duration <= 0 or (time() - stable_since) >= min_stable_duration:
+                    return True
 
-            if time() - start > timeout:
+            # timeout < 0 表示不限制时间
+            if timeout >= 0 and time() - start > timeout:
                 return False
 
             prev_frame = curr_frame.copy()
-            sleep(0.05)
+            prev_results = curr_results

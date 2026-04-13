@@ -16,6 +16,7 @@ class GameplayPhase(str, Enum):
     P_DRINK = "p_drink"           # P饮料选择画面（P Drink 居中，非底栏图标）
     EXAM = "exam"                 # 試験/オーディション（与 lesson 共用手牌机制）
     CONSULT = "consult"           # 相談交换页（Card Item Exchange / 強化 / 削除）
+    ITEM_SELECT = "item_select"   # Pアイテム選択画面（Special Item）
     MODAL = "modal"               # 弹窗（Modal Header）
     LIVE_PERFORMANCE = "live_performance"  # ライブ演出（横画面リズムゲーム）
     RESULT = "result"             # 培育结果/跳过画面（Skip Button）
@@ -114,6 +115,9 @@ class ProduceContext:
     observability_state: Dict[str, Any] = field(default_factory=dict)
     rl_inference_url: str = ""
 
+    # ── 牌组/饮料变更追踪（相談・技能奖励等操作后实时更新） ──
+    deck_mutations: List[Dict[str, Any]] = field(default_factory=list)
+
     # ── 拡張ハンドラ用汎用ストレージ ──
     handler_state: Dict[str, Any] = field(default_factory=dict)
 
@@ -125,6 +129,7 @@ class ProduceContext:
     p_drink_strategy: Optional[Callable] = field(default=None, repr=False)
     exam_strategy: Optional[Callable] = field(default=None, repr=False)
     consult_strategy: Optional[Callable] = field(default=None, repr=False)
+    item_select_strategy: Optional[Callable] = field(default=None, repr=False)
     modal_strategy: Optional[Callable] = field(default=None, repr=False)
 
     def __post_init__(self):
@@ -149,6 +154,10 @@ class ProduceContext:
     @property
     def produce_group_id(self) -> Optional[str]:
         return self.produce_metadata.get("produce_group_id")
+
+    @property
+    def parameter_growth_limit(self) -> int:
+        return int(self.produce_metadata.get("parameter_growth_limit") or 0)
 
     # ── 阶段更新辅助 ──
 
@@ -192,6 +201,52 @@ class ProduceContext:
         if len(self.operation_history) > self.max_operation_history:
             self.operation_history = self.operation_history[-self.max_operation_history:]
 
+    # ── 牌组变更追踪 ──
+
+    def mutate_deck_enhance(self, card_id: str) -> None:
+        """记录一次技能卡強化（upgrade_count +1）。"""
+        if not card_id:
+            return
+        # 查找是否已有对同一张卡的強化记录，累加 upgrade_count
+        for m in self.deck_mutations:
+            if m["type"] == "enhance" and m["card_id"] == card_id:
+                m["upgrade_count"] = min(m.get("upgrade_count", 1) + 1, 3)
+                return
+        self.deck_mutations.append({
+            "type": "enhance",
+            "card_id": card_id,
+            "upgrade_count": 1,
+        })
+
+    def mutate_deck_acquire(
+        self,
+        card_id: str,
+        *,
+        kind: str = "produce_card",
+        name: str = "",
+        source: str = "",
+    ) -> None:
+        """记录获取一张新的技能卡/饮料/物品。"""
+        if not card_id:
+            return
+        self.deck_mutations.append({
+            "type": "acquire",
+            "card_id": card_id,
+            "kind": kind,
+            "name": name,
+            "source": source,
+        })
+
+    def mutate_deck_remove(self, card_id: str, *, kind: str = "produce_card") -> None:
+        """记录削除/丢弃一张卡或饮料。"""
+        if not card_id:
+            return
+        self.deck_mutations.append({
+            "type": "remove",
+            "card_id": card_id,
+            "kind": kind,
+        })
+
     def clear_schedule_pending(self) -> None:
         self.pending_schedule_index = None
         self.pending_schedule_label = ""
@@ -202,22 +257,46 @@ class ProduceContext:
     def clear_lesson_pending(self) -> None:
         self.pending_lesson_card_index = None
         self.pending_lesson_card_label = ""
+        self.handler_state.pop("pending_lesson_click_point", None)
+        self.handler_state.pop("pending_lesson_action_id", None)
+        self.handler_state.pop("pending_lesson_db_id", None)
 
     def clear_skill_reward_pending(self) -> None:
         self.pending_skill_reward_index = None
         self.pending_skill_reward_label = ""
+        self.handler_state.pop("pending_skill_reward_db_id", None)
 
     def clear_p_drink_pending(self) -> None:
         self.pending_p_drink_index = None
         self.pending_p_drink_label = ""
+        self.handler_state.pop("pending_new_p_drink", None)
+
+    def consume_recognized_drink(self, index: int) -> None:
+        """课内使用饮料后，从已知库存中移除对应饮料。"""
+        if 0 <= index < len(self.recognized_p_drinks):
+            removed = self.recognized_p_drinks.pop(index)
+            # 同步 inventory_state
+            inv_drinks = self.inventory_state.get("p_drinks")
+            if isinstance(inv_drinks, list) and 0 <= index < len(inv_drinks):
+                inv_drinks.pop(index)
 
     def clear_consult_pending(self) -> None:
         self.handler_state.pop("consult_auto_used_enhancement", None)
         self.handler_state.pop("consult_detected_actions", None)
         self.handler_state.pop("consult_enhancement_target", None)
         self.handler_state.pop("consult_enhancement_target_label", None)
+        self.handler_state.pop("consult_exchange_progressed", None)
+        self.handler_state.pop("consult_exchange_retry_count", None)
+        self.handler_state.pop("consult_last_exchange_action_id", None)
+        self.handler_state.pop("consult_last_exchange_db_id", None)
+        self.handler_state.pop("consult_last_exchange_p_points", None)
+        self.handler_state.pop("consult_last_exchange_signature", None)
         self.handler_state.pop("consult_last_subaction", None)
         self.handler_state.pop("consult_pending_mode", None)
+        self.handler_state.pop("consult_waiting_exchange_result", None)
+        self.handler_state.pop("_consult_is_exchange_retry", None)
+        # 注意: consult_total_op_count 不在此清除，
+        # 因为 CONSULT→MODAL→CONSULT 过渡期间不应重置
 
     def _clear_pending_state(self, phase: str) -> None:
         if phase == GameplayPhase.SCHEDULE:

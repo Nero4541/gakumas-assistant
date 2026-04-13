@@ -1,7 +1,7 @@
 """Step 12: 处理培育结果画面并返回主页。
 
 培育结束后游戏会依次展示（实际顺序基于连调实测）：
-  1. フォト選択画面 — 选择照片，点击「次へ」
+  1. フォト選択画面 — 选择照片（支持 VL 模型自动选卡面），点击「次へ」
   2. メモリー生成画面 — 圆形「生成」按钮（YOLO 无法检测）
   3. 生成动画 / Loading
   4. プロデュース評価 — 评价得分，TAP 推进
@@ -24,11 +24,16 @@
 from time import sleep, time
 from typing import TYPE_CHECKING
 
+import cv2
+
 from src.constants.game.text.button_text import ButtonText
 from src.constants.game.text.produce_text import ProduceText
 from src.constants.yolo.labels.baseUI_Labels import BaseUILabels
 from src.constants.yolo.labels.producer_Labels import ProducerLabels
 from src.constants.yolo.model_type import YoloModelType
+from src.core.inference.ocr_engine import OCRService
+from src.constants.game.producer_gameplay import GameplayPosition
+from src.core.tasks.producer_challenge.context import GameplayPhase
 from src.core.tasks.producer_challenge.gameplay.common import (
     click_relative_point,
     ocr_text,
@@ -38,6 +43,7 @@ from src.core.tasks.producer_challenge.ui import (
     collect_button_like_texts,
     collect_frame_text,
     click_modal_action_with_retry,
+    detect_gameplay_state,
     find_button,
 )
 from src.utils.logger import logger
@@ -48,6 +54,12 @@ if TYPE_CHECKING:
 
 
 # ── OCR 关键词 ──────────────────────────────────────────
+# フォト選択画面（记忆卡面照片选择）关键词
+_PHOTO_SELECT_KEYWORDS = (
+    ProduceText.MEMORY_PHOTO_SELECT,  # メモリーにするフォトを選んでください
+    "フォトを選",
+)
+
 # 需要 TAP 推进的画面关键词
 _TAP_SCREEN_KEYWORDS = (
     ProduceText.MEMORY_GENERATION_COMPLETE,  # メモリー生成完了
@@ -59,6 +71,7 @@ _TAP_SCREEN_KEYWORDS = (
 _RESULT_CHAIN_KEYWORDS = (
     ProduceText.MEMORY_GENERATION_COMPLETE,
     ProduceText.MEMORY_SELECT,
+    ProduceText.MEMORY_PHOTO_SELECT,
     ProduceText.PRODUCE_RESULT,
     ProduceText.ACHIEVEMENT_PROGRESS,
     ProduceText.EVENT_REWARD_PROGRESS,
@@ -73,6 +86,7 @@ _RESULT_CHAIN_KEYWORDS = (
     "完了する",
     "イベント",
     "最終試験",
+    "フォトを選",
 )
 
 # 「完了する」页面的 OCR 标识
@@ -80,41 +94,79 @@ _COMPLETE_PAGE_KEYWORDS = ("完了する",)
 # 「プロデュース履歴」页面的 OCR 标识
 _HISTORY_PAGE_KEYWORD = "プロデュース履歴"
 
-# 主页检测关键词 — 同时出现 2 个以上则判定为主页（含 OCR 变体）
-_HOME_SCREEN_KEYWORDS = (
-    # プレゼント（礼物）及其 OCR 变体
-    "プレゼント", "プレセント", "プレゼンド", "プレセンド",
-    # ミッション（任务）及其 OCR 变体
-    "ミッション", "ミッショラ", "ミグション",
-    # アチーブ（成就）及其 OCR 变体
-    "アチーブ", "アチープ",
-)
-# 上述关键词分 3 组，每组命中算 1 分，需至少 2 组命中
-_HOME_SCREEN_GROUPS = (
-    ("プレゼント", "プレセント", "プレゼンド", "プレセンド"),
-    ("ミッション", "ミッショラ", "ミグション"),
-    ("アチーブ", "アチープ"),
-)
-_HOME_SCREEN_MIN_MATCH = 2
+_RESULT_DETAIL_KEYWORDS = ("戻す", "戻しました")
+_RESULT_DETAIL_LABELS = {
+    ProducerLabels.PC_PROGRESS,
+    ProducerLabels.PC_P_POINT,
+    ProducerLabels.PC_ACTION_INFO,
+    ProducerLabels.SKILL_CARD_ACTIVE,
+    ProducerLabels.SKILL_CARD_MENTAL,
+    ProducerLabels.SKILL_CARD_TRAP,
+    ProducerLabels.SKILL_CARD_INFO,
+    ProducerLabels.P_DRINK,
+}
+_RESULT_OCR = OCRService()
 
 
 class HandleResultsStep(ProduceStep):
     step_name = "handle_results"
 
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
+        # 如果主循环已通过 produce_finishing 推进结果链并确认到主页，直接跳过
+        if ctx.handler_state.get("produce_finishing"):
+            logger.info("HandleResults: 主循环已完成培育收尾，跳过 step 12")
+            logger.success("培育完成，已返回主页")
+            return True
+
         ctx.gameplay_phase = "results"
         logger.info("开始处理培育结果画面")
 
-        # 阶段一：在 PRODUCER 模型下跳过结果页面
-        self._skip_result_screens(app, timeout=120)
+        # 支持多次 retry 循环：考试失败→再挑戦→考试→再次失败→再挑戦…
+        _MAX_RESULT_RETRIES = 5
+        for attempt in range(_MAX_RESULT_RETRIES):
+            # 阶段一：在 PRODUCER 模型下跳过结果页面
+            post_state = self._skip_result_screens(app, ctx, timeout=120)
 
-        # 阶段二：切回 BASE_UI 模型
-        logger.info("切换回 BASE_UI 模型")
-        app.yolo_engine.load_model(YoloModelType.BASE_UI)
-        sleep(2)
+            # 阶段二：切回 BASE_UI 模型
+            logger.info("切换回 BASE_UI 模型")
+            app.yolo_engine.load_model(YoloModelType.BASE_UI)
+            sleep(2)
+
+            if post_state is None:
+                post_state = self._detect_post_result_state(app, ctx)
+            if post_state[0] == "resume":
+                phase, position = post_state[1], post_state[2]
+                logger.info(f"结果链已回到 gameplay，恢复主循环: phase={phase}, position={position}")
+                if hasattr(ctx, "set_phase"):
+                    ctx.set_phase(phase)
+                else:
+                    ctx.gameplay_phase = phase
+                if hasattr(ctx, "set_position"):
+                    ctx.set_position(position)
+                else:
+                    ctx.gameplay_position = position
+                from src.core.tasks.producer_challenge.steps.produce_gameplay_loop import (
+                    ProduceGameplayLoopStep,
+                )
+
+                # 重新进入 gameplay loop（可能再次以 RESULT 退出）
+                logger.info("切换回 PRODUCER 模型用于 gameplay loop")
+                app.yolo_engine.load_model(YoloModelType.PRODUCER)
+                sleep(1.5)
+                if not ProduceGameplayLoopStep().execute(app, ctx):
+                    logger.error("恢复 gameplay 主循环失败")
+                    return False
+                # gameplay loop 再次退出，可能又是 RESULT → 回到循环顶部继续处理
+                logger.info(f"gameplay loop 再次退出 (attempt {attempt + 1})，继续处理结果")
+                continue
+
+            if post_state[0] == "home":
+                break
+            # 其他状态（"result" 等）→ 跳出循环，走 _wait_for_home 兜底
+            break
 
         # 阶段三：等待回到主页（处理残余弹窗）
-        if not self._wait_for_home(app, timeout=40):
+        if post_state[0] != "home" and not self._wait_for_home(app, timeout=40):
             logger.warning("未自动回到主页，尝试手动导航")
             try:
                 app.game_utils.go_home(max_try=5)
@@ -128,7 +180,11 @@ class HandleResultsStep(ProduceStep):
     # ── 阶段一：结果链推进 ─────────────────────────────────
 
     @staticmethod
-    def _skip_result_screens(app: "AppProcessor", timeout: int = 120):
+    def _skip_result_screens(
+        app: "AppProcessor",
+        ctx: "ProduceContext | None" = None,
+        timeout: int = 120,
+    ) -> tuple[str, str, str] | None:
         """在结果链中持续推进，直到进入 Loading 或检测到主页标签。
 
         策略：OCR 优先识别画面类型 → YOLO 按钮点击 → TAP 兜底
@@ -137,8 +193,10 @@ class HandleResultsStep(ProduceStep):
         consecutive_no_progress = 0
         same_text_count = 0           # 连续相同 OCR 文本计数（检测画面卡住）
         last_text_hash = ""           # 上一次 OCR 文本摘要
+        retry_click_count = 0         # 连续点击「再挑戦」次数（检测 ticket 用尽）
         MAX_NO_PROGRESS = 15          # 连续无法推进则退出
         MAX_SAME_TEXT = 8             # 同一画面持续 N 次则尝试强制推进
+        MAX_RETRY_CLICKS = 3          # 连续点击再挑戦无效 → ticket 用尽，改点次へ
 
         while time() - start < timeout:
             sleep(1.0)
@@ -162,10 +220,21 @@ class HandleResultsStep(ProduceStep):
             short_text = frame_text.replace("\n", " ")[:80]
             logger.debug(f"结果链: OCR=[{short_text}] YOLO={labels}")
 
-            # ── OCR 主页检测（PRODUCER 模型下 YOLO 无法识别主页标签）──
-            if HandleResultsStep._is_home_screen(frame_text):
-                logger.debug("结果链: OCR 检测到主页关键词，退出")
-                break
+            post_state = HandleResultsStep._detect_post_result_state(
+                app,
+                ctx,
+                frame_text=frame_text,
+                labels=labels,
+            )
+            if post_state[0] == "home":
+                logger.debug("结果链: 检测到主页，提前退出")
+                return post_state
+            if post_state[0] == "resume":
+                logger.info(
+                    "结果链: 检测到已回到 gameplay，停止结果链推进: "
+                    f"phase={post_state[1]}, position={post_state[2]}"
+                )
+                return post_state
 
             # ── 同一画面检测（防止死循环）──
             text_hash = frame_text.replace(" ", "").replace("\n", "")[:100]
@@ -190,6 +259,51 @@ class HandleResultsStep(ProduceStep):
                 consecutive_no_progress += 1
                 if consecutive_no_progress >= MAX_NO_PROGRESS:
                     break
+                continue
+
+            # ── 0a. 考试不合格 — 点击「再挑戦」按钮触发再挑战确认弹窗 ──
+            if ProduceText.FAILED in frame_text.replace(" ", ""):
+                # 连续点击再挑戦多次仍无变化 → ticket 用尽，改为点击「次へ」放弃重试
+                if retry_click_count >= MAX_RETRY_CLICKS:
+                    logger.warning(
+                        f"结果链: 再挑戦已点击 {retry_click_count} 次无效，"
+                        "判断 ticket 用尽，改为点击「次へ」放弃重试"
+                    )
+                    # 次へ 按钮通常在右下角（Confirm button）
+                    confirm_boxes = list(results.filter_by_label(ProducerLabels.CONFIRM_BUTTON))
+                    if confirm_boxes:
+                        app.device.click_element(confirm_boxes[0])
+                    else:
+                        click_relative_point(app, x_ratio=0.73, y_ratio=0.95, label="next-fallback")
+                    retry_click_count = 0
+                    sleep(2.0)
+                    consecutive_no_progress = 0
+                    continue
+
+                retry_btn = find_button(app, ButtonText.RETRY, fuzz_threshold=50)
+                if retry_btn:
+                    logger.info(
+                        f"结果链: 考试不合格，find_button 命中 再挑戦 "
+                        f"cx={getattr(retry_btn, 'cx', '?')} cy={getattr(retry_btn, 'cy', '?')} "
+                        f"text={getattr(retry_btn, 'text', '?')}"
+                    )
+                    app.device.click_element(retry_btn)
+                    logger.info("结果链: 考试不合格，点击「再挑戦」按钮")
+                else:
+                    # 兜底：直接用坐标点击左下角「再挑戦」按钮
+                    logger.info("结果链: 考试不合格，find_button 未命中，使用坐标兜底")
+                    click_relative_point(app, x_ratio=0.27, y_ratio=0.95, label="retry-fallback")
+                    logger.info("结果链: 考试不合格，兜底点击左下角区域（再挑戦）")
+                retry_click_count += 1
+                sleep(2.0)
+                consecutive_no_progress = 0
+                continue
+
+            # ── 0b. フォト選択画面 — VL 模型自动选择最优卡面 ──
+            if HandleResultsStep._is_photo_select_screen(frame_text):
+                logger.info("结果链: 检测到フォト選択画面（记忆卡面照片选择）")
+                HandleResultsStep._handle_photo_selection(app, frame)
+                consecutive_no_progress = 0
                 continue
 
             # ── 1. 「生成」按钮页 — 圆形按钮 YOLO 无法检测 ──
@@ -305,8 +419,57 @@ class HandleResultsStep(ProduceStep):
 
         elapsed = round(time() - start, 1)
         logger.debug(f"结果链处理完毕，耗时 {elapsed}s")
+        return None
 
     # ── 画面类型判断辅助 ─────────────────────────────────
+
+    @staticmethod
+    def _is_photo_select_screen(frame_text: str) -> bool:
+        """判断是否是フォト選択画面（记忆卡面照片选择页）。"""
+        text = frame_text.replace(" ", "").replace("\n", "")
+        return any(kw in text for kw in _PHOTO_SELECT_KEYWORDS)
+
+    @staticmethod
+    def _handle_photo_selection(app: "AppProcessor", frame) -> None:
+        """处理记忆卡面照片选择——根据配置使用 VL 模型或默认选择第一个。"""
+        from src.core.services.config_service import ConfigService
+
+        cfg = ConfigService().items
+        mode = str(cfg.task__auto_producer.memory_photo_mode).lower()
+
+        if mode != "vl":
+            logger.info("记忆卡面选择: 使用默认模式（第一个），点击「次へ」")
+            _click_next_button(app)
+            return
+
+        logger.info("记忆卡面选择: 使用 VL 模型自动选择最优卡面")
+        prompt = str(cfg.task__auto_producer.memory_photo_vl_prompt).strip()
+
+        # 提取照片缩略图区域
+        photo_images = _extract_photo_thumbnails(frame)
+        if not photo_images:
+            logger.warning("VL: 未能提取照片缩略图，使用默认（第一个）")
+            _click_next_button(app)
+            return
+
+        logger.info(f"VL: 提取到 {len(photo_images)} 张照片缩略图")
+
+        try:
+            from src.core.tasks.producer_challenge.gameplay.llm.vl_client import VLClient
+            vl = VLClient()
+            chosen_index = vl.select_best_photo(photo_images, prompt)
+        except Exception as e:
+            logger.error(f"VL 模型调用失败: {e}，回退到默认选择")
+            chosen_index = None
+
+        if chosen_index is not None and chosen_index > 0:
+            # 点击选中的照片（index=0 已经是默认选中的，不需要点击）
+            _click_photo_by_index(app, frame, chosen_index, len(photo_images))
+            sleep(1.0)
+        elif chosen_index is None:
+            logger.info("VL 未返回有效选择，使用默认（第一个）")
+
+        _click_next_button(app)
 
     @staticmethod
     def _is_generate_screen(frame_text: str, labels: list[str]) -> bool:
@@ -353,27 +516,9 @@ class HandleResultsStep(ProduceStep):
         return has_history and has_detail and not has_complete
 
     @staticmethod
-    def _is_home_screen(frame_text: str) -> bool:
-        """判断是否已经回到主页。
-        主页 OCR 同时包含「プレゼント」「ミッション」「アチーブ」等导航文本。
-        按组匹配（每组含 OCR 变体），至少 2 组命中。
-        """
-        text = frame_text.replace(" ", "").replace("\n", "")
-        matched_groups = 0
-        for group in _HOME_SCREEN_GROUPS:
-            if any(variant in text for variant in group):
-                matched_groups += 1
-        return matched_groups >= _HOME_SCREEN_MIN_MATCH
-
-    @staticmethod
     def _is_tap_screen(frame_text: str) -> bool:
-        """判断是否是需要 TAP 推进的展示画面。
-        排除主页（主页 OCR 中「TAPアイドルへの道...」会误匹配）。
-        """
+        """判断是否是需要 TAP 推进的展示画面。"""
         text = frame_text.replace(" ", "").replace("\n", "")
-        # 主页排除
-        if HandleResultsStep._is_home_screen(frame_text):
-            return False
         for keyword in _TAP_SCREEN_KEYWORDS:
             if keyword in text:
                 return True
@@ -381,19 +526,101 @@ class HandleResultsStep(ProduceStep):
 
     @staticmethod
     def _text_matches_result_chain(frame_text: str) -> bool:
-        """判断 OCR 文本是否属于结果链的一部分。
-        排除主页（主页 OCR 也包含「イベント」「ミッション」等词）。
-        """
+        """判断 OCR 文本是否属于结果链的一部分。"""
         text = frame_text.replace(" ", "")
         if not text:
-            return False
-        # 主页排除
-        if HandleResultsStep._is_home_screen(frame_text):
             return False
         for keyword in _RESULT_CHAIN_KEYWORDS:
             if keyword in text:
                 return True
         return False
+
+    @staticmethod
+    def _is_result_detail_page(frame_text: str, labels: list[str]) -> bool:
+        """识别结果链里的卡片详情/回退页，避免误判成已恢复 gameplay。"""
+        text = frame_text.replace(" ", "").replace("\n", "")
+        if not text or not any(keyword in text for keyword in _RESULT_DETAIL_KEYWORDS):
+            return False
+        label_set = set(labels)
+        return len(label_set & _RESULT_DETAIL_LABELS) >= 3
+
+    @staticmethod
+    def _click_ocr_text(
+        app: "AppProcessor",
+        frame,
+        queries: tuple[str, ...] | list[str],
+        *,
+        prefer_rightmost: bool = False,
+    ) -> str | None:
+        """直接点击 OCR 识别到的指定文本，适合 YOLO 缺标签的结果页按钮。"""
+        if frame is None:
+            return None
+        matches = _RESULT_OCR.ocr(frame)
+        if hasattr(matches, "search"):
+            matches = matches.search(list(queries), None)
+        else:
+            expected = set(queries)
+            matches = [item for item in matches if getattr(item, "text", "") in expected]
+        matches = list(matches)
+        if not matches:
+            return None
+        target = max(matches, key=lambda item: item.cx) if prefer_rightmost else min(
+            matches,
+            key=lambda item: item.cx,
+        )
+        app.device.click(target.cx, target.cy, label=f"ocr:{target.text}")
+        return target.text
+
+    @staticmethod
+    def _detect_post_result_state(
+        app: "AppProcessor",
+        ctx: "ProduceContext | None" = None,
+        *,
+        frame_text: str | None = None,
+        labels: list[str] | None = None,
+    ) -> tuple[str, str, str]:
+        """判断结果链之后当前是已回主页、已回 gameplay，还是仍停留在结果流。"""
+        results = app.latest_results
+        if results is not None and results.exists_label(BaseUILabels.TAB_HOME):
+            return ("home", "", "")
+
+        phase, position = detect_gameplay_state(app, ctx)
+        phase_value = getattr(phase, "value", str(phase or ""))
+        position_value = getattr(position, "value", str(position or ""))
+        if labels is None:
+            if results is not None and hasattr(results, "__iter__"):
+                labels = [r.label for r in results]
+            else:
+                labels = []
+        if frame_text is None:
+            frame_text = collect_frame_text(results) if results is not None else ""
+            if not frame_text and getattr(app, "latest_frame", None) is not None:
+                frame_text = ocr_text(app.latest_frame)
+
+        if HandleResultsStep._is_result_detail_page(frame_text, labels):
+            return ("result", "", "")
+        if phase == GameplayPhase.MODAL or phase_value == GameplayPhase.MODAL.value:
+            # 结果链中常会插入「早送り確認」「確認」这类通用弹窗；
+            # 只有明确识别成具体 gameplay modal 时，才交回主循环。
+            if (
+                position == GameplayPosition.GAMEPLAY_MODAL
+                or position_value == GameplayPosition.GAMEPLAY_MODAL
+            ):
+                return ("result", "", "")
+            return ("resume", phase_value, position_value)
+        if phase in {
+            GameplayPhase.UNKNOWN,
+            GameplayPhase.RESULT,
+            GameplayPhase.LOADING,
+            GameplayPhase.NONE,
+        } or phase_value in {
+            GameplayPhase.UNKNOWN.value,
+            GameplayPhase.RESULT.value,
+            GameplayPhase.LOADING.value,
+            GameplayPhase.NONE.value,
+        }:
+            return ("result", "", "")
+        return ("resume", phase_value, position_value)
 
     # ── 按钮点击辅助 ─────────────────────────────────────
 
@@ -492,3 +719,124 @@ class HandleResultsStep(ProduceStep):
 
             sleep(1)
         return False
+
+
+# ── フォト選択画面辅助函数 ─────────────────────────────────
+
+def _find_photo_grid(frame) -> tuple[list[tuple[int, int]], int, int]:
+    """检测フォト選択画面中照片网格的行区间与列范围。
+
+    返回 (rows, x_start, x_end):
+        rows   — [(y1, y2), ...] 每行照片的纵坐标范围
+        x_start, x_end — 网格的横坐标范围
+    """
+    import numpy as np
+
+    h, w = frame.shape[:2]
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if len(frame.shape) == 3 else frame
+
+    # 1) 用 OCR 定位标题和底部按钮，确定网格纵向范围
+    ocr_results = _RESULT_OCR.ocr(frame)
+    title_bottom = int(h * 0.33)  # 默认值
+    btn_top = int(h * 0.85)
+    for r in ocr_results:
+        text = getattr(r, "text", "")
+        if "フォトを選" in text or "メモリーにする" in text:
+            title_bottom = r.y + r.h + 5
+        elif "次へ" in text or "端末保存" in text or "アルバム保存" in text:
+            btn_top = min(btn_top, r.y - 10)
+
+    # 2) 在标题下方到按钮上方区域做逐行方差扫描，找照片行
+    scan_region = gray[title_bottom:btn_top, int(w * 0.03):int(w * 0.97)]
+    threshold = 20
+    in_row = False
+    rows: list[tuple[int, int]] = []
+    start_y = 0
+    for y in range(scan_region.shape[0]):
+        row_std = float(np.std(scan_region[y, :]))
+        if not in_row and row_std > threshold:
+            start_y = y
+            in_row = True
+        elif in_row and row_std < threshold:
+            if y - start_y > 30:
+                rows.append((title_bottom + start_y, title_bottom + y))
+            in_row = False
+    if in_row and scan_region.shape[0] - start_y > 30:
+        rows.append((title_bottom + start_y, title_bottom + scan_region.shape[0]))
+
+    x_start = int(w * 0.03)
+    x_end = int(w * 0.97)
+    return rows, x_start, x_end
+
+
+def _extract_photo_thumbnails(frame) -> list:
+    """从フォト選択画面提取照片缩略图列表。
+
+    使用 OCR 定位标题/按钮 → 方差扫描检测行 → 3 等分列 → 过滤空图。
+    """
+    import numpy as np
+
+    if frame is None:
+        return []
+
+    rows, x_start, x_end = _find_photo_grid(frame)
+    if not rows:
+        logger.warning("VL: 未检测到照片行")
+        return []
+
+    total_w = x_end - x_start
+    col_w = total_w // 3
+    margin = 8
+
+    photos = []
+    for y1, y2 in rows:
+        for ci in range(3):
+            cx1 = x_start + ci * col_w + margin
+            cx2 = x_start + (ci + 1) * col_w - margin
+            crop = frame[y1 + margin : y2 - margin, cx1:cx2]
+            if crop.size == 0:
+                continue
+            gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY) if len(crop.shape) == 3 else crop
+            if float(np.std(gray)) > 10:
+                photos.append(crop)
+
+    return photos
+
+
+def _click_photo_by_index(app, frame, index: int, total: int) -> None:
+    """点击指定索引的照片缩略图。"""
+    if frame is None:
+        return
+
+    rows, x_start, x_end = _find_photo_grid(frame)
+    if not rows:
+        logger.warning("VL: 未检测到照片行，无法点击")
+        return
+
+    col_w = (x_end - x_start) // 3
+    row_idx = index // 3
+    col_idx = index % 3
+
+    if row_idx >= len(rows):
+        logger.warning(f"VL: 目标行 {row_idx} 超出检测到的行数 {len(rows)}")
+        return
+
+    y1, y2 = rows[row_idx]
+    cx = x_start + col_idx * col_w + col_w // 2
+    cy = (y1 + y2) // 2
+
+    logger.info(f"VL: 点击照片 {index + 1}/{total}，坐标 ({cx}, {cy})")
+    app.device.click(cx, cy, label=f"vl-photo-{index + 1}")
+
+
+def _click_next_button(app) -> None:
+    """点击「次へ」按钮推进。"""
+    next_btn = find_button(app, ButtonText.NEXT, fuzz_threshold=50)
+    if next_btn:
+        app.device.click_element(next_btn)
+        logger.debug("记忆卡面选择: 点击「次へ」按钮")
+    else:
+        # 兜底：「次へ」按钮在底部居中 y≈0.93
+        click_relative_point(app, x_ratio=0.5, y_ratio=0.93, label="photo-next-fallback")
+        logger.debug("记忆卡面选择: 兜底点击底部「次へ」位置")
+    sleep(2.0)

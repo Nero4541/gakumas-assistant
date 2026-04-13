@@ -26,6 +26,7 @@ class YoloInferenceEngine:
     _capture_thread: Thread
     _infer_callback_list: List[Callable]
     _capture_failure_callback_list: List[Callable]
+    _agnostic_nms_groups: list[set[int]] | None = None  # 跨类别NMS分组
     # Flags
     __flag_loop: bool = False  # 主循环
     __flag_pause: bool = False  # 暂停
@@ -59,8 +60,19 @@ class YoloInferenceEngine:
             logger.debug(f"Loading YOLO model {model_type}...")
             self._engine = YoloModelFromONNX(config.model_config[model_type])
             self._model_type = model_type
+            # 从模型元数据中自动构建跨类别NMS分组（技能卡 Active/Mental/Trap 视为同类）
+            self._agnostic_nms_groups = self._build_skill_card_nms_group()
         if self.__flag_loop:
             self.resume()
+
+    def _build_skill_card_nms_group(self) -> list[set[int]] | None:
+        """从模型标签中查找技能卡类别ID，构建跨类别NMS分组。"""
+        skill_labels = {"Skill Card: Active", "Skill Card: Mental", "Skill Card: Trap"}
+        group: set[int] = set()
+        for cid, name in self._engine._model_meta.names.items():
+            if name in skill_labels:
+                group.add(cid)
+        return [group] if len(group) >= 2 else None
 
     def start(self):
         """
@@ -200,7 +212,8 @@ class YoloInferenceEngine:
             if frame is None or frame.size <= 0:
                 sleep(0.1)
                 continue
-            results = self._engine(frame, conf_threshold=0.6)
+            results = self._engine(frame, conf_threshold=0.6,
+                                   agnostic_nms_groups=self._agnostic_nms_groups)
             with self.__result_write_lock:
                 self._latest_results = Yolo_Results(results, frame)
             self._exec_infer_callback()

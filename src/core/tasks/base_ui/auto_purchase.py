@@ -250,7 +250,13 @@ def _purchase_item(app: "AppProcessor", item_data, el: Yolo_Box):
     app.game_utils.wait_label_exist(BaseUILabels.MODAL_HEADER)
 
 def _scroll_page(app, scroll_x, scroll_y, item_commodity):
-    """处理页面滚动"""
+    """
+    处理页面滚动。
+
+    返回 True 表示滚动导致页面发生了变化（还有更多内容）；
+    返回 False 表示页面未变化（已到达列表底部）。
+    """
+    pre_scroll = app.latest_frame.copy()
     if isinstance(app.device, Android_App):
         app.device.swipe(
             scroll_x,
@@ -260,7 +266,8 @@ def _scroll_page(app, scroll_x, scroll_y, item_commodity):
         )
     else:
         app.device.scrollY(scroll_x, scroll_y, -5)
-    app.game_utils.wait_frame_stable()
+    app.game_utils.wait_frame_stable(min_stable_duration=0.3)
+    return not check_frame_change(pre_scroll, app.latest_frame)
 
 
 def _wait_exchange_item_groups(
@@ -269,7 +276,10 @@ def _wait_exchange_item_groups(
         interval: float = 0.5,
 ) -> Tuple[Yolo_Results, List[Yolo_Results]]:
     """
-    等待每日交换所商品列表出现，避免在页面未切换成功时继续执行。
+    等待每日交换所商品列表出现并稳定，避免在列表仍在滚动时就开始推理。
+
+    先等待商品列表出现，再等待画面稳定（列表滚动结束），
+    最后用稳定后的帧重新检测商品位置，确保坐标准确。
     """
     waited = 0.0
     last_item_commodity = None
@@ -278,7 +288,14 @@ def _wait_exchange_item_groups(
         item_commodity = app.latest_results.filter_by_labels([BaseUILabels.ITEM, BaseUILabels.CARD_COMMODITY])
         item_groups = item_commodity.find_containing_groups(BaseUILabels.CARD_COMMODITY, [BaseUILabels.ITEM])
         if item_commodity and item_groups:
-            return item_commodity, item_groups
+            # 列表已出现，等待画面稳定（滚动动画结束）
+            # min_stable_duration=0.3 确保稳定持续至少 300ms，防止滚动动画中短暂停顿被误判
+            app.game_utils.wait_frame_stable(min_stable_duration=0.3)
+            # 用稳定后的帧重新检测，获取准确坐标
+            item_commodity = app.latest_results.filter_by_labels([BaseUILabels.ITEM, BaseUILabels.CARD_COMMODITY])
+            item_groups = item_commodity.find_containing_groups(BaseUILabels.CARD_COMMODITY, [BaseUILabels.ITEM])
+            if item_commodity and item_groups:
+                return item_commodity, item_groups
         last_item_commodity = item_commodity
         last_item_groups = item_groups
         sleep(interval)
@@ -297,7 +314,6 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
     主循环：交换物品
     """
     logger.info(f"Shopping list: {commodity_target}")
-    prev_page: Optional[np.ndarray] = None
     median_x, median_y = None, None
 
     # 检查内存是否为空，避免在空内存时进行无效检索
@@ -339,12 +355,9 @@ def _exchange_items(app: "AppProcessor", commodity_target: List[str]):
 
         # 翻页判断
         app.debug_tools.clear_all()
-        if prev_page is not None and check_frame_change(prev_page, app.latest_frame):
+        if not _scroll_page(app, scroll_x, scroll_y, item_commodity):
             logger.info("Page content stable, end of list.")
             break
-
-        prev_page = app.latest_frame.copy()
-        _scroll_page(app, scroll_x, scroll_y, item_commodity)
 
 def _find_visible_weekly_gift_buttons(app: "AppProcessor") -> List:
     # 只返回当前页真正可点击的“免费”礼包按钮。
@@ -498,9 +511,15 @@ def _collect_visible_weekly_gifts(app: "AppProcessor") -> int:
         app.game_utils.wait_frame_stable()
 
 
-def _scroll_weekly_gift_page(app: "AppProcessor"):
-    # 每次向下滚一屏左右，继续处理下一批可见礼包。
-    height, width = app.latest_frame.shape[:2]
+def _scroll_weekly_gift_page(app: "AppProcessor") -> bool:
+    """
+    每次向下滚一屏左右，继续处理下一批可见礼包。
+
+    返回 True 表示滚动导致页面发生了变化（还有更多内容）；
+    返回 False 表示页面未变化（已到达列表底部）。
+    """
+    pre_scroll = app.latest_frame.copy()
+    height, width = pre_scroll.shape[:2]
     if isinstance(app.device, Android_App):
         center_x = width // 2
         app.device.swipe(
@@ -512,7 +531,8 @@ def _scroll_weekly_gift_page(app: "AppProcessor"):
         )
     else:
         app.device.scrollY(width // 2, height // 2, -20)
-    app.game_utils.wait_frame_stable()
+    app.game_utils.wait_frame_stable(min_stable_duration=0.3)
+    return not check_frame_change(pre_scroll, app.latest_frame)
 
 
 def action__receive_weekly_gift(app: "AppProcessor"):
@@ -521,19 +541,14 @@ def action__receive_weekly_gift(app: "AppProcessor"):
     app.game_utils.wait_location_update(GamePageTypes.HOME_TAB.SHOP_SUB_PAGE.PACK)
     app.game_utils.wait_frame_stable()
 
-    prev_page: Optional[np.ndarray] = None
     while True:
         # 先清空当前可视区域里的免费礼包，再决定是否继续翻页。
         collected = _collect_visible_weekly_gifts(app)
         logger.debug(f"Collected {collected} weekly gift packs on current page")
 
-        current_page = app.latest_frame.copy()
-        # 连续两页内容几乎不变时，说明已经滚到列表末尾。
-        if prev_page is not None and check_frame_change(prev_page, current_page):
+        if not _scroll_weekly_gift_page(app):
+            logger.info("Page content stable, end of list.")
             break
-
-        prev_page = current_page
-        _scroll_weekly_gift_page(app)
 
     while _dismiss_weekly_gift_modal_if_present(app):
         pass

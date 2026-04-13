@@ -25,7 +25,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, List
 
-from src.constants.game.producer_gameplay import GameplayPhase
+from src.constants.game.producer_gameplay import GameplayPhase, GameplayPosition
 from src.core.tasks.producer_challenge.gameplay.common import click_relative_point
 
 if TYPE_CHECKING:
@@ -179,16 +179,61 @@ class GameplayDispatcher:
 # ────────────────────────────────────────────────────────────
 
 class ResultHandler(GameplayHandler):
-    """检测到结果画面时通知 gameplay 循环退出。"""
+    """检测到结果画面时标记培育进入收尾阶段。
+
+    收尾分两阶段：
+      1. produce_finishing_pending: 已决定结束培育，但仍在 PRODUCER 模型下处理
+         （考试结果、LIVE演出、记忆生成等）
+      2. produce_finishing: 到达记忆卡面选择等后期通用 UI 页面，切 BASE_UI 推进回主页
+    """
 
     phase_tag = GameplayPhase.RESULT
     priority = 95
+
+    # 到达这些位置时切换到 BASE_UI 收尾（记忆卡面选择及之后的通用 UI）
+    _BASEUI_POSITIONS = {
+        GameplayPosition.RESULT_MEMORY_PAGE,
+        GameplayPosition.RESULT_REWARD_SUMMARY,
+        GameplayPosition.RESULT_ACHIEVEMENT_PROGRESS,
+        GameplayPosition.RESULT_EVENT_REWARD_PROGRESS,
+    }
+
+    # 这些位置说明培育已结束，但还在 PRODUCER 可处理的阶段（点击推进即可）
+    _PENDING_POSITIONS = {
+        GameplayPosition.RESULT_FINAL_EVALUATION,
+        GameplayPosition.RESULT_MEMORY_GENERATION,
+    }
 
     def can_handle(self, app, ctx, phase, position):
         return phase == GameplayPhase.RESULT
 
     def handle(self, app, ctx, phase, position):
-        return HandlerResult.exit("result screen detected")
+        # 到达记忆卡面选择等后期页面 → 切 BASE_UI 收尾
+        if position in self._BASEUI_POSITIONS:
+            ctx.handler_state["produce_finishing"] = True
+            logger.info("result: 到达 {} → 标记 produce_finishing，将切换 BASE_UI", position)
+            return HandlerResult.ok(f"result ({position}) → produce_finishing", sleep_after=0.5)
+
+        # 培育已结束的中间页面（最终评价、记忆生成等）→ 标记 pending，继续 PRODUCER 推进
+        if position in self._PENDING_POSITIONS:
+            ctx.handler_state["produce_finishing_pending"] = True
+            logger.info("result: 到达 {} → 标记 produce_finishing_pending，继续 PRODUCER 推进", position)
+
+        # 所有非 BASE_UI 的结果页面：优先点击 Confirm 按钮，否则点中心推进
+        from src.constants.yolo.labels.producer_Labels import ProducerLabels
+        confirm_boxes = list(app.latest_results.filter_by_label(ProducerLabels.CONFIRM_BUTTON))
+        if confirm_boxes:
+            box = confirm_boxes[0]
+            app.device.click(box.cx, box.cy, "result-confirm")
+        else:
+            click_relative_point(app, x_ratio=0.5, y_ratio=0.5, label="result-advance")
+        # 结果页后常有切页动画 / 对话过渡，给更长的 unknown 重试
+        ctx.handler_state["unknown_retry_override"] = {
+            "reason": "result_midgame_transition",
+            "retry_limit": 10,
+            "retry_sleep": 1.0,
+        }
+        return HandlerResult.ok(f"result ({position}) → advance", sleep_after=0.8)
 
 
 class AdvanceHandler(GameplayHandler):

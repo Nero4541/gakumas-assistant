@@ -28,7 +28,7 @@ def register_middlewares(processor: "AppProcessor"):
         if app.latest_results.exists_label(BaseUILabels.MODAL_HEADER):
             if last_modal:
                 return True
-            modal = get_modal(app.latest_results, True)
+            modal = get_modal(app.latest_results, True, quiet=True)
             if modal is None:
                 return True
             if string_match(modal.modal_title, [ModalText.TITLE.DATA_UPDATE, ModalText.TITLE.DATE_UPDATE], MatchConfig(fuzz_threshold=90)):
