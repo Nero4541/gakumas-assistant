@@ -325,7 +325,8 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
             nuitka_cmd.append("--include-module=webview.platforms.cocoa")
         elif TARGET_PLATFORM == "Windows":
             nuitka_cmd.append("--include-module=webview.platforms.edgechromium")
-    if TARGET_PLATFORM == "Darwin":
+    if TARGET_PLATFORM == "Darwin" and _use_macos_app_bundle(storage_mode):
+        # Foundation/objc/Vision 仅在 app bundle 模式下包含，Nuitka 要求 Foundation 必须用 --mode=app
         for module_name in ("Foundation", "objc", "Vision"):
             if importlib.util.find_spec(module_name):
                 nuitka_cmd.append(f"--include-module={module_name}")
