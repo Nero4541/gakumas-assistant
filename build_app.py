@@ -222,12 +222,21 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
 
 
 def bootstrap_rapidocr_runtime_files():
-    from src.main import AppProcessor
-    from src.core.inference.ocr_engine import OCRLoader
+    """直接创建 RapidOCR 实例以触发模型文件下载。
 
-    get_data_root().mkdir(parents=True, exist_ok=True)
-    AppProcessor.init_database()
-    OCRLoader()
+    不经过 OCRLoader（它在 macOS 会自动选择 vision 后端而跳过 RapidOCR 模型下载）。
+    """
+    from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
+
+    RapidOCR(params={
+        "Det.engine_type": EngineType.ONNXRUNTIME,
+        "Det.lang_type": LangDet.CH,
+        "Det.model_type": ModelType.MOBILE,
+        "Det.ocr_version": OCRVersion.PPOCRV5,
+        "Rec.engine_type": EngineType.ONNXRUNTIME,
+        "Rec.lang_type": LangRec.JAPAN,
+        "Rec.model_type": ModelType.MOBILE,
+    })
 
 
 def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
@@ -246,6 +255,16 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
         "uvloop",
         "dotenv",
     ]
+    if TARGET_PLATFORM == "Windows":
+        # Windows 上 pywebview 使用 EdgeChromium，需要排除 Qt 平台模块以避免与 no-qt 插件冲突
+        nofollow_modules.extend(
+            [
+                "PySide6",
+                "shiboken6",
+                "qtpy",
+                "webview.platforms.qt",
+            ]
+        )
     if TARGET_PLATFORM == "Darwin":
         nofollow_modules.extend(
             [
@@ -304,6 +323,8 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
             nuitka_cmd.append("--include-module=webview.platforms.qt")
         elif TARGET_PLATFORM == "Darwin":
             nuitka_cmd.append("--include-module=webview.platforms.cocoa")
+        elif TARGET_PLATFORM == "Windows":
+            nuitka_cmd.append("--include-module=webview.platforms.edgechromium")
     if TARGET_PLATFORM == "Darwin":
         for module_name in ("Foundation", "objc", "Vision"):
             if importlib.util.find_spec(module_name):
@@ -318,6 +339,9 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
     elif TARGET_PLATFORM == "Darwin":
         if not _use_macos_app_bundle(storage_mode):
             nuitka_cmd.append("--disable-plugin=pywebview")
+    elif TARGET_PLATFORM == "Windows":
+        # 手动指定平台模块后禁用 pywebview 插件，避免与 no-qt 插件产生冲突
+        nuitka_cmd.append("--disable-plugin=pywebview")
 
 
 
