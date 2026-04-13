@@ -283,6 +283,10 @@ def _add_nuitka_dependency_pruning(nuitka_cmd: list[str], storage_mode: str):
                     "webview.platforms.cocoa",
                 ]
             )
+        # --standalone 模式下 Nuitka 不允许包含 Foundation/objc/Vision（需要 --mode=app），
+        # 未使用 app bundle 时必须将其排除，否则编译报 FATAL
+        if not _use_macos_app_bundle(storage_mode):
+            nofollow_modules.extend(["Foundation", "objc", "Vision"])
     if TARGET_PLATFORM == "Linux":
         nofollow_modules.extend(
             [
