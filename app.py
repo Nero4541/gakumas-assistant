@@ -175,7 +175,11 @@ def _start_pywebview(url: str):
     PYWEBVIEW_WINDOW_BRIDGE.bind_window(window)
     icon_path = resolve_runtime_str("assets", "images", "gakumas_logo.png")
     start_kwargs = {}
-    if os.path.exists(icon_path):
+    # On Windows, pywebview's WinForms backend passes the icon to
+    # System.Drawing.Icon() which only accepts .ico files and crashes
+    # with PNG images. Skip the custom icon on Windows and let pywebview
+    # fall back to the default executable icon.
+    if platform.system() != "Windows" and os.path.exists(icon_path):
         start_kwargs["icon"] = icon_path
     if platform.system() == "Linux":
         start_kwargs["gui"] = "qt"
@@ -233,3 +237,4 @@ if __name__ == "__main__":
         if not _webview_enabled_for_build():
             logger.info("Embedded WebView is disabled for this build. Launching in browser mode.")
         _run_server_forever(server_url, processor, open_browser=not args.not_use_webview)
+—
