@@ -216,6 +216,7 @@ def build_context(app, difficulty_override=None, use_llm=False):
         memory_preset_index=int(cfg.memory_preset_index.value),
         use_rental=cfg.use_rental.value,
         use_boost_items=cfg.use_boost_items.value,
+        resume_interrupted=getattr(app, '_debug_resume', False),
     )
     # 调试脚本支持从中途/only-loop 续跑，先挂上目标偶像卡主库数据作为参数 OCR 种子。
     ctx.selected_idol_card = GakumasDatabase_IdolCardDataUtils().get_by_id(ctx.target_idol_card_id)
@@ -378,6 +379,8 @@ def main():
     parser.add_argument("--phase", action="store_true", help="检测当前画面阶段")
     parser.add_argument("--only-loop", action="store_true", help="仅运行 gameplay loop")
     parser.add_argument("--step", type=int, default=1, help="从指定步骤开始 (1-12)")
+    parser.add_argument("--resume", action="store_true",
+                        help="恢复中断的培育（检测到再开弹窗时点击再開する）")
     parser.add_argument("--difficulty", type=str, default=None,
                         help="覆盖难度设置 (regular/pro/master/legend)")
     parser.add_argument("--llm", action="store_true",
@@ -397,6 +400,8 @@ def main():
     # 保存 LLM 配置
     app._debug_llm_url = getattr(args, 'llm_url', None)
     app._debug_llm_model = getattr(args, 'llm_model', None)
+    # 保存恢复模式标记
+    app._debug_resume = getattr(args, 'resume', False)
 
     use_llm = True
     if args.no_llm:

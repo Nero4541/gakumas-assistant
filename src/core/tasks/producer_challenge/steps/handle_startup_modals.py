@@ -48,6 +48,17 @@ class HandleStartupModalsStep(ProduceStep):
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         ctx.set_phase(GameplayPhase.STARTUP_MODALS)
 
+        # ── 恢复模式：跳过启动弹窗，直接切换模型等待 gameplay ──
+        if getattr(ctx, "resumed_from_interrupt", False):
+            logger.info("[恢复培育] 跳过启动弹窗处理，直接切换到 PRODUCER 模型")
+            self._switch_model(app, YoloModelType.PRODUCER)
+            detected_phase = self._wait_for_gameplay_phase(app, ctx, timeout=30)
+            if not detected_phase:
+                raise TimeoutError("[恢复培育] 切换模型后等待 gameplay 首帧超时")
+            ctx.set_phase(detected_phase)
+            logger.success(f"[恢复培育] 进入游戏玩法阶段: {detected_phase}")
+            return True
+
         # ── 阶段 1：用 BASE_UI 模型处理启动设置弹窗 ──
         # 第一次点击「プロデュース開始」后，会依次弹出语音/快进/跳过三个设置弹窗。
         # 这些弹窗属于 BASE_UI 元素，必须用 BASE_UI 模型检测和处理。

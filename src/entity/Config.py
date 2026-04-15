@@ -665,8 +665,8 @@ class _Task:
                 hint="选择 NIA 剧本难度",
                 component="select",
                 options=[
-                    {"title": "Pro（produce-004）", "value": "pro"},
-                    {"title": "Master（produce-005）", "value": "master"},
+                    {"title": "Pro", "value": "pro"},
+                    {"title": "Master", "value": "master"},
                 ],
                 visible_if={"task__auto_producer.scenario": "nia"},
                 order=21,
@@ -690,10 +690,10 @@ class _Task:
             use_verify=True,
             ui=ConfigItemUI(
                 label="支援卡编成",
-                hint="自动编成（おまかせ）或使用预设编号",
+                hint="自动编成或使用预设编号",
                 component="select",
                 options=[
-                    {"title": "自动编成（おまかせ）", "value": "auto"},
+                    {"title": "自动编成", "value": "auto"},
                     {"title": "预设编号", "value": "preset"},
                 ],
                 order=40,
@@ -718,10 +718,10 @@ class _Task:
             use_verify=True,
             ui=ConfigItemUI(
                 label="记忆编成",
-                hint="自动编成（おまかせ）或使用预设编号",
+                hint="自动编成或使用预设编号",
                 component="select",
                 options=[
-                    {"title": "自动编成（おまかせ）", "value": "auto"},
+                    {"title": "自动编成", "value": "auto"},
                     {"title": "预设编号", "value": "preset"},
                 ],
                 order=60,
@@ -758,6 +758,17 @@ class _Task:
                 hint="開始確認页面是否使用加成道具（編成詳细按钮上方）",
                 component="switch",
                 order=80,
+            ),
+        )
+        # 是否恢复上次中断的培育（检测到「プロデュース再開」弹窗时点击「再開する」）
+        resume_interrupted = ConfigItem(
+            default_value=True,
+            data_type=bool,
+            ui=ConfigItemUI(
+                label="恢复中断培育",
+                hint="检测到上次中断的培育时自动恢复（点击「再開する」），而非放弃重新开始",
+                component="switch",
+                order=82,
             ),
         )
         # 记忆卡面（フォト）选择模式

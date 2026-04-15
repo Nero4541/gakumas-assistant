@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
 class ConfirmAndStartStep(ProduceStep):
     step_name = "confirm_and_start"
+    skip_on_resume = True
 
     def validate(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         return is_final_confirm_page(app)

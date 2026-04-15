@@ -48,6 +48,8 @@ from src.core.tasks.producer_challenge.gameplay.lesson import (
     _try_resolve_empty_hand_action,
     execute_lesson_step,
 )
+from src.core.tasks.producer_challenge.gameplay.common import click_relative_point
+from src.core.tasks.producer_challenge.gameplay.decision import is_produce_drink_action_id
 from src.utils.logger import logger
 
 if TYPE_CHECKING:
@@ -106,7 +108,8 @@ class ExamHandler(GameplayHandler):
                 return HandlerResult.ok("exam: skip (no cards)", sleep_after=1.0)
             return HandlerResult.no_action("exam: no playable cards")
         if result.status == "used":
-            ctx.lesson_turns_played += 1
+            if not is_produce_drink_action_id(result.candidate.action_id):
+                ctx.lesson_turns_played += 1
             return HandlerResult.ok(f"exam {result.status}", sleep_after=0.5)
         if result.status == "end_turn":
             return HandlerResult.ok("exam: end_turn", sleep_after=0.8)
@@ -122,7 +125,7 @@ class ExamHandler(GameplayHandler):
         frame = getattr(app.latest_results, "frame", None)
         if frame is None:
             logger.warning("[考试准备] 无法获取帧画面")
-            app.device.tap_screen(540, 1170)  # 安全区域点击推进
+            click_relative_point(app, x_ratio=0.5, y_ratio=0.5, label="exam_prep_no_frame")
             return HandlerResult.ok("exam_prep: no frame, tap to continue", sleep_after=1.5)
 
         bonuses = extract_exam_prep_bonuses(frame)
@@ -136,8 +139,7 @@ class ExamHandler(GameplayHandler):
             logger.warning("[考试准备] 加成倍率提取失败，继续推进")
 
         # 点击画面继续（「タップして次へ」）
-        h, w = frame.shape[:2]
-        app.device.tap_screen(w // 2, int(h * 0.5))
+        click_relative_point(app, x_ratio=0.5, y_ratio=0.5, label="exam_prep_continue")
         return HandlerResult.ok("exam_prep: extracted bonuses, tap to continue", sleep_after=2.0)
 
     def _update_wheel_info(self, app: "AppProcessor", ctx: "ProduceContext") -> None:

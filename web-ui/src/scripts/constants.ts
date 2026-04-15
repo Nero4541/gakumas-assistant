@@ -1,6 +1,7 @@
 export const WS_ACTION_HEAD = 'action' as const
 
 export const WS_ACTION = {
+  AppStatusChanged: 'app:status_changed',
   TaskStatusUpdate: 'task:status_update',
   TaskQueueStart: 'task:start',
   TaskQueueStop: 'task:stop',

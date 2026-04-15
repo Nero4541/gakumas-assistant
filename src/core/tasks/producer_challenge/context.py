@@ -54,8 +54,11 @@ class ProduceContext:
     memory_preset_index: int = 1
     use_rental: bool = True
     use_boost_items: bool = False
+    resume_interrupted: bool = False      # 是否恢复上次中断的培育
 
     # ── 执行期间填充 ──
+    resumed_from_interrupt: bool = False  # 实际恢复了中断培育（跳过编成步骤）
+    resume_info: Dict[str, Any] = field(default_factory=dict)  # 恢复弹窗中提取的信息
     selected_idol_card: Optional[Any] = None
     support_cards: List[Any] = field(default_factory=list)
     memories: List[Any] = field(default_factory=list)

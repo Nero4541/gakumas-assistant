@@ -269,12 +269,19 @@ class LLMStrategy:
 
     # ── LLM 调用 ────────────────────────────────────────
 
+    # content 为空时最多重试次数
+    _EMPTY_CONTENT_MAX_RETRIES = 2
+
     def _call_and_parse(
         self,
         prompt: str,
         state: dict[str, Any],
     ) -> int | None:
-        """调用 LLM 并解析返回的动作编号。"""
+        """调用 LLM 并解析返回的动作编号。
+
+        当模型只输出 reasoning 但 content 为空时（thinking 占满 token 预算），
+        会自动追加提示重试，最多重试 _EMPTY_CONTENT_MAX_RETRIES 次。
+        """
         client = self._get_client()
         legal = state.get("legal_actions", [])
         phase = state.get("phase", "unknown")
@@ -283,25 +290,27 @@ class LLMStrategy:
         snapshot = state.get("llm_snapshot", {})
         system_prompt = self._build_system_prompt(phase, snapshot)
 
-        # 构建请求参数
-        kwargs: dict[str, Any] = {
+        # 构建消息列表（重试时会追加 assistant/user 消息）
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ]
+
+        # 构建基础请求参数
+        base_kwargs: dict[str, Any] = {
             "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt},
-            ],
             "temperature": self.temperature,
         }
         # max_tokens 为 None 时不传，让模型自行管理 thinking / content 的 token 分配
         if self.max_tokens is not None:
-            kwargs["max_tokens"] = self.max_tokens
+            base_kwargs["max_tokens"] = self.max_tokens
 
         # Ollama think 参数
         if self.think and self.think != "false":
             think_value = self.think if self.think in ("low", "medium", "high") else True
-            kwargs["extra_body"] = {"think": think_value, "options": {"num_ctx": self.num_ctx}}
+            base_kwargs["extra_body"] = {"think": think_value, "options": {"num_ctx": self.num_ctx}}
         elif self.num_ctx:
-            kwargs["extra_body"] = {"options": {"num_ctx": self.num_ctx}}
+            base_kwargs["extra_body"] = {"options": {"num_ctx": self.num_ctx}}
 
         # 调试：打印系统提示词和用户提示词
         logger.debug("[LLM] ====== SYSTEM PROMPT [{}] ======\n{}", phase, system_prompt)
@@ -311,36 +320,69 @@ class LLMStrategy:
         details = _LLMCallDetails(system_prompt=system_prompt, user_prompt=prompt)
         t0 = time.monotonic()
 
-        try:
-            response = client.chat.completions.create(**kwargs)
-        except Exception as exc:
-            # 若 think 参数不支持，回退不带 think 的请求
-            if "think" in str(exc).lower() or "unsupported" in str(exc).lower():
-                logger.debug("[LLM] think 参数不支持，回退重试")
-                kwargs.pop("extra_body", None)
+        # 重试循环：content 为空但有 reasoning 时追加提示重试
+        response = None
+        for attempt in range(1 + self._EMPTY_CONTENT_MAX_RETRIES):
+            kwargs = {**base_kwargs, "messages": list(messages)}
+            try:
                 response = client.chat.completions.create(**kwargs)
-            else:
-                raise
+            except Exception as exc:
+                # 若 think 参数不支持，回退不带 think 的请求
+                if "think" in str(exc).lower() or "unsupported" in str(exc).lower():
+                    logger.debug("[LLM] think 参数不支持，回退重试")
+                    kwargs.pop("extra_body", None)
+                    response = client.chat.completions.create(**kwargs)
+                else:
+                    raise
+
+            # 提取原始 response 关键字段
+            if response and response.choices:
+                _msg_dict = self._coerce_dict(
+                    response.choices[0].message if hasattr(response.choices[0], "message") else response.choices[0]
+                )
+                details.raw_content = self._coerce_text(_msg_dict.get("content"))
+                details.raw_reasoning = self._coerce_text(
+                    _msg_dict.get("reasoning_content") or _msg_dict.get("reasoning")
+                )
+                logger.info("[LLM] content({} 字符): {}", len(details.raw_content), repr(details.raw_content[:300]))
+                if details.raw_reasoning:
+                    logger.info("[LLM] reasoning({} 字符): {}", len(details.raw_reasoning), repr(details.raw_reasoning[:300]))
+
+            final_text = self._extract_final_text(response)
+            if final_text:
+                break  # 成功拿到 content
+
+            # content 为空：判断是否有 reasoning（模型只思考未回答）
+            has_reasoning = bool(details.raw_reasoning and details.raw_reasoning.strip())
+            if not has_reasoning or attempt >= self._EMPTY_CONTENT_MAX_RETRIES:
+                # 无 reasoning 或已达最大重试次数，交给 fallback
+                if attempt > 0:
+                    logger.warning(
+                        "[LLM] 重试 {} 次后 content 仍为空，交给 fallback",
+                        attempt,
+                    )
+                else:
+                    logger.debug("[LLM] 返回空文本，交给 fallback")
+                details.elapsed_sec = time.monotonic() - t0
+                self._last_call_details = details
+                return None
+
+            # 有 reasoning 但 content 为空 → 追加提示让模型直接输出答案
+            logger.warning(
+                "[LLM] content 为空(第{}次)，reasoning 有 {} 字符，追加提示重试",
+                attempt + 1,
+                len(details.raw_reasoning),
+            )
+            # 将上次的 reasoning 作为 assistant 回复，再追加一条 user 消息催促输出
+            messages.append({"role": "assistant", "content": details.raw_reasoning[:2000]})
+            messages.append({
+                "role": "user",
+                "content": "请直接输出你选择的动作编号（纯数字），不要再进行额外思考。",
+            })
 
         details.elapsed_sec = time.monotonic() - t0
 
-        # 提取原始 response 关键字段（content vs reasoning 分离）
-        if response and response.choices:
-            _msg_dict = self._coerce_dict(
-                response.choices[0].message if hasattr(response.choices[0], "message") else response.choices[0]
-            )
-            details.raw_content = self._coerce_text(_msg_dict.get("content"))
-            details.raw_reasoning = self._coerce_text(
-                _msg_dict.get("reasoning_content") or _msg_dict.get("reasoning")
-            )
-            logger.info("[LLM] content({} 字符): {}", len(details.raw_content), repr(details.raw_content[:300]))
-            if details.raw_reasoning:
-                logger.info("[LLM] reasoning({} 字符): {}", len(details.raw_reasoning), repr(details.raw_reasoning[:300]))
-
-        # 提取最终文本（只取 content，不取 reasoning）
-        final_text = self._extract_final_text(response)
         if not final_text:
-            logger.debug("[LLM] 返回空文本，交给 fallback")
             self._last_call_details = details
             return None
 

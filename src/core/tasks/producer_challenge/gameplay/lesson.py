@@ -299,8 +299,8 @@ def _ocr_battle_empty_hand_notice(
         debugger.add_box(
             x1,
             y1,
-            max(x2 - x1, 1),
-            max(y2 - y1, 1),
+            x2,
+            y2,
             label="battle_empty_hand_notice",
             color=(255, 180, 80),
             alpha=0.12,
@@ -673,6 +673,46 @@ def _cancel_drink_modal(app: "AppProcessor") -> bool:
             return True
     logger.warning("battle: 饮料模态关闭轮询 {} 次仍未确认，可能残留", _DRINK_MODAL_MAX_POLLS)
     return False
+
+
+def _confirm_drink_usage_modal(app: "AppProcessor") -> bool:
+    """等待饮料详情模态出现，然后点击「使う」确认使用。
+
+    纯状态驱动：轮询检查 YOLO 结果，等待模态出现后点击确认按钮，
+    确认 MODAL_HEADER 消失即返回。不依赖固定时间或帧率。
+    """
+    # 第一阶段：等待模态出现
+    modal_appeared = False
+    for _ in range(_DRINK_MODAL_MAX_POLLS):
+        time.sleep(_DRINK_MODAL_POLL_SLEEP)
+        results = app.latest_results
+        has_modal = bool(list(results.filter_by_label(BaseUILabels.MODAL_HEADER)))
+        if has_modal:
+            modal_appeared = True
+            break
+    if not modal_appeared:
+        logger.warning("battle: 饮料使用模态等待超时，未检测到模态")
+        return False
+
+    # 第二阶段：点击确认按钮并等待模态关闭
+    clicked = False
+    for _ in range(_DRINK_MODAL_MAX_POLLS):
+        time.sleep(_DRINK_MODAL_POLL_SLEEP)
+        results = app.latest_results
+        has_modal = bool(list(results.filter_by_label(BaseUILabels.MODAL_HEADER)))
+        if not has_modal and clicked:
+            logger.debug("battle: 饮料使用模态已确认关闭")
+            return True
+        confirm_boxes = list(results.filter_by_label(ProducerLabels.CONFIRM_BUTTON))
+        if confirm_boxes:
+            app.device.click_element(confirm_boxes[0])
+            logger.debug("battle: 饮料使用模态点击确认（使う）")
+            clicked = True
+        elif not has_modal:
+            # 模态已消失（可能被游戏自动处理）
+            return True
+    logger.warning("battle: 饮料使用确认轮询 {} 次仍未关闭，可能残留", _DRINK_MODAL_MAX_POLLS)
+    return clicked
 
 
 def _drink_pos_key(box: Any) -> tuple[int, int]:
@@ -1575,22 +1615,36 @@ def _try_resolve_empty_hand_action(
         ctx.clear_lesson_pending()
         ctx.pending_p_drink_index = target.index
         ctx.pending_p_drink_label = target.title or target.action_id or f"p_drink_{target.index + 1}"
-        ctx.record_operation(
-            "select_battle_p_drink",
-            target=target.title or target.label,
-            details={
-                "index": target.index,
-                "label": target.label,
-                "action_id": target.action_id,
-                "db_id": target.db_id,
-                "reason": "empty_hand_fallback",
-            },
-        )
         app.device.click_element(target.box)
-        return HandlerResult.ok(
-            f"{phase_tag}: 空手牌 fallback 选饮料 {target.title!r}",
-            sleep_after=0.8,
-        )
+        # 等待饮料详情模态出现并点击「使う」确认
+        if _confirm_drink_usage_modal(app):
+            logger.info("{}: 饮料 {!r} 使用确认成功", phase_tag, target.title)
+            ctx.record_operation(
+                "use_p_drink_in_lesson",
+                target=target.title or target.label,
+                details={
+                    "index": target.index,
+                    "label": target.label,
+                    "action_id": target.action_id,
+                    "db_id": target.db_id,
+                    "reason": "empty_hand_fallback",
+                },
+            )
+            drink_idx = getattr(target, "index", None)
+            if drink_idx is not None:
+                ctx.consume_recognized_drink(drink_idx)
+            return HandlerResult.ok(
+                f"{phase_tag}: 空手牌 fallback 饮料使用成功 {target.title!r}",
+                sleep_after=1.0,
+            )
+        else:
+            # 模态确认失败，尝试关闭残留模态
+            logger.warning("{}: 饮料使用确认失败，尝试关闭残留模态", phase_tag)
+            _cancel_drink_modal(app)
+            return HandlerResult.ok(
+                f"{phase_tag}: 空手牌 fallback 饮料使用未确认 {target.title!r}",
+                sleep_after=0.8,
+            )
     if is_end_turn_action_id(target.action_id) and _click_battle_end_turn(app, fallback_box=target.box):
         logger.info("{}: 空手牌 fallback 选择 SKIP/结束回合", phase_tag)
         ctx.clear_lesson_pending()
@@ -1757,7 +1811,25 @@ def execute_lesson_step(
             ctx.pending_p_drink_index = target.index
             ctx.pending_p_drink_label = target.title or target.action_id or f"p_drink_{target.index + 1}"
             app.device.click_element(target.box)
-            return LessonStepResult(status="selected", candidate=target)
+            # 等待饮料详情模态出现并点击「使う」确认
+            if _confirm_drink_usage_modal(app):
+                logger.info("lesson: 饮料 {!r} 使用确认成功", target.title)
+                ctx.record_operation(
+                    "use_p_drink_in_lesson",
+                    target=target.title or target.label,
+                    details={
+                        "index": target.index,
+                        "label": target.label,
+                        "action_id": target.action_id,
+                        "db_id": target.db_id,
+                    },
+                )
+                return LessonStepResult(status="used", candidate=target)
+            else:
+                # 模态确认失败，尝试关闭残留模态
+                logger.warning("lesson: 饮料使用确认失败，尝试关闭残留模态")
+                _cancel_drink_modal(app)
+                return LessonStepResult(status="selected", candidate=target)
         if _try_use_lesson_card_double_tap(app, ctx, target, phase=phase):
             logger.info(f"lesson: 卡片打出成功 [{resolved_index}] {target.title!r}")
             ctx.pending_lesson_card_index = None
@@ -1854,6 +1926,25 @@ class LessonHandler:
             click_relative_point(app, x_ratio=0.5, y_ratio=0.5, label="lesson-empty-hand-advance")
             return HandlerResult.ok("lesson: 空手牌等待推进", sleep_after=1.0)
         if result.status == "used":
+            if is_produce_drink_action_id(result.candidate.action_id):
+                # 饮料使用成功，不计入出牌回合
+                ctx.handler_state["lesson_idle_streak"] = 0
+                drink_idx = getattr(result.candidate, "index", None)
+                if drink_idx is not None:
+                    ctx.consume_recognized_drink(drink_idx)
+                ctx.handler_state["unknown_retry_override"] = {
+                    "reason": "lesson_drink_used",
+                    "retry_limit": int(
+                        ctx.handler_state.get("loading_unknown_retry_limit", 15) or 15
+                    ),
+                    "retry_sleep": float(
+                        ctx.handler_state.get("loading_unknown_retry_sleep", 1.0) or 1.0
+                    ),
+                }
+                return HandlerResult.ok(
+                    f"lesson: 饮料使用成功 {result.candidate.title!r}",
+                    sleep_after=1.0,
+                )
             ctx.lesson_turns_played += 1
             ctx.handler_state["lesson_idle_streak"] = 0
             # 打出卡片后可能触发 lesson 结束过渡动画，需要更多重试等待
@@ -1894,14 +1985,11 @@ class LessonHandler:
                 return HandlerResult.ok("lesson: skip (all_unplayable)", sleep_after=1.0)
             logger.warning("lesson: 所有手牌不可用，无跳过按钮，等待")
             return HandlerResult.ok("lesson: all_unplayable", sleep_after=1.0)
+        # status="selected" 且为饮料：模态确认失败，已尝试关闭残留模态
         if is_produce_drink_action_id(result.candidate.action_id):
             ctx.handler_state["lesson_idle_streak"] = 0
-            # 使用饮料后立即从已知库存中移除
-            drink_idx = getattr(result.candidate, "index", None)
-            if drink_idx is not None:
-                ctx.consume_recognized_drink(drink_idx)
             return HandlerResult.ok(
-                f"lesson: 使用底栏饮料 {result.candidate.title!r}",
+                f"lesson: 饮料使用未确认 {result.candidate.title!r}",
                 sleep_after=0.8,
             )
 

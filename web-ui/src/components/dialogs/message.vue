@@ -14,7 +14,7 @@
         <v-btn
           color="white"
           icon="mdi-window-close"
-          variant="icon"
+          variant="text"
           @click="snackbar = false"
         />
       </template>
@@ -53,7 +53,7 @@ export default {
         case 'error':
           return 'red'
         case 'info':
-          return undefined
+          return 'primary'
         default:
           return undefined
       }
@@ -61,9 +61,3 @@ export default {
   }
 }
 </script>
-
-<style>
-.v-snackbar {
-  margin-top: 30px;
-}
-</style>

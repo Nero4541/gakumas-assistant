@@ -23,11 +23,19 @@ import { aliases, mdi } from "vuetify/iconsets/mdi";
 export default createVuetify({
   theme: {
     defaultTheme: 'dark',
+    themes: {
+      dark: {
+        colors: {
+          // 默认 info 是灰色，覆盖为蓝色
+          info: '#2196F3',
+        },
+      },
+    },
   },
   blueprint: md3,
   locale: {
     locale: 'zhHans',
-    message: { zhHans },
+    messages: { zhHans },
   },
   icons: {
     defaultSet: 'mdi',

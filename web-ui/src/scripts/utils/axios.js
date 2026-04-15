@@ -33,6 +33,10 @@ const responseSuccess = result => {
  * @return {Promise<never>}
  */
 const responseError = err => {
+  if (!err.response) {
+    console.debug('[API] request failed before response received', err?.message)
+    return Promise.reject(err)
+  }
   if (err.response.status === 403) {
     message.showApiErrorMsg(err.response.data.msg ?? '权限不足')
     setTimeout(() => {

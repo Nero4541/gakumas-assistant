@@ -47,6 +47,7 @@ MAX_SWIPE_ATTEMPTS = 5
 
 class SelectDifficultyStep(ProduceStep):
     step_name = "select_difficulty"
+    skip_on_resume = True
 
     def validate(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         return ctx.produce_id is not None

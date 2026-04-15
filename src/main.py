@@ -270,6 +270,39 @@ class AppProcessor:
         except RuntimeError as exc:
             logger.debug(f"Skip device status websocket broadcast: {exc}")
 
+    def build_app_status(self) -> dict:
+        """构建前端状态栏需要的应用状态快照。"""
+        current_task = self.task_queue.get_current_running_task()
+        return {
+            'platform': self.config_service().base.run_mode.value.lower(),
+            'yolo': self.yolo_engine.running,
+            'task': self.task_queue.queue_status(),
+            'current_task': current_task.id if current_task else '',
+            'device': self.get_device_status(),
+            'game': {
+                'current_location': self.game_status_manager.current_location,
+                'player': {
+                    'level': self.game_status_manager.player.level,
+                    'gem': self.game_status_manager.player.gem,
+                    'stamina': self.game_status_manager.player.stamina,
+                }
+            }
+        }
+
+    def broadcast_app_status(self):
+        """通过 websocket 广播应用状态快照。"""
+        if not hasattr(self, "ws_manager"):
+            return
+        if not getattr(self.ws_manager, "active_connections", None):
+            return
+        try:
+            self.ws_manager.broadcast_action_sync(
+                WebsocketActions.App.StatusChanged,
+                WebSocketData(message=self.build_app_status()),
+            )
+        except RuntimeError as exc:
+            logger.debug(f"Skip app status websocket broadcast: {exc}")
+
     def get_device_status(self) -> dict:
         with self._device_state_lock:
             return dict(self._device_status)
@@ -427,7 +460,11 @@ class AppProcessor:
                 except Exception as e:
                     logger.warning(f"Failed to annotate inference result, fallback to raw frame: {e}")
         annotated_frame = self.debug_tools.draw_boxes(annotated_frame)
-        _, encoded_frame = cv2.imencode('.jpg', annotated_frame)
+        # 本地预览直接使用 BMP，无损且编码开销比 JPEG 更低。
+        _, encoded_frame = cv2.imencode(
+            '.bmp',
+            annotated_frame,
+        )
         frame_bytes = encoded_frame.tobytes()
         self.ws_manager.broadcast_sync(WebSocketData(None, f"{width},{height}".encode('utf-8') + b"," + frame_bytes))
 

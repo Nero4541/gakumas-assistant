@@ -61,6 +61,7 @@ class MemorySlotTarget:
 
 class CollectMemoryAttributesStep(ProduceStep):
     step_name = "collect_memory_attributes"
+    skip_on_resume = True
 
     def validate(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         return self._get_memory_page_state(app) in {"selection", "candidate_list", "detail", "final_confirm"}

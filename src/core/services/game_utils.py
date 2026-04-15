@@ -634,7 +634,9 @@ class GameUtils:
             if current_location and current_location != self._app_processor.game_status_manager.current_location:
                 update = True
                 self._app_processor.game_status_manager.current_location = current_location
-        if update: logger.debug(f"Current location: {self._app_processor.game_status_manager.current_location}")
+        if update:
+            logger.debug(f"Current location: {self._app_processor.game_status_manager.current_location}")
+            self._app_processor.broadcast_app_status()
         return self._app_processor.game_status_manager.current_location
 
     def wait_location_update(self, target_location: str, timeout=15, ignore_loading=True):

@@ -21,7 +21,6 @@ from src.utils.runtime_paths import (
     RUNTIME_METADATA_FILE_NAME,
     STORAGE_MODE_MERGED,
     STORAGE_MODE_PORTABLE,
-    get_data_root,
 )
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -121,7 +120,7 @@ def _get_output_filename() -> str:
 def update_game_database():
     subprocess.run(
         ["git", "submodule", "update", "--init", "--recursive"],
-        cwd=PROJECT_ROOT,
+        cwd=str(PROJECT_ROOT),
         check=True,
     )
 
@@ -177,13 +176,13 @@ def build_webui():
     npm_env.setdefault("NPM_CONFIG_CACHE", str(npm_cache_dir))
     install_args = ["ci"] if (WEBUI_DIR / "package-lock.json").exists() else ["install"]
     try:
-        subprocess.run([npm_cmd, *install_args], cwd=WEBUI_DIR, check=True, env=npm_env)
+        subprocess.run([npm_cmd, *install_args], cwd=str(WEBUI_DIR), check=True, env=npm_env)
     except subprocess.CalledProcessError:
         if install_args != ["ci"] or os.getenv("GITHUB_ACTIONS"):
             raise
         print("npm ci failed locally, retrying with npm install")
         try:
-            subprocess.run([npm_cmd, "install"], cwd=WEBUI_DIR, check=True, env=npm_env)
+            subprocess.run([npm_cmd, "install"], cwd=str(WEBUI_DIR), check=True, env=npm_env)
         except subprocess.CalledProcessError:
             if not node_modules_dir.exists():
                 raise
@@ -193,7 +192,7 @@ def build_webui():
             print("Vite is unavailable locally, reusing existing dist")
             return
         raise RuntimeError("Vite is unavailable. Reinstall web-ui dependencies before building.")
-    subprocess.run([npm_cmd, "run", "build"], cwd=WEBUI_DIR, check=True, env=npm_env)
+    subprocess.run([npm_cmd, "run", "build"], cwd=str(WEBUI_DIR), check=True, env=npm_env)
 
 
 def _add_rapidocr_data_files(nuitka_cmd: list[str]):
@@ -211,7 +210,7 @@ def _add_rapidocr_data_files(nuitka_cmd: list[str]):
                 "-c",
                 "from build_app import bootstrap_rapidocr_runtime_files; bootstrap_rapidocr_runtime_files()",
             ],
-            cwd=PROJECT_ROOT,
+            cwd=str(PROJECT_ROOT),
             check=True,
         )
     for relative_path in RAPIDOCR_DATA_FILES:
@@ -662,7 +661,7 @@ def _generate_macos_bundle_icon(resources_dir: Path) -> Path | None:
                 sizes=[(16, 16), (32, 32), (64, 64), (128, 128), (256, 256), (512, 512), (1024, 1024)],
             )
         return icns_path
-    except Exception:
+    except (ImportError, OSError, ValueError):
         if icns_path.exists():
             icns_path.unlink()
 
@@ -743,6 +742,50 @@ def _write_macos_bundle_metadata(bundle_dir: Path, icon_file: Path | None):
         plistlib.dump(plist_data, file_obj)
 
 
+def _codesign_macos_bundle(bundle_dir: Path) -> None:
+    """对 macOS app bundle 进行 ad-hoc 深度签名。
+
+    --deep 会递归签名 .app 内所有 Mach-O 文件，确保 Gatekeeper 将整包视为
+    一个整体来验证，而不是逐一拦截内部的 .so/.dylib。
+    """
+    if not shutil.which("codesign"):
+        print("警告：未找到 codesign 工具，跳过 app bundle 签名步骤")
+        return
+    print(f"正在对 app bundle 进行 ad-hoc 深度签名：{bundle_dir.name}")
+    subprocess.run(
+        ["codesign", "--force", "--deep", "--sign", "-", str(bundle_dir)],
+        check=True,
+        capture_output=True,
+    )
+    print("app bundle 签名完成")
+
+
+def _create_macos_bundle_launch_script(bundle_dir: Path) -> None:
+    """在 app bundle 旁边创建首次运行辅助脚本。
+
+    与便携版同理：用户下载解压后 macOS 会给 .app 包附加 com.apple.quarantine，
+    导致"无法打开，因为无法验证开发者"。此脚本清除隔离属性后用 open 打开 .app，
+    用户只需在第一次运行时右键→打开此脚本即可。
+    """
+    script_name = "启动助手（首次运行）.command"
+    bundle_name = bundle_dir.name  # e.g. "Gakumas Assistant.app"
+    script_content = f"""#!/bin/bash
+# 移除 macOS Gatekeeper 隔离标记，解除"无法验证开发者"的拦截提示。
+# 仅需在首次运行时执行一次：右键 → 打开，之后可直接双击 .app 启动。
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+APP_PATH="$SCRIPT_DIR/{bundle_name}"
+echo "正在移除 macOS 隔离标记，请稍候..."
+xattr -cr "$APP_PATH"
+xattr -d com.apple.quarantine "$0" 2>/dev/null || true
+echo "完成，正在启动应用..."
+open "$APP_PATH"
+"""
+    # 脚本放在 .app 同级目录（即 out/）
+    script_path = bundle_dir.parent / script_name
+    script_path.write_text(script_content, encoding="utf-8")
+    script_path.chmod(0o755)
+
+
 def _finalize_macos_bundle(bundle_dir: Path):
     if not bundle_dir.exists():
         raise FileNotFoundError(bundle_dir)
@@ -750,6 +793,60 @@ def _finalize_macos_bundle(bundle_dir: Path):
     resources_dir.mkdir(parents=True, exist_ok=True)
     icon_file = _generate_macos_bundle_icon(resources_dir)
     _write_macos_bundle_metadata(bundle_dir, icon_file)
+    _codesign_macos_bundle(bundle_dir)
+    _create_macos_bundle_launch_script(bundle_dir)
+
+
+def _codesign_macos_portable(output_dir: Path) -> None:
+    """对 macOS 便携版输出目录中的所有 Mach-O 文件进行 ad-hoc 重签名。
+
+    Nuitka 编译时会附加 ad-hoc 签名，但部分文件签名可能不一致。
+    重签名确保每个 .so/.dylib 都有有效的签名，避免 Gatekeeper 在加载
+    动态库时以"签名无效"为由拦截（与隔离属性问题独立）。
+    """
+    if not shutil.which("codesign"):
+        print("警告：未找到 codesign 工具，跳过 ad-hoc 重签名步骤")
+        return
+
+    targets: list[Path] = []
+    main_binary = output_dir / _get_output_filename()
+    if main_binary.exists():
+        targets.append(main_binary)
+    targets.extend(output_dir.rglob("*.so"))
+    targets.extend(output_dir.rglob("*.dylib"))
+
+    print(f"正在对 {len(targets)} 个 Mach-O 文件进行 ad-hoc 重签名...")
+    for target in targets:
+        subprocess.run(
+            ["codesign", "--force", "--sign", "-", str(target)],
+            check=True,
+            capture_output=True,
+        )
+    print("ad-hoc 重签名完成")
+
+
+def _create_macos_launch_script(output_dir: Path) -> None:
+    """在便携版目录中创建首次运行辅助脚本。
+
+    用户下载解压后，macOS 会给所有文件附加 com.apple.quarantine 隔离属性，
+    导致 Gatekeeper 逐一拦截 .so/.dylib 并报"Apple 无法验证..."。
+    此脚本通过 xattr -cr 递归清除隔离属性后再启动主程序，
+    用户只需在第一次运行时右键→打开此脚本即可，之后可直接运行主程序。
+    """
+    script_name = "启动助手（首次运行）.command"
+    main_binary_name = _get_output_filename()
+    script_content = f"""#!/bin/bash
+# 移除 macOS Gatekeeper 隔离标记，解除"Apple 无法验证..."的拦截提示。
+# 仅需在首次运行时执行一次：右键 → 打开，之后可直接运行主程序。
+APP_DIR="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
+echo "正在移除 macOS 隔离标记，请稍候..."
+xattr -cr "$APP_DIR"
+echo "完成，正在启动应用..."
+exec "$APP_DIR/{main_binary_name}"
+"""
+    script_path = output_dir / script_name
+    script_path.write_text(script_content, encoding="utf-8")
+    script_path.chmod(0o755)
 
 
 def _finalize_macos_portable_output() -> Path:
@@ -757,6 +854,8 @@ def _finalize_macos_portable_output() -> Path:
         raise FileNotFoundError(APP_DIST_DIR)
     _remove_existing_path(MACOS_PORTABLE_DIR)
     APP_DIST_DIR.rename(MACOS_PORTABLE_DIR)
+    _codesign_macos_portable(MACOS_PORTABLE_DIR)
+    _create_macos_launch_script(MACOS_PORTABLE_DIR)
     return MACOS_PORTABLE_DIR
 
 
@@ -815,7 +914,7 @@ def build_project(storage_mode: str = DEFAULT_PACKAGE_STORAGE_MODE):
 
     subprocess.run(
         [sys.executable, "-m", "nuitka", *nuitka_cmd, "app.py"],
-        cwd=PROJECT_ROOT,
+        cwd=str(PROJECT_ROOT),
         check=True,
     )
     runtime_target_dir = APP_DIST_DIR

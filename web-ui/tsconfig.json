@@ -1,0 +1,27 @@
+{
+  "extends": "./jsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "allowSyntheticDefaultImports": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": [
+      "vite/client"
+    ]
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.d.ts",
+    "src/**/*.js",
+    "src/**/*.vue",
+    "auto-imports.d.ts",
+    "components.d.ts",
+    "typed-router.d.ts",
+    "vite.config.mjs"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules"
+  ]
+}

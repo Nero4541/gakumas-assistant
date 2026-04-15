@@ -513,7 +513,7 @@ def draw_text(
 
 def get_black_image(size: Tuple[int, int]) -> bytes:
     img_black = np.zeros((size[0], size[1], 3), dtype=np.uint8)
-    _, encoded_image = cv2.imencode('.png', img_black)
+    _, encoded_image = cv2.imencode('.bmp', img_black)
     return encoded_image.tobytes()
 
 

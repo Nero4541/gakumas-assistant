@@ -1,5 +1,6 @@
 import {WS_ACTION} from "@/scripts/constants.js"
 import {TaskItem} from "@/scripts/entity/task";
+import {AppStatus} from "@/scripts/entity/status";
 
 export interface WsOptions {
   reconnect?: boolean
@@ -9,6 +10,7 @@ export interface WsOptions {
 }
 
 export interface WsEventPayloads {
+  [WS_ACTION.AppStatusChanged]: AppStatus
   [WS_ACTION.TaskStatusUpdate]: {
     id: string
     target_status: TaskItem['status']

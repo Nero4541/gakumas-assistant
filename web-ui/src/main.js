@@ -31,6 +31,7 @@ registerPlugins(app)
 
 const theme = getRandomTheme()
 const appStore = useAppStore()
+appStore.init()
 wsService.connect(getWsUrl("/ws"))
 wsService.on(WS_ACTION.ShowMessage_Info, data => {
   message.showInfo(data.message, data?.close_delay ? data.close_delay * 1000 : 3000)
@@ -50,7 +51,6 @@ wsService.onEvent("disconnect", () => {
 wsService.onEvent("reconnect", () => {
   message.showSuccess("服务器重连成功")
 })
-appStore.init()
 app.config.globalProperties.$theme = theme
 app.directive("auto-save", autoSave)
 

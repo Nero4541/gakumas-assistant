@@ -15,6 +15,7 @@ class WebSocketService {
   private reconnectTimer: number | null = null
   private heartbeatTimer: number | null = null
   private reconnectCount = 0
+  private hasConnectedOnce = false
 
   private textHandlers = new Map<string, TextHandler[]>()
   private binaryHandlers: BinaryHandler[] = []
@@ -41,6 +42,7 @@ class WebSocketService {
     this.ws.onopen = () => {
       console.log('[WS] connected')
       const isReconnect = this.reconnectCount > 0
+      this.hasConnectedOnce = true
       this.reconnectCount = 0
       this.startHeartbeat()
 
@@ -60,14 +62,20 @@ class WebSocketService {
     }
 
     this.ws.onclose = () => {
-      console.warn('[WS] closed')
+      if (this.hasConnectedOnce) {
+        console.warn('[WS] closed')
+      }
       this.cleanup()
-      this.emit('disconnect')
+      if (this.hasConnectedOnce) {
+        this.emit('disconnect')
+      }
       this.tryReconnect()
     }
 
     this.ws.onerror = () => {
-      console.error('[WS] error')
+      if (this.hasConnectedOnce) {
+        console.error('[WS] error')
+      }
       this.ws?.close()
     }
   }

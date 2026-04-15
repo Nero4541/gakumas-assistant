@@ -652,7 +652,7 @@ def _is_card_grayed_out(box, frame: np.ndarray, *, debugger: DebugTools | None =
     grayed = mean_v < _GRAYED_CARD_V_THRESHOLD
     if debugger is not None:
         debugger.add_box(
-            box.x, box.y, box.w - box.x, box.h - box.y,
+            box.x, box.y, box.w, box.h,
             label=f"灰卡V={mean_v:.0f}" if grayed else f"正常V={mean_v:.0f}",
             color=(128, 128, 128) if grayed else (0, 200, 0),
             alpha=0.15,
@@ -690,7 +690,7 @@ def _is_card_exchanged(box, frame: np.ndarray, *, debugger: DebugTools | None = 
     exchanged = mean_v < _EXCHANGED_CARD_V_THRESHOLD and mean_s < _EXCHANGED_CARD_S_THRESHOLD
     if debugger is not None:
         debugger.add_box(
-            box.x, box.y, box.w - box.x, box.h - box.y,
+            box.x, box.y, box.w, box.h,
             label=f"交換済V={mean_v:.0f},S={mean_s:.0f}" if exchanged else f"未交換V={mean_v:.0f},S={mean_s:.0f}",
             color=(200, 100, 0) if exchanged else (0, 200, 100),
             alpha=0.15,
@@ -1259,11 +1259,30 @@ def decide_consult_action(
     decision_state = build_decision_state(
         app,
         ctx,
-        phase=GameplayPhase.CONSULT,
+        phase="consult",
         position=position,
         candidates=candidates,
         reason="consult_decision",
     )
+    # ── 已选中目标时自动确认，防止 LLM 反复选卡死循环 ──
+    pending_target = ctx.handler_state.get("consult_enhancement_target")
+    if pending_target and position != GameplayPosition.CONSULT_EXCHANGE:
+        subflow_mode = _consult_subflow_mode(ctx)
+        confirm_kind = _consult_confirm_kind_for_mode(subflow_mode)
+        for idx, candidate in enumerate(candidates):
+            if candidate.kind == confirm_kind:
+                logger.info(
+                    "consult: 已选中目标 '{}' → 自动确认 {} (idx={})",
+                    ctx.handler_state.get("consult_enhancement_target_label", ""),
+                    confirm_kind,
+                    idx,
+                )
+                return idx
+        # 未找到确认按钮，清除 pending 状态避免死循环
+        logger.warning("consult: 已选中目标但未找到确认按钮，清除 pending 状态")
+        ctx.handler_state.pop("consult_enhancement_target", None)
+        ctx.handler_state.pop("consult_enhancement_target_label", None)
+
     decision = invoke_decision_strategy(
         ctx.consult_strategy,
         app,

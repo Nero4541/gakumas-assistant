@@ -76,6 +76,7 @@ _FORMATION_NOISE_TEXTS = (
 
 class CollectFormationDetailsStep(ProduceStep):
     step_name = "collect_formation_details"
+    skip_on_resume = True
 
     def validate(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         return is_final_confirm_page(app)
