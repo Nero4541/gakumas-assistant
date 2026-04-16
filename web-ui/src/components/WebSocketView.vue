@@ -12,7 +12,7 @@ const canvasRef = ref(null)
 const containerRef = ref(null)
 let lastBuffer = null
 let resizeObserver = null
-let currentImgUrl = null
+let renderSeq = 0
 
 function parseBinaryData (buffer) {
   const bytes = new Uint8Array(buffer)
@@ -41,22 +41,15 @@ async function renderToCanvas (buffer) {
   const container = containerRef.value
   if (!canvas || !container) return
 
+  const currentSeq = ++renderSeq
   const { width, height, imageBytes } = parseBinaryData(buffer)
   const ctx = canvas.getContext('2d')
-
-  // 释放上一次 blob url
-  if (currentImgUrl) {
-    URL.revokeObjectURL(currentImgUrl)
-    currentImgUrl = null
+  const blob = new Blob([imageBytes], { type: 'image/bmp' })
+  const bitmap = await createImageBitmap(blob)
+  if (currentSeq !== renderSeq) {
+    bitmap.close()
+    return
   }
-
-  const blob = new Blob([imageBytes], { type: 'image/jpeg' })
-  currentImgUrl = URL.createObjectURL(blob)
-
-  const img = new Image()
-  img.src = currentImgUrl
-
-  await new Promise(resolve => img.addEventListener('load', resolve, { once: true }))
 
   const dpr = window.devicePixelRatio || 1
   const rect = container.getBoundingClientRect()
@@ -73,13 +66,17 @@ async function renderToCanvas (buffer) {
   // 重置 transform 避免 scale 累积
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.scale(dpr, dpr)
-  ctx.imageSmoothingEnabled = false
+  // 下采样时启用高质量平滑，避免调试小字在预览面板里发虚/锯齿明显。
+  // 放大或原尺寸时关闭平滑，尽量保留原始像素细节。
+  ctx.imageSmoothingEnabled = scale < 1
+  ctx.imageSmoothingQuality = scale < 1 ? 'high' : 'low'
 
   const offsetX = (newWidth - width * scale) / 2
   const offsetY = (newHeight - height * scale) / 2
 
   ctx.clearRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(img, offsetX, offsetY, width * scale, height * scale)
+  ctx.drawImage(bitmap, offsetX, offsetY, width * scale, height * scale)
+  bitmap.close()
 
   lastBuffer = buffer
 }
@@ -129,16 +126,13 @@ onMounted(() => {
     }
   })
   resizeObserver.observe(container)
+  drawPlaceholder('等待服务器响应.....')
 })
 
 onUnmounted(() => {
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
-  }
-  if (currentImgUrl) {
-    URL.revokeObjectURL(currentImgUrl)
-    currentImgUrl = null
   }
 })
 </script>

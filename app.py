@@ -105,7 +105,7 @@ class PyWebviewWindowBridge:
 
 def start_webapp(core_processor: AppProcessor):
     @asynccontextmanager
-    async def lifespan(app: FastAPI):
+    async def lifespan(_app: FastAPI):
         core_processor.ws_manager.set_fastapi_loop(asyncio.get_event_loop())
         core_processor.start_background_services()
         yield
@@ -143,16 +143,16 @@ def _load_pywebview_module():
             importlib.import_module("webview.platforms.cocoa")
         WEBVIEW_MODULE = importlib.import_module("webview")
         return WEBVIEW_MODULE
-    except Exception as exc:
-        WEBVIEW_IMPORT_ERROR = exc
-        raise RuntimeError("pywebview is unavailable") from exc
+    except Exception as import_error:
+        WEBVIEW_IMPORT_ERROR = import_error
+        raise RuntimeError("pywebview is unavailable") from import_error
 
 
 def _start_pywebview(url: str):
     global PYWEBVIEW_WINDOW_BRIDGE
     webview_module = _load_pywebview_module()
 
-    window_options = {
+    window_options: dict[str, object] = {
         "width": 1200,
         "height": 800,
         "text_select": True,
@@ -188,34 +188,34 @@ def _start_pywebview(url: str):
     webview_module.start(**start_kwargs)
 
 
-def _shutdown_processor(processor: AppProcessor):
+def _shutdown_processor(app_processor: AppProcessor):
     try:
-        processor.shutdown()
-    except Exception as exc:
-        logger.warning(f"Shutdown processor failed: {exc}")
+        app_processor.shutdown()
+    except Exception as shutdown_error:
+        logger.warning(f"Shutdown processor failed: {shutdown_error}")
 
 
 def _run_server_forever(
     url: str,
-    processor: AppProcessor,
+    app_processor: AppProcessor,
     open_browser: bool = False,
 ):
     if open_browser:
         try:
             webbrowser.open(url)
-        except Exception as exc:
-            logger.warning(f"Open browser failed: {exc}")
+        except Exception as browser_error:
+            logger.warning(f"Open browser failed: {browser_error}")
     logger.success(f"Server started at {url}")
     try:
         while True:
             sleep(0.1)
-            if processor.is_shutdown_requested():
+            if app_processor.is_shutdown_requested():
                 logger.info("Shutdown requested from browser mode. Shutting down.")
                 break
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt. Shutting down.")
     finally:
-        _shutdown_processor(processor)
+        _shutdown_processor(app_processor)
     raise SystemExit(0)
 
 if __name__ == "__main__":
@@ -223,6 +223,7 @@ if __name__ == "__main__":
     webapp_thread = threading.Thread(target=start_webapp, args=(processor,), daemon=True)
     webapp_thread.start()
     processor.start_inference_if_possible()
+    # noinspection HttpUrlsUsage
     server_url = f"http://{args.host}:{args.port}"
     use_embedded_webview = _webview_enabled_for_build() and not args.not_use_webview
     if use_embedded_webview:
@@ -230,11 +231,10 @@ if __name__ == "__main__":
             _start_pywebview(server_url)
             _shutdown_processor(processor)
             raise SystemExit(0)
-        except Exception as exc:
-            logger.warning(f"PyWebView unavailable, fallback to browser mode: {exc}")
+        except Exception as pywebview_error:
+            logger.warning(f"PyWebView unavailable, fallback to browser mode: {pywebview_error}")
             _run_server_forever(server_url, processor, open_browser=True)
     else:
         if not _webview_enabled_for_build():
             logger.info("Embedded WebView is disabled for this build. Launching in browser mode.")
         _run_server_forever(server_url, processor, open_browser=not args.not_use_webview)
-—

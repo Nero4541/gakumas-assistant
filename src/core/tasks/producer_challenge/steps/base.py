@@ -12,6 +12,7 @@ class ProduceStep(ABC):
     """培育流程中的一个步骤基类。"""
 
     step_name: str = "unnamed_step"
+    skip_on_resume: bool = False  # 恢复中断模式下是否跳过此步骤
 
     @abstractmethod
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:

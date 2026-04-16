@@ -216,23 +216,49 @@ def _plan_type_payload(plan_type: Any) -> dict[str, str]:
 
 
 def _current_idol_plan_payload(ctx: "ProduceContext") -> dict[str, str]:
-    selected_idol_card = getattr(ctx, "selected_idol_card", None)
-    if selected_idol_card is None:
+    idol_card = getattr(ctx, "selected_idol_card", None)
+    # 回退: 从主数据库按配置的目标偶像卡 ID 查询
+    if idol_card is None:
+        target_id = getattr(ctx, "target_idol_card_id", "") or ""
+        if target_id:
+            try:
+                from src.utils.game_database_tools import GakumasDatabase_IdolCardDataUtils
+                idol_card = GakumasDatabase_IdolCardDataUtils().get_by_id(target_id)
+                if idol_card is not None:
+                    ctx.selected_idol_card = idol_card
+            except Exception:
+                pass
+    if idol_card is None:
         return _plan_type_payload("")
-    return _plan_type_payload(getattr(selected_idol_card, "planType", ""))
+    return _plan_type_payload(getattr(idol_card, "planType", ""))
 
 
 def _build_parameter_priority(ctx: "ProduceContext") -> str:
-    """根据偶像卡成长率计算属性优先级排序（如 'visual > dance > vocal'）。"""
-    selected_idol_card = getattr(ctx, "selected_idol_card", None)
-    if selected_idol_card is None:
+    """根据偶像卡成长率计算属性优先级排序（如 'visual > dance > vocal'）。
+    优先使用 ctx.selected_idol_card；若为空则从主数据库按 target_idol_card_id 查询。
+    """
+    idol_card = getattr(ctx, "selected_idol_card", None)
+
+    # 回退: 从主数据库按配置的目标偶像卡 ID 查询
+    if idol_card is None:
+        target_id = getattr(ctx, "target_idol_card_id", "") or ""
+        if target_id:
+            try:
+                from src.utils.game_database_tools import GakumasDatabase_IdolCardDataUtils
+                idol_card = GakumasDatabase_IdolCardDataUtils().get_by_id(target_id)
+                if idol_card is not None:
+                    # 同时回填 ctx，后续调用不再重复查询
+                    ctx.selected_idol_card = idol_card
+            except Exception:
+                pass
+
+    if idol_card is None:
         return ""
     growth = {
-        "vocal": int(getattr(selected_idol_card, "produceVocalGrowthRatePermil", 0) or 0),
-        "dance": int(getattr(selected_idol_card, "produceDanceGrowthRatePermil", 0) or 0),
-        "visual": int(getattr(selected_idol_card, "produceVisualGrowthRatePermil", 0) or 0),
+        "vocal": int(getattr(idol_card, "produceVocalGrowthRatePermil", 0) or 0),
+        "dance": int(getattr(idol_card, "produceDanceGrowthRatePermil", 0) or 0),
+        "visual": int(getattr(idol_card, "produceVisualGrowthRatePermil", 0) or 0),
     }
-    # 按成长率降序排列
     sorted_params = sorted(growth.items(), key=lambda x: x[1], reverse=True)
     return " > ".join(p[0] for p in sorted_params)
 
@@ -2156,11 +2182,13 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
         if crop.size == 0:
             return ""
         if debug_label:
+            box_x = int(getattr(box, "x", 0))
+            box_y = int(getattr(box, "y", 0))
             debugger.add_box(
-                int(getattr(box, "x", 0)) + x1,
-                int(getattr(box, "y", 0)) + y1,
-                max(x2 - x1, 1),
-                max(y2 - y1, 1),
+                box_x + x1,
+                box_y + y1,
+                box_x + x2,
+                box_y + y2,
                 label=debug_label,
                 color=(80, 220, 120),
                 alpha=0.15,
@@ -2234,11 +2262,13 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
         if crop.size == 0:
             return ""
         if debug_label:
+            box_x = int(getattr(box, "x", 0))
+            box_y = int(getattr(box, "y", 0))
             debugger.add_box(
-                int(getattr(box, "x", 0)) + anchor_x,
-                int(getattr(box, "y", 0)) + search_y1 + anchor_y,
-                max(anchor_w, 1),
-                max(anchor_h, 1),
+                box_x + anchor_x,
+                box_y + search_y1 + anchor_y,
+                box_x + anchor_x + anchor_w,
+                box_y + search_y1 + anchor_y + anchor_h,
                 label=f"{debug_label}_anchor",
                 color=(255, 200, 0),
                 alpha=0.12,
@@ -2246,10 +2276,10 @@ def _extract_hud_state(app: "AppProcessor") -> dict[str, Any]:
                 font_size=16,
             )
             debugger.add_box(
-                int(getattr(box, "x", 0)) + x1,
-                int(getattr(box, "y", 0)) + y1,
-                max(w - x1, 1),
-                max(y2 - y1, 1),
+                box_x + x1,
+                box_y + y1,
+                box_x + w,
+                box_y + y2,
                 label=debug_label,
                 color=(80, 220, 120),
                 alpha=0.15,

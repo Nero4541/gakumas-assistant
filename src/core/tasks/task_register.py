@@ -8,6 +8,7 @@ from time import sleep
 from src.entity.Game.Page.Types.index import GamePageTypes
 from src.utils.debug_tools import DebugTools
 from src.utils.logger import logger
+from src.utils.ui_message_tools import UIMessage
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -105,8 +106,29 @@ def register_tasks(processor: "AppProcessor"):
     def _pre__start_game():
         global GAME_RUNNING
         GAME_RUNNING = False
+        _ui_msg = UIMessage()
+
         if not processor.config_service().base.auto_start_game.value:
-            return True
+            # 未开启自动启动，检查游戏是否已在前台
+            if isinstance(processor.device, Android_App):
+                if processor.device.is_app_focused():
+                    GAME_RUNNING = True
+                    return True
+                # 游戏不在前台，检查进程是否存在
+                if processor.device.is_app_running():
+                    _ui_msg.warning("游戏未在前台运行，请手动切回游戏后重试", timeout=5)
+                else:
+                    _ui_msg.error("游戏未启动，请先手动启动游戏后重试", timeout=5)
+                logger.warning("游戏未在前台，auto_start_game 已关闭，取消任务队列")
+                return False
+            # 非 Android 设备
+            if processor.device.is_app_running() and processor.device.is_app_focused():
+                GAME_RUNNING = True
+                return True
+            _ui_msg.warning("游戏未在前台运行，请手动启动游戏后重试", timeout=5)
+            logger.warning("游戏未在前台，auto_start_game 已关闭，取消任务队列")
+            return False
+
         if isinstance(processor.device, Android_App):
             if processor.device.is_app_focused():
                 GAME_RUNNING = True
@@ -144,6 +166,7 @@ def register_tasks(processor: "AppProcessor"):
     def _pre__wait_game_start():
         """等待游戏启动"""
         if not processor.config_service().base.auto_start_game.value:
+            # 未开启自动启动时，前面 _pre__start_game 已校验过游戏状态
             return True
         if GAME_RUNNING:
             return True
@@ -273,6 +296,7 @@ def register_tasks(processor: "AppProcessor"):
             memory_preset_index=cfg.memory_preset_index.value,
             use_rental=cfg.use_rental.value,
             use_boost_items=cfg.use_boost_items.value,
+            resume_interrupted=cfg.resume_interrupted.value,
         )
         base = app.config_service().base
         inject_llm_strategy(

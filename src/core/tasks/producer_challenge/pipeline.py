@@ -28,6 +28,11 @@ class ProducePipeline:
         for idx, step in enumerate(self.steps, 1):
             tag = f"[{idx}/{total}] {step.step_name}"
 
+            # 恢复中断模式下跳过编成相关步骤
+            if getattr(ctx, "resumed_from_interrupt", False) and getattr(step, "skip_on_resume", False):
+                logger.info(f"{tag} — 恢复中断模式，跳过")
+                continue
+
             if not step.validate(app, ctx):
                 raise RuntimeError(f"{tag} — 前置条件检查失败")
 

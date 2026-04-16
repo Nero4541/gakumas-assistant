@@ -43,6 +43,7 @@ idol_card_db = GakumasDatabase_IdolCardDataUtils()
 
 class SelectIdolCardStep(ProduceStep):
     step_name = "select_idol_card"
+    skip_on_resume = True
 
     def validate(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         if app.latest_results.exists_label(BaseUILabels.PRODUCT_CARD_SELECTED):

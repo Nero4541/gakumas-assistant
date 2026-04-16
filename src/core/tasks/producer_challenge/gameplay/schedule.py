@@ -222,8 +222,8 @@ def _probe_action_info_panel(
         debugger.add_box(
             int(getattr(info_box, "x", 0)),
             int(getattr(info_box, "y", 0)),
-            max(int(getattr(info_box, "w", 0) - getattr(info_box, "x", 0)), 1),
-            max(int(getattr(info_box, "h", 0) - getattr(info_box, "y", 0)), 1),
+            int(getattr(info_box, "w", 0)),
+            int(getattr(info_box, "h", 0)),
             label=f"action_info: {text[:40]}",
             color=(50, 200, 255),
             alpha=0.15,
@@ -1180,16 +1180,20 @@ def _annotate_low_stamina_recovery_preference(
 
 
 def _collect_schedule_action_boxes(app: "AppProcessor") -> list:
-    """收集时间表动作候选框。
+    """收集时间表动作候选框（含休む / PC_VACATION）。
 
     优先使用 PC_ACTION 标签，若无则回退到 Universal Options。
+    同时收集 PC_VACATION（休む）标签并合并。
     有些时间表画面（例如特殊事件周）使用 Options 而非 Action 标签。
     """
     actions = list(app.latest_results.filter_by_label(ProducerLabels.PC_ACTION))
     if not actions:
         actions = list(app.latest_results.filter_by_label(ProducerLabels.UNIVERSAL_OPTIONS))
+    # 同时收集休む按钮（YOLO 使用 PC_VACATION 独立标签）
+    vacation_boxes = list(app.latest_results.filter_by_label(ProducerLabels.PC_VACATION))
+    all_boxes = actions + vacation_boxes
     # 按垂直位置排序（选项通常纵向排列，cx 几乎相同）
-    return sorted(actions, key=lambda item: item.cy)
+    return sorted(all_boxes, key=lambda item: item.cy)
 
 
 def _detect_recommended_kind(app: "AppProcessor") -> str:
@@ -1340,8 +1344,8 @@ def _read_lesson_info_panel(app: "AppProcessor") -> str:
         _lesson_debugger.add_box(
             int(getattr(info_box, "x", 0)),
             int(getattr(info_box, "y", 0)),
-            max(int(getattr(info_box, "w", 0) - getattr(info_box, "x", 0)), 1),
-            max(int(getattr(info_box, "h", 0) - getattr(info_box, "y", 0)), 1),
+            int(getattr(info_box, "w", 0)),
+            int(getattr(info_box, "h", 0)),
             label=f"LessonInfo: {text[:40]}",
             color=(100, 255, 100),
             alpha=0.15,
@@ -1385,7 +1389,7 @@ def _ocr_lesson_stamina_costs(
             costs.append(cost)
             if cost is not None:
                 _lesson_debugger.add_box(
-                    bx, cost_y, cost_w, cost_h,
+                    bx, cost_y, bx + cost_w, cost_y + cost_h,
                     label=f"体力-{cost}",
                     color=(255, 80, 80),
                     thickness=2,
@@ -1455,8 +1459,8 @@ def _probe_lesson_options(
             _lesson_debugger.add_box(
                 int(getattr(candidate.box, "x", 0)),
                 int(getattr(candidate.box, "y", 0)),
-                max(int(getattr(candidate.box, "w", 0) - getattr(candidate.box, "x", 0)), 1),
-                max(int(getattr(candidate.box, "h", 0) - getattr(candidate.box, "y", 0)), 1),
+                int(getattr(candidate.box, "w", 0)),
+                int(getattr(candidate.box, "h", 0)),
                 color=(0, 200, 100),
                 thickness=2,
                 duration=3,
@@ -1561,6 +1565,29 @@ def collect_schedule_action_candidates(
 
     candidates: list[ScheduleActionCandidate] = []
     for idx, box in enumerate(action_boxes):
+        # ── 休む（PC_VACATION）：跳过 CLIP / OCR，直接构造预填候选 ──
+        if getattr(box, "label", "") == ProducerLabels.PC_VACATION:
+            candidates.append(
+                ScheduleActionCandidate(
+                    index=idx,
+                    title="休む",
+                    kind="refresh",
+                    recommended=False,
+                    selected=selected_index == idx,
+                    box=box,
+                    action_id="schedule_action_refresh",
+                    source="yolo_vacation",
+                    confidence=1.0,
+                    metadata={
+                        "is_vacation": True,
+                        "rl_action_type": "refresh",
+                        "schedule_family": "refresh",
+                    },
+                )
+            )
+            logger.info("schedule: 检测到休む按钮 (PC_VACATION)，index={}", idx)
+            continue
+
         # ── 第一步: 尝试 CLIP 记忆命中 ──
         clip_result = _resolve_schedule_from_clip(app, box)
         if clip_result is not None:
@@ -1747,6 +1774,28 @@ def decide_schedule_action(
     return fallback_index
 
 
+def _confirm_vacation_modal(app: "AppProcessor", *, max_polls: int = 10, poll_interval: float = 0.5) -> bool:
+    """等待并确认「休み確認」模态框。
+
+    休む操作流程：点击休む按钮 → 弹出确认模态（显示体力恢复量）→ 点击「休む」确认按钮。
+    模态有两个按钮：「キャンセル」(CANCEL_BUTTON) 和「休む」(CONFIRM_BUTTON)。
+    """
+    for attempt in range(max_polls):
+        sleep(poll_interval)
+        results = app.latest_results
+        if results is None:
+            logger.debug("schedule: 等待休み確認モーダル出现 ({}/{})", attempt + 1, max_polls)
+            continue
+        confirm_buttons = results.filter_by_label(ProducerLabels.CONFIRM_BUTTON)
+        if confirm_buttons and len(confirm_buttons) > 0:
+            app.device.click_element(confirm_buttons.first())
+            logger.info("schedule: 休み確認モーダル — 点击确认按钮 (attempt={})", attempt + 1)
+            return True
+        logger.debug("schedule: 等待休み確認モーダル出现 ({}/{})", attempt + 1, max_polls)
+    logger.warning("schedule: 休み確認モーダル未出现，超时退出")
+    return False
+
+
 def execute_schedule_step(
     app: "AppProcessor",
     ctx: "ProduceContext",
@@ -1770,6 +1819,20 @@ def execute_schedule_step(
     )
 
     app.device.click_element(target.box)
+
+    # ── 休む（休息）特殊处理：点击后会弹出确认模态 ──
+    if target.metadata.get("is_vacation"):
+        confirmed = _confirm_vacation_modal(app)
+        ctx.record_operation(
+            "confirm_vacation",
+            target="休む",
+            details={
+                "index": target.index,
+                "modal_confirmed": confirmed,
+            },
+        )
+        return ScheduleStepResult(status="confirmed", candidate=target)
+
     if position == GameplayPosition.SCHEDULE_PRESENT_SUPPORT:
         ctx.record_operation(
             "select_schedule_present_support",

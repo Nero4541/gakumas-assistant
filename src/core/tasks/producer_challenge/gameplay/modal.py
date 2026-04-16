@@ -237,7 +237,7 @@ def _decide_exam_retry_candidate(
 ) -> ModalActionCandidate:
     decision_state = build_followup_decision_state(
         ctx,
-        phase=GameplayPhase.EXAM,
+        phase="exam",
         position=GameplayPosition.EXAM_RETRY_CONFIRM_MODAL,
         candidates=candidates,
         reason="exam_retry_confirm_modal_decision",

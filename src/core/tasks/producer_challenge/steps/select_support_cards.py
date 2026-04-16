@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 class SelectSupportCardsStep(ProduceStep):
     step_name = "select_support_cards"
+    skip_on_resume = True
 
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         mode = ctx.support_card_mode.lower()

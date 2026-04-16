@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 
 class SelectMemoriesStep(ProduceStep):
     step_name = "select_memories"
+    skip_on_resume = True
 
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         mode = ctx.memory_mode.lower()

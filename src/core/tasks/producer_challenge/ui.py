@@ -997,6 +997,19 @@ def classify_gameplay_phase(results, *, ctx: "ProduceContext | None" = None) -> 
         and _looks_like_dialogue_text(frame_text)
     ):
         return GameplayPhase.DIALOGUE
+    # おでかけ等事件中展示技能卡的对话画面：
+    # 有技能卡 + 有 HUD + 无训练/考试标签 + 无操作按钮 + 有对话文本 → DIALOGUE
+    if (
+        has_skill_card
+        and has_progress
+        and not has_schedule_actions
+        and not has_training_score
+        and not has_training_remaining
+        and not has_bonus_indicator
+        and not has_any_interactive
+        and _looks_like_dialogue_text(frame_text)
+    ):
+        return GameplayPhase.DIALOGUE
 
     # 牌组查看器覆盖层：Tab Bar + Cancel + 大量技能卡 + 无 Confirm
     # → 属于弹窗覆盖层（如"所持スキルカード"），非技能奖励选择

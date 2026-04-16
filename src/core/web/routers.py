@@ -16,6 +16,7 @@ from src.core.web.websocket import WebSocketManager
 from typing import TYPE_CHECKING
 
 from src.entity.Config import Config
+from src.entity.WebSocketData import WebSocketData
 from src.utils.adb_runtime import describe_adb_error
 from src.utils.dmm_tools import extract_gakumas_launch_parameters
 from src.utils.game_database_tools import (
@@ -25,7 +26,6 @@ from src.utils.game_database_tools import (
     GakumasDatabase_SupportCardDataUtils,
     _concat_produce_descriptions,
 )
-from src.utils.opencv_tools import get_black_image
 from src.utils.logger import logger
 from src.utils.runtime_paths import resolve_data_str, resolve_runtime_str
 
@@ -68,7 +68,11 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
         await ws_manager.connect(websocket)
         await asyncio.sleep(1)
         try:
-            await websocket.send_bytes(f"{640},{640}".encode('utf-8') + b"," + get_black_image((640, 640)))
+            await ws_manager.send_action(
+                websocket,
+                WebsocketActions.App.StatusChanged,
+                WebSocketData(message=processor.build_app_status()),
+            )
             while True:
                 data = await websocket.receive_json()
                 if not data.get("action"):
@@ -150,22 +154,7 @@ def register_routes(app: FastAPI, processor: "AppProcessor", ws_manager: WebSock
     @app.get("/api/status")
     def get_status():
         """获取服务状态"""
-        current_task = processor.task_queue.get_current_running_task()
-        return _api_return(True, 'OK', {
-            'platform': processor.config_service().base.run_mode.value.lower(),
-            'yolo': processor.yolo_engine.running,
-            'task': processor.task_queue.queue_status(),
-            'current_task': current_task.id if current_task else '',
-            'device': processor.get_device_status(),
-            'game': {
-                'current_location': processor.game_status_manager.current_location,
-                'player': {
-                    'level': processor.game_status_manager.player.level,
-                    'gem': processor.game_status_manager.player.gem,
-                    'stamina': processor.game_status_manager.player.stamina,
-                }
-            }
-        })
+        return _api_return(True, 'OK', processor.build_app_status())
 
     @app.post("/api/app/shutdown")
     def shutdown_app():

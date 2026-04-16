@@ -11,8 +11,6 @@ import {TaskItem} from "@/scripts/entity/task";
 import {ConfigItem} from "@/scripts/entity/config";
 import {ResourceUpdateStatus} from "@/scripts/entity/resourceUpdate";
 
-let statusRefreshTimer: number | null = null
-
 /** Store State */
 export interface AppState {
   status: AppStatus
@@ -63,8 +61,6 @@ export const useAppStore = defineStore('app', {
   }),
   actions: {
     async init() {
-      await this.refresh_all_data()
-      this.ensure_status_polling()
       wsService.on(WS_ACTION.TaskStatusUpdate, (data) => {
         const task: TaskItem = this.get_task_by_id(data.id)
         if (!task) {
@@ -92,11 +88,24 @@ export const useAppStore = defineStore('app', {
       wsService.on(WS_ACTION.DeviceStatusChanged, (data) => {
         this.apply_device_status(data)
       })
+      wsService.on(WS_ACTION.AppStatusChanged, (data) => {
+        this.apply_app_status(data)
+      })
+      const refreshBootstrap = async () => {
+        try {
+          await this.refresh_bootstrap_data()
+        } catch (err) {
+          console.debug("refresh_bootstrap_data failed", err)
+        }
+      }
+      wsService.onEvent("connect", async () => {
+        await refreshBootstrap()
+      })
       wsService.onEvent("reconnect", async () => {
-        await this.refresh_all_data()
+        await refreshBootstrap()
       })
     },
-    async refresh_all_data() {
+    async refresh_bootstrap_data() {
       await this.refresh_task_list()
       await this.refresh_app_status()
       await this.load_config()
@@ -105,6 +114,10 @@ export const useAppStore = defineStore('app', {
     async refresh_task_list() {
       const response = await apis.get_registered_tasks()
       this.task_list = response.data
+    },
+    async refresh_app_status() {
+      const response = await apis.get_status()
+      this.apply_app_status(response.data)
     },
     async run_task(task_name: string) {
       const task = this.get_task_by_id(task_name)
@@ -136,20 +149,6 @@ export const useAppStore = defineStore('app', {
       }
       await this.refresh_task_list()
       message.showSuccess(`已禁用任务：${taskLabel}`)
-    },
-    async refresh_app_status() {
-      const response = await apis.get_status()
-      this.apply_app_status(response.data)
-    },
-    ensure_status_polling() {
-      if (statusRefreshTimer !== null) {
-        return
-      }
-      statusRefreshTimer = window.setInterval(() => {
-        this.refresh_app_status().catch((err) => {
-          console.debug("refresh_app_status failed", err)
-        })
-      }, 5000)
     },
     async load_config() {
       const response = await apis.get_config()
@@ -396,7 +395,7 @@ export const useAppStore = defineStore('app', {
       }
     },
     get_task_config(task_name: string) {
-      console.log(`task__${task_name}`,this.config?.[`task__${task_name}`])
+      // console.log(`task__${task_name}`,this.config?.[`task__${task_name}`])
       return toRef(this.config, `task__${task_name}`)
     },
     async save_task_config(task_name: string) {

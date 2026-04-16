@@ -30,6 +30,7 @@ def _is_nia_visible(app: "AppProcessor") -> bool:
 
 class SelectScenarioStep(ProduceStep):
     step_name = "select_scenario"
+    skip_on_resume = True
 
     def execute(self, app: "AppProcessor", ctx: "ProduceContext") -> bool:
         target = ctx.scenario.lower()

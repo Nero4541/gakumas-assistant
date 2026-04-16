@@ -12,13 +12,48 @@ from src.utils.string_tools import string_match, MatchConfig
 
 ocr_service = OCRService()
 
+
+def _ocr_text(image: np.ndarray) -> str:
+    """对按钮图像执行一次 OCR，并拼接结果。"""
+    results = ocr_service.ocr(image)
+    if not results:
+        return ""
+    return "".join(item.text for item in results)
+
+
+def _extract_button_text(image: np.ndarray) -> str:
+    """提取按钮文字；原图失败时，对白字按钮做轻量预处理后重试。"""
+    if image is None or getattr(image, "size", 0) == 0:
+        return ""
+
+    text = _ocr_text(image)
+    if text:
+        return text
+
+    img_hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+    white_mask = cv2.inRange(
+        img_hsv,
+        np.array([0, 0, 180]),
+        np.array([180, 80, 255]),
+    )
+    if cv2.countNonZero(white_mask) > image.shape[0] * image.shape[1] * 0.01:
+        white_mask = cv2.resize(white_mask, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+        text = _ocr_text(cv2.cvtColor(white_mask, cv2.COLOR_GRAY2BGR))
+        if text:
+            return text
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    _, binary = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+    binary = cv2.resize(binary, None, fx=2, fy=2, interpolation=cv2.INTER_NEAREST)
+    return _ocr_text(cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR))
+
 @dataclass(eq=False)
 class Button(Yolo_Box):
     text: str | None
 
     def __init__(self, element: Yolo_Box, no_text: bool = False):
         super().__init__(element.x, element.y, element.w, element.h, element.label, element.frame)
-        self.text = None if no_text else "".join(item.text for item in ocr_service.ocr(element.frame))
+        self.text = None if no_text else _extract_button_text(element.frame)
 
     def is_disabled(self):
         h, w = self.frame.shape[:2]

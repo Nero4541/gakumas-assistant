@@ -2,6 +2,9 @@
 class WebsocketActions:
     BaseActionFlag = "action"
 
+    class App:
+        StatusChanged = "app:status_changed"
+
     class WebsocketHeartBeat:
         Ping = "ping"
         Pong = "pong"

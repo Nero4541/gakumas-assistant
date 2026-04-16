@@ -14,24 +14,24 @@ let task_config = store.get_task_config(props.task_name)
 const themeColor = app.config.globalProperties.$theme.color
 
 const scenarioOptions = [
-  {title: "初（HAJIME）", value: "hajime"},
+  {title: "初", value: "hajime"},
   {title: "NIA", value: "nia"},
 ]
 
 const hajimeDifficultyOptions = [
-  {title: "Regular（produce-001）", value: "regular"},
-  {title: "Pro（produce-002）", value: "pro"},
-  {title: "Master（produce-003）", value: "master"},
-  {title: "Legend（produce-006）", value: "legend"},
+  {title: "Regular", value: "regular"},
+  {title: "Pro", value: "pro"},
+  {title: "Master", value: "master"},
+  // {title: "Legend", value: "legend"},
 ]
 
 const niaDifficultyOptions = [
-  {title: "Pro（produce-004）", value: "pro"},
-  {title: "Master（produce-005）", value: "master"},
+  {title: "Pro", value: "pro"},
+  {title: "Master", value: "master"},
 ]
 
 const formationModeOptions = [
-  {title: "自动编成（おまかせ）", value: "auto"},
+  {title: "自动编成", value: "auto"},
   {title: "预设编号", value: "preset"},
 ]
 
@@ -94,15 +94,6 @@ const showMemoryPreset = computed(() => task_config.value?.memory_mode?.value ==
         />
       </v-col>
       <v-col cols="12" v-if="idolCardField">
-<!--        <v-text-field-->
-<!--          label="目标偶像卡"-->
-<!--          hint="目标 P アイドル ID（留空使用默认选中的卡；需先执行「刷新偶像卡存储」学习卡片特征）"-->
-<!--          :color="themeColor"-->
-<!--          density="comfortable"-->
-<!--          persistent-hint-->
-<!--          clearable-->
-<!--          v-model="idolCardField.value"-->
-<!--        />-->
         <idol_card_browser :data="task_config"/>
       </v-col>
       <v-col cols="12">
@@ -173,6 +164,16 @@ const showMemoryPreset = computed(() => task_config.value?.memory_mode?.value ==
           density="comfortable"
           persistent-hint
           v-model="task_config.use_boost_items.value"
+        />
+      </v-col>
+      <v-col cols="12">
+        <v-switch
+          label="恢复中断的培育"
+          hint="检测到上次中断的培育时自动恢复（点击「再開する」），而非放弃重新开始（要求回到主界面）"
+          :color="themeColor"
+          density="comfortable"
+          persistent-hint
+          v-model="task_config.resume_interrupted.value"
         />
       </v-col>
     </v-row>
